@@ -1,0 +1,11 @@
+[package]
+description = "The low level syscall interface for RASI system."
+documentation = "https://docs.rs/rasi-syscall"
+edition.workspace = true
+license = "MIT"
+name = "rasi-syscall"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+futures = { workspace = true }
