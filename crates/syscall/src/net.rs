@@ -59,13 +59,17 @@ pub trait Network: Cancelable {
     ///
     /// Binding with a port number of 0 will request that the OS assigns a port to this socket. The
     /// port allocated can be queried via the [`udp_local_addr`](Self::udp_local_addr) method.
+    ///
+    /// Returns [`CancelablePoll::Pending(CancelHandle)`](CancelablePoll::Pending),
+    /// indicating that the current operation could not be completed
+    /// immediately and needs to be retried later.
     fn udp_bind(&self, waker: Waker, laddrs: &[SocketAddr]) -> CancelablePoll<io::Result<Handle>>;
 
     /// Sends data on the socket to the given `target` address.
     ///
     /// On success, returns the number of bytes written.
     ///
-    /// Returns a [`WouldBlock`](io::ErrorKind::WouldBlock) error,
+    /// Returns [`CancelablePoll::Pending(CancelHandle)`](CancelablePoll::Pending),
     /// indicating that the current operation could not be completed
     /// immediately and needs to be retried later.
     fn udp_send_to(
@@ -78,6 +82,10 @@ pub trait Network: Cancelable {
     /// Receives data from the socket.
     ///
     /// On success, returns the number of bytes read and the origin.
+    ///
+    /// Returns [`CancelablePoll::Pending(CancelHandle)`](CancelablePoll::Pending),
+    /// indicating that the current operation could not be completed
+    /// immediately and needs to be retried later.
     fn udp_recv_from(
         &self,
         waker: Waker,
@@ -91,6 +99,9 @@ pub trait Network: Cancelable {
     /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
     /// The port allocated can be queried via the [`tcp_listener_local_addr`](Self::tcp_listener_local_addr) method.
     ///
+    /// Returns [`CancelablePoll::Pending(CancelHandle)`](CancelablePoll::Pending),
+    /// indicating that the current operation could not be completed
+    /// immediately and needs to be retried later.
     fn tcp_listener_bind(
         &self,
         waker: Waker,
@@ -112,6 +123,9 @@ pub trait Network: Cancelable {
     ///
     /// When a connection is established, the corresponding stream and address will be returned.
     ///
+    /// Returns [`CancelablePoll::Pending(CancelHandle)`](CancelablePoll::Pending),
+    /// indicating that the current operation could not be completed
+    /// immediately and needs to be retried later.
     fn tcp_listener_accept(
         &self,
         handle: &Handle,
@@ -120,6 +134,10 @@ pub trait Network: Cancelable {
     /// Create a new `TcpStream` and connect to `raddrs`.
     ///
     /// The port allocated can be queried via the [`tcp_stream_local_addr`](Self::tcp_stream_local_addr) method.
+    ///
+    /// Returns [`CancelablePoll::Pending(CancelHandle)`](CancelablePoll::Pending),
+    /// indicating that the current operation could not be completed
+    /// immediately and needs to be retried later.
     fn tcp_stream_connect(&self, raddrs: &[SocketAddr]) -> CancelablePoll<io::Result<()>>;
 
     /// Returns the local [`socket address`](SocketAddr) bound to this tcp stream.

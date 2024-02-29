@@ -4,9 +4,12 @@ use futures::{future::BoxFuture, Future, SinkExt, StreamExt};
 
 /// Future task system call interface.
 pub trait Executor {
-    /// Spawns a `boxed` task that polls the given future with output () to completion.
+    /// Spawns a task that polls the given `boxed` future with output () to completion.
     fn spawn_boxed(&self, fut: BoxFuture<'static, ()>);
+}
 
+/// An extension trait which adds utility methods to [`Executor`] types.
+pub trait ExecutorExt: Executor {
     /// Spawns a task that polls the given future with output () to completion.
     fn spawn<Fut>(&self, fut: Fut)
     where
@@ -33,3 +36,5 @@ pub trait Executor {
         futures::executor::block_on(async move { receiver.next().await.unwrap() })
     }
 }
+
+impl<T> ExecutorExt for T where T: Executor {}

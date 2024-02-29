@@ -11,7 +11,7 @@ pub enum CancelablePoll<T> {
 }
 
 impl<T> CancelablePoll<T> {
-    /// Cancel the pending io, if self == [`CancelablePoll::Pending`] then this function will not perform any action.
+    /// Cancel the pending io, ```if let CancelablePoll::Success(_) == self {}``` this function will not perform any action.
     pub fn cancel<SysCall: Cancelable>(&self, syscall: SysCall) {
         match self {
             CancelablePoll::Success(_) => {}
@@ -24,6 +24,6 @@ impl<T> CancelablePoll<T> {
 pub trait Cancelable {
     /// Cancel one pending operation.
     ///
-    /// You can get the pending operation handle by [`CancelablePoll::Pending`]
+    /// You can extract the [`cancel handle`](Handle) via [`CancelablePoll::Pending`].
     fn cancel(&self, handle: &Handle);
 }

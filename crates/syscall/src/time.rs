@@ -15,7 +15,7 @@ pub trait Timer {
 
     /// Wait timeout event.
     ///
-    /// Returns [`Poll::Ready(())`] if the timer already reached the deadline,
-    /// otherwise returns [`Poll::Pending`].
+    /// Returns [`Poll::Ready(())`](Poll::Ready) if the timer already reached the deadline,
+    /// otherwise returns [`Poll::Pending`] and needs to be retried later.
     fn timeout_wait(&self, waker: Waker, handle: &Handle) -> Poll<()>;
 }

@@ -29,7 +29,7 @@ impl Handle {
     /// Returns `T` reference to the inner value if it is of type `T`, or panic.
     ///
     /// As required by the `NASI`, there is no way to get a mutable reference to `T`,
-    /// so the system object should implement auto trais `Send + Sync`.
+    /// so the inner type `T` should implements `Send + Sync` auto traits.
     pub fn downcast<T>(&self) -> &T
     where
         T: Send + Sync + 'static,
