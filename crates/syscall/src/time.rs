@@ -8,8 +8,8 @@ use std::{
 
 use crate::handle::Handle;
 
-/// timeout-related system call interface
-pub trait Timeout {
+/// Timer-related system call interface
+pub trait Timer {
     /// Create new `deadline` timer, returns [`None`] if the `deadline` instant is reached.
     fn deadline(&self, deadline: Instant) -> io::Result<Option<Handle>>;
 

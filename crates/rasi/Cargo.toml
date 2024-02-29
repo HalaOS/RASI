@@ -1,0 +1,12 @@
+[package]
+description = "An implementation of Rust Asynchronous System Interface(RASI)"
+documentation = "https://docs.rs/rasi"
+edition.workspace = true
+license = "MIT"
+name = "rasi"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+futures = { workspace = true }
+rasi-syscall = { workspace = true }
