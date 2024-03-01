@@ -1,9 +1,11 @@
 //! syscall for async task.
 
+use std::sync::OnceLock;
+
 use futures::{future::BoxFuture, Future, SinkExt, StreamExt};
 
 /// Future task system call interface.
-pub trait Executor {
+pub trait Executor: Send + Sync {
     /// Spawns a task that polls the given `boxed` future with output () to completion.
     fn spawn_boxed(&self, fut: BoxFuture<'static, ()>);
 }
@@ -38,3 +40,29 @@ pub trait ExecutorExt: Executor {
 }
 
 impl<T> ExecutorExt for T where T: Executor {}
+
+static GLOBAL_EXECUTOR: OnceLock<Box<dyn Executor>> = OnceLock::new();
+
+/// Register provided [`Executor`] as global executor implementation.
+///
+/// # Panic
+///
+/// Multiple calls to this function are not permitted!!!
+pub fn register_global_executor<E: Executor + 'static>(executor: E) {
+    if GLOBAL_EXECUTOR.set(Box::new(executor)).is_err() {
+        panic!("Multiple calls to register_global_executor are not permitted!!!");
+    }
+}
+
+/// Get global register [`Executor`] syscall interface.
+///
+/// # Panic
+///
+/// You should call [`register_global_executor`] first to register implementation,
+/// otherwise this function will cause a panic with `Call register_global_executor first`
+pub fn global_executor() -> &'static dyn Executor {
+    GLOBAL_EXECUTOR
+        .get()
+        .expect("Call register_global_executor first")
+        .as_ref()
+}

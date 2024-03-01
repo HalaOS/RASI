@@ -10,3 +10,11 @@ version.workspace = true
 [dependencies]
 futures = { workspace = true }
 rasi-syscall = { workspace = true }
+
+[features]
+default = ["net", "fs", "time", "executor"]
+
+net = ["rasi-syscall/net"]
+fs = ["rasi-syscall/fs"]
+time = ["rasi-syscall/time"]
+executor = ["rasi-syscall/executor"]

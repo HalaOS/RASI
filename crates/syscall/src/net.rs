@@ -3,6 +3,7 @@
 use std::{
     io,
     net::{IpAddr, Shutdown, SocketAddr},
+    sync::OnceLock,
     task::Waker,
 };
 
@@ -12,7 +13,7 @@ use crate::{
 };
 
 /// Network-related system call interface
-pub trait Network: Cancelable {
+pub trait Network: Cancelable + Sync + Send {
     /// Executes an operation of the IP_ADD_MEMBERSHIP type.
     ///
     /// This function specifies a new multicast group for this socket to join.
@@ -171,4 +172,30 @@ pub trait Network: Cancelable {
     /// This function will cause all pending and future I/O on the specified
     /// portions to return immediately with an appropriate value (see the documentation of Shutdown).
     fn tcp_stream_shutdown(&self, handle: &Handle, how: Shutdown) -> io::Result<()>;
+}
+
+static GLOBAL_NETWORK: OnceLock<Box<dyn Network>> = OnceLock::new();
+
+/// Register provided [`Network`] as global network implementation.
+///
+/// # Panic
+///
+/// Multiple calls to this function are not permitted!!!
+pub fn register_global_network<E: Network + 'static>(executor: E) {
+    if GLOBAL_NETWORK.set(Box::new(executor)).is_err() {
+        panic!("Multiple calls to register_global_network are not permitted!!!");
+    }
+}
+
+/// Get global register [`Network`] syscall interface.
+///
+/// # Panic
+///
+/// You should call [`register_global_network`] first to register implementation,
+/// otherwise this function will cause a panic with `Call register_global_network first`
+pub fn global_network() -> &'static dyn Network {
+    GLOBAL_NETWORK
+        .get()
+        .expect("Call register_global_network first")
+        .as_ref()
 }

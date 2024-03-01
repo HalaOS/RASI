@@ -9,3 +9,9 @@ version.workspace = true
 
 [dependencies]
 futures = { workspace = true }
+
+[features]
+net = []
+fs = []
+time = []
+executor = []
