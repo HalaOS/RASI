@@ -5,30 +5,30 @@ mod handle;
 pub use cancellable::*;
 pub use handle::*;
 
-#[cfg(feature = "executor")]
+#[cfg(any(feature = "executor", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(feature = "executor")))]
 mod executor;
 
-#[cfg(feature = "fs")]
+#[cfg(any(feature = "fs", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
 mod fs;
 
-#[cfg(feature = "net")]
+#[cfg(any(feature = "net", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(feature = "net")))]
 mod net;
 
-#[cfg(feature = "time")]
+#[cfg(any(feature = "time", docsrs))]
+#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 mod time;
 
-#[cfg(feature = "executor")]
-#[cfg_attr(docsrs, doc(cfg(feature = "executor")))]
+#[cfg(any(feature = "executor", docsrs))]
 pub use executor::*;
 
-#[cfg(feature = "fs")]
-#[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
+#[cfg(any(feature = "fs", docsrs))]
 pub use fs::*;
 
-#[cfg(feature = "net")]
-#[cfg_attr(docsrs, doc(cfg(feature = "net")))]
+#[cfg(any(feature = "net", docsrs))]
 pub use net::*;
 
-#[cfg(feature = "time")]
-#[cfg_attr(docsrs, doc(cfg(feature = "time")))]
+#[cfg(any(feature = "time", docsrs))]
 pub use time::*;

@@ -12,6 +12,8 @@ futures = { workspace = true }
 bitmask-enum = { workspace = true }
 
 [features]
+default = ["alloc"]
+
 net = []
 fs = []
 time = []
