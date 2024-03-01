@@ -8,12 +8,57 @@ use std::{
     task::Waker,
 };
 
-use futures::stream::BoxStream;
+use bitmask_enum::bitmask;
 
-use crate::{Cancelable, CancelablePoll};
+use crate::{CancelablePoll, Handle};
+
+/// A bitmask for open file.
+///
+/// See [`open_file`](FileSystem::open_file) for more information.
+#[bitmask(u8)]
+pub enum FileOpenMode {
+    /// Configures the option for append mode.
+    ///
+    /// When set to true, this option means the file will be writable after opening
+    /// and the file cursor will be moved to the end of file before every write operaiton.
+    Append,
+    /// Configures the option for write mode.
+    /// If the file already exists, write calls on it will overwrite the previous contents without truncating it.
+    Writable,
+    /// Configures the option for read mode.
+    /// When set to true, this option means the file will be readable after opening.
+    Readable,
+
+    /// Configures the option for creating a new file if it doesn’t exist.
+    /// When set to true, this option means a new file will be created if it doesn’t exist.
+    /// The file must be opened in [`Writable`](FileOpenMode::Writable)
+    /// or [`Append`](FileOpenMode::Append) mode for file creation to work.
+    Create,
+
+    /// Configures the option for creating a new file or failing if it already exists.
+    /// When set to true, this option means a new file will be created, or the open
+    /// operation will fail if the file already exists.
+    /// The file must be opened in [`Writable`](FileOpenMode::Writable)
+    /// or [`Append`](FileOpenMode::Append) mode for file creation to work.
+    CreateNew,
+
+    /// Configures the option for truncating the previous file.
+    /// When set to true, the file will be truncated to the length of 0 bytes.
+    /// The file must be opened in [`Writable`](FileOpenMode::Writable)
+    /// or [`Append`](FileOpenMode::Append) mode for file creation to work.
+    Truncate,
+}
 
 /// Filesystem-related system call interface
-pub trait FileSystem: Cancelable + Sync + Send {
+pub trait FileSystem: Sync + Send {
+    /// Opens a file with [`FileOpenMode`]
+    fn open_file(
+        &self,
+        waker: Waker,
+        path: &Path,
+        open_mode: FileOpenMode,
+    ) -> CancelablePoll<io::Result<Handle>>;
+
     /// Returns the canonical form of a path.
     /// The returned path is in absolute form with all intermediate components
     /// normalized and symbolic links resolved.
@@ -54,12 +99,46 @@ pub trait FileSystem: Cancelable + Sync + Send {
     /// This function is an async version of [`std::fs::metadata`].
     fn metadata(&self, waker: Waker, path: &Path) -> CancelablePoll<io::Result<Metadata>>;
 
-    /// Returns a stream of entries in a directory.
-    fn read_dir(
+    /// Returns a iterator handle of entries in a directory.
+    ///
+    /// See [`dir_entry_next`](FileSystem::dir_entry_next) for more information about iteration.
+    fn read_dir(&self, waker: Waker, path: &Path) -> CancelablePoll<io::Result<Handle>>;
+
+    /// Advances the directory entry iterator and returns the next value.
+    ///
+    /// Returns None when iteration is finished.
+    ///
+    /// You can create a directory entry iterator by call function [`read_dir`](FileSystem::read_dir)
+    fn dir_entry_next(
         &self,
         waker: Waker,
-        path: &Path,
-    ) -> CancelablePoll<io::Result<BoxStream<'static, Box<dyn DirEntry>>>>;
+        read_dir_handle: &Handle,
+    ) -> CancelablePoll<io::Result<Option<Handle>>>;
+
+    /// Returns the bare name of this entry without the leading path.
+    fn dir_entry_file_name(&self, entry: &Handle) -> String;
+
+    /// Returns the full path to this entry.
+    /// The full path is created by joining the original path passed to [`read_dir`](FileSystem::read_dir) with the name of this entry.
+    fn dir_entry_path(&self, entry: &Handle) -> PathBuf;
+
+    /// Reads the metadata for this entry.
+    ///
+    /// This function will traverse symbolic links to read the metadata.
+    fn dir_entry_metadata(
+        &self,
+        waker: Waker,
+        entry: &Handle,
+    ) -> CancelablePoll<io::Result<Metadata>>;
+
+    /// eads the file type for this entry.
+    /// This function will not traverse symbolic links if this entry points at one.
+    /// If you want to read metadata with following symbolic links, use [`dir_entry_metadata`](FileSystem::dir_entry_metadata) instead.
+    fn dir_entry_file_type(
+        &self,
+        waker: Waker,
+        entry: &Handle,
+    ) -> CancelablePoll<io::Result<FileType>>;
 
     /// Reads a symbolic link and returns the path it points to.
     ///
@@ -102,26 +181,6 @@ pub trait FileSystem: Cancelable + Sync + Send {
     ///
     /// This function is an async version of [`std::fs::symlink_metadata`].
     fn symlink_metadata(&self, waker: Waker, path: &Path) -> CancelablePoll<io::Result<Metadata>>;
-}
-
-/// DirEntry system call interface
-pub trait DirEntry {
-    /// Returns the bare name of this entry without the leading path.
-    fn file_name(&self) -> String;
-
-    /// Returns the full path to this entry.
-    /// The full path is created by joining the original path passed to [`read_dir`](FileSystem::read_dir) with the name of this entry.
-    fn path(&self) -> PathBuf;
-
-    /// Reads the metadata for this entry.
-    ///
-    /// This function will traverse symbolic links to read the metadata.
-    fn metadata(&self, waker: Waker) -> CancelablePoll<io::Result<Metadata>>;
-
-    /// eads the file type for this entry.
-    /// This function will not traverse symbolic links if this entry points at one.
-    /// If you want to read metadata with following symbolic links, use [`metadata`](DirEntry::metadata) instead.
-    fn file_type(&self, waker: Waker) -> CancelablePoll<io::Result<FileType>>;
 }
 
 static GLOBAL_FILESYSTEM: OnceLock<Box<dyn FileSystem>> = OnceLock::new();

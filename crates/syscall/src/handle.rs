@@ -3,11 +3,16 @@
 use std::any::TypeId;
 
 /// A transparent type pointer that represents any implementation-related asynchronous system type.
+#[derive(Debug)]
 pub struct Handle {
     data: *const (),
     drop: fn(*const ()),
     type_id: TypeId,
 }
+
+/// safely: the handle wrap type `T` must implements `Send + Sync`
+unsafe impl Send for Handle {}
+unsafe impl Sync for Handle {}
 
 impl Handle {
     pub fn new<T>(value: T) -> Self

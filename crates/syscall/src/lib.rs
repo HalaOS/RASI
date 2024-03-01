@@ -12,8 +12,8 @@ mod fs;
 #[cfg(feature = "net")]
 mod net;
 
-#[cfg(feature = "time")]
-mod time;
+#[cfg(feature = "timer")]
+mod timer;
 
 #[cfg(feature = "executor")]
 pub use executor::*;
@@ -24,5 +24,5 @@ pub use fs::*;
 #[cfg(feature = "net")]
 pub use net::*;
 
-#[cfg(feature = "time")]
-pub use time::*;
+#[cfg(feature = "timer")]
+pub use timer::*;

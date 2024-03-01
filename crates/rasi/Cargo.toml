@@ -11,10 +11,14 @@ version.workspace = true
 futures = { workspace = true }
 rasi-syscall = { workspace = true }
 
+
 [features]
-default = ["net", "fs", "time", "executor"]
+default = ["net", "fs", "timer", "executor", "std"]
 
 net = ["rasi-syscall/net"]
 fs = ["rasi-syscall/fs"]
-time = ["rasi-syscall/time"]
+timer = ["rasi-syscall/timer"]
 executor = ["rasi-syscall/executor"]
+
+std = ["rasi-syscall/std"]
+alloc = ["rasi-syscall/alloc"]

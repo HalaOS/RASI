@@ -9,9 +9,12 @@ version.workspace = true
 
 [dependencies]
 futures = { workspace = true }
+bitmask-enum = { workspace = true }
 
 [features]
 net = []
 fs = []
-time = []
+timer = []
 executor = []
+alloc = ["futures/alloc", "futures/executor"]
+std = ["futures/std", "futures/executor"]

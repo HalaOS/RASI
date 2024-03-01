@@ -7,13 +7,10 @@ use std::{
     task::Waker,
 };
 
-use crate::{
-    cancellable::{Cancelable, CancelablePoll},
-    handle::Handle,
-};
+use crate::{cancellable::CancelablePoll, handle::Handle};
 
 /// Network-related system call interface
-pub trait Network: Cancelable + Sync + Send {
+pub trait Network: Sync + Send {
     /// Executes an operation of the IP_ADD_MEMBERSHIP type.
     ///
     /// This function specifies a new multicast group for this socket to join.
@@ -77,6 +74,7 @@ pub trait Network: Cancelable + Sync + Send {
         &self,
         waker: Waker,
         socket: &Handle,
+        buf: &[u8],
         target: SocketAddr,
     ) -> CancelablePoll<io::Result<usize>>;
 
@@ -91,6 +89,7 @@ pub trait Network: Cancelable + Sync + Send {
         &self,
         waker: Waker,
         socket: &Handle,
+        buf: &mut [u8],
     ) -> CancelablePoll<io::Result<(usize, SocketAddr)>>;
 
     /// Create new `TcpListener` which will be bound to the specified `laddrs`
@@ -129,6 +128,7 @@ pub trait Network: Cancelable + Sync + Send {
     /// immediately and needs to be retried later.
     fn tcp_listener_accept(
         &self,
+        waker: Waker,
         handle: &Handle,
     ) -> CancelablePoll<io::Result<(Handle, SocketAddr)>>;
 
@@ -139,7 +139,31 @@ pub trait Network: Cancelable + Sync + Send {
     /// Returns [`CancelablePoll::Pending(CancelHandle)`](CancelablePoll::Pending),
     /// indicating that the current operation could not be completed
     /// immediately and needs to be retried later.
-    fn tcp_stream_connect(&self, raddrs: &[SocketAddr]) -> CancelablePoll<io::Result<()>>;
+    fn tcp_stream_connect(
+        &self,
+        waker: Waker,
+        raddrs: &[SocketAddr],
+    ) -> CancelablePoll<io::Result<Handle>>;
+
+    /// Sends data on the socket to the remote address
+    ///
+    /// On success, returns the number of bytes written.
+    fn tcp_stream_write(
+        &self,
+        waker: Waker,
+        socket: &Handle,
+        buf: &[u8],
+    ) -> CancelablePoll<io::Result<usize>>;
+
+    /// Receives data from the socket.
+    ///
+    /// On success, returns the number of bytes read.
+    fn tcp_stream_read(
+        &self,
+        waker: Waker,
+        socket: &Handle,
+        buf: &mut [u8],
+    ) -> CancelablePoll<io::Result<usize>>;
 
     /// Returns the local [`socket address`](SocketAddr) bound to this tcp stream.
     fn tcp_stream_local_addr(&self, handle: &Handle) -> io::Result<SocketAddr>;
@@ -149,7 +173,7 @@ pub trait Network: Cancelable + Sync + Send {
 
     /// Gets the value of the TCP_NODELAY option on this socket.
     /// For more information about this option, see [`tcp_stream_set_nodelay`](Self::tcp_stream_set_nodelay).
-    fn tcp_stream_nodelay(&self) -> io::Result<bool>;
+    fn tcp_stream_nodelay(&self, handle: &Handle) -> io::Result<bool>;
 
     /// Sets the value of the TCP_NODELAY option on this socket.
     ///
@@ -158,7 +182,7 @@ pub trait Network: Cancelable + Sync + Send {
     /// even if there is only a small amount of data. When not set,
     /// data is buffered until there is a sufficient amount to send out,
     /// thereby avoiding the frequent sending of small packets.
-    fn tcp_stream_set_nodelay(&self, nodelay: bool) -> io::Result<()>;
+    fn tcp_stream_set_nodelay(&self, handle: &Handle, nodelay: bool) -> io::Result<()>;
 
     /// Gets the value of the IP_TTL option for this socket.
     /// For more information about this option, see [`tcp_listener_set_ttl`](Self::tcp_listener_set_ttl).
