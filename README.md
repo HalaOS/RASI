@@ -5,6 +5,11 @@
 [!["Crates.io version"](https://img.shields.io/crates/v/rasi.svg)](https://crates.io/crates/rasi)
 [!["docs.rs docs"](https://img.shields.io/badge/docs-latest-blue.svg)](https://docs.rs/rasi)
 
+
+<p align="center">
+    <img src="doc/architectural.png" alt="architectural" width="500"/>
+</p>
+
 The Rust Asynchronous System Interface (RASI) provides a unified API interface to Rust's asynchronous runtimes (such as tokio, async-std, etc.).
 
 ## Motivation
@@ -35,6 +40,3 @@ The `RASI` defines a set of `Syscalls` to fill in the missing abstractions in th
 
 All of the above `Syscalls` can be implemented separately and injected into a runtime portable program. When replacing any of the system call modules, your program code does not need to be changed except for the `inject code`.
 
-<p align="center">
-    <img src="doc/architectural.png" alt="architectural" width="500"/>
-</p>
