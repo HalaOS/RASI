@@ -1,3 +1,5 @@
+//! Utilities types / functions.
+
 use std::{
     io,
     task::{Context, Poll},

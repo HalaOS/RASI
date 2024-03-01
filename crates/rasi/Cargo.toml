@@ -13,11 +13,11 @@ rasi-syscall = { workspace = true }
 
 
 [features]
-default = ["net", "fs", "timer", "executor", "std"]
+default = ["net", "fs", "time", "executor", "std"]
 
 net = ["rasi-syscall/net"]
 fs = ["rasi-syscall/fs"]
-timer = ["rasi-syscall/timer"]
+time = ["rasi-syscall/time"]
 executor = ["rasi-syscall/executor"]
 
 std = ["rasi-syscall/std"]

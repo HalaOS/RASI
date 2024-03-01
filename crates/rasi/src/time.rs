@@ -1,3 +1,6 @@
+//! Utilities for tracking time.
+//!
+
 use std::{
     io,
     time::{Duration, Instant},

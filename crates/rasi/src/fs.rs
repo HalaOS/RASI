@@ -1,3 +1,7 @@
+//! Filesystem manipulation operations.
+//!
+//! This module is an async version of std::fs.
+
 use std::{
     fs::{FileType, Metadata, Permissions},
     io,

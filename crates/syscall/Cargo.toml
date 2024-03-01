@@ -14,7 +14,7 @@ bitmask-enum = { workspace = true }
 [features]
 net = []
 fs = []
-timer = []
+time = []
 executor = []
 alloc = ["futures/alloc", "futures/executor"]
 std = ["futures/std", "futures/executor"]
