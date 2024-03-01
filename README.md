@@ -7,7 +7,7 @@
 
 
 <p align="center">
-    <img src="doc/architectural.png" alt="architectural" width="500"/>
+    <img src="doc/architectural.png" alt="architectural" width="300"/>
 </p>
 
 The Rust Asynchronous System Interface (RASI) provides a unified API interface to Rust's asynchronous runtimes (such as tokio, async-std, etc.).
