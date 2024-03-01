@@ -10,36 +10,31 @@ pub trait Executor: Send + Sync {
     fn spawn_boxed(&self, fut: BoxFuture<'static, ()>);
 }
 
-/// An extension trait which adds utility methods to [`Executor`] types.
-pub trait ExecutorExt: Executor {
-    /// Spawns a task that polls the given future with output () to completion.
-    fn spawn<Fut>(&self, fut: Fut)
-    where
-        Fut: Future<Output = ()> + Send + 'static,
-    {
-        self.spawn_boxed(Box::pin(fut))
-    }
-
-    /// Run a future to completion on the current thread.
-    ///
-    /// This function will block the caller until the given future has completed.
-    fn block_on<Fut, R>(&self, fut: Fut) -> R
-    where
-        Fut: Future<Output = R> + Send + 'static,
-        R: Send + 'static,
-    {
-        let (mut sender, mut receiver) = futures::channel::mpsc::channel::<R>(0);
-
-        self.spawn(async move {
-            let r = fut.await;
-            _ = sender.send(r).await;
-        });
-
-        futures::executor::block_on(async move { receiver.next().await.unwrap() })
-    }
+/// Spawns a task that polls the given future with output () to completion.
+pub fn syscall_spawn<Fut>(syscall: &dyn Executor, fut: Fut)
+where
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    syscall.spawn_boxed(Box::pin(fut))
 }
 
-impl<T> ExecutorExt for T where T: Executor {}
+/// Run a future to completion on the current thread.
+///
+/// This function will block the caller until the given future has completed.
+pub fn syscall_block_on<Fut, R>(syscall: &dyn Executor, fut: Fut) -> R
+where
+    Fut: Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+{
+    let (mut sender, mut receiver) = futures::channel::mpsc::channel::<R>(0);
+
+    syscall_spawn(syscall, async move {
+        let r = fut.await;
+        _ = sender.send(r).await;
+    });
+
+    futures::executor::block_on(async move { receiver.next().await.unwrap() })
+}
 
 static GLOBAL_EXECUTOR: OnceLock<Box<dyn Executor>> = OnceLock::new();
 

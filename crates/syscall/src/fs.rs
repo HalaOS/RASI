@@ -2,7 +2,7 @@
 
 use std::{
     fs::{FileType, Metadata, Permissions},
-    io,
+    io::{self, SeekFrom},
     path::{Path, PathBuf},
     sync::OnceLock,
     task::Waker,
@@ -56,8 +56,77 @@ pub trait FileSystem: Sync + Send {
         &self,
         waker: Waker,
         path: &Path,
-        open_mode: FileOpenMode,
+        open_mode: &FileOpenMode,
     ) -> CancelablePoll<io::Result<Handle>>;
+
+    /// Write a buffer into this writer, returning how many bytes were written
+    fn file_write(
+        &self,
+        waker: Waker,
+        file: &Handle,
+        buf: &[u8],
+    ) -> CancelablePoll<io::Result<usize>>;
+
+    /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
+    fn file_read(
+        &self,
+        waker: Waker,
+        file: &Handle,
+        buf: &mut [u8],
+    ) -> CancelablePoll<io::Result<usize>>;
+
+    /// Attempts to sync all OS-internal metadata to disk.
+    ///
+    /// This function will attempt to ensure that all in-memory data reaches the filesystem before returning.
+    ///
+    /// This can be used to handle errors that would otherwise only be caught when the File is closed.
+    /// Dropping a file will ignore errors in synchronizing this in-memory data.
+    fn file_flush(&self, waker: Waker, file: &Handle) -> CancelablePoll<io::Result<()>>;
+
+    /// Seek to an offset, in bytes, in a stream.
+    ///
+    /// A seek beyond the end of a stream is allowed, but behavior is defined by the implementation.
+    ///
+    /// If the seek operation completed successfully, this method returns the new position from the
+    /// start of the stream. That position can be used later with [`SeekFrom::Start`].
+    ///
+    /// # Errors
+    /// Seeking can fail, for example because it might involve flushing a buffer.
+    ///
+    /// Seeking to a negative offset is considered an error.
+    fn file_seek(
+        &self,
+        waker: Waker,
+        file: &Handle,
+        pos: SeekFrom,
+    ) -> CancelablePoll<io::Result<u64>>;
+
+    ///  Reads the file's metadata.
+    fn file_meta(&self, waker: Waker, file: &Handle) -> CancelablePoll<io::Result<Metadata>>;
+
+    /// Changes the permissions on the file.
+    fn file_set_permissions(
+        &self,
+        waker: Waker,
+        file: &Handle,
+        perm: &Permissions,
+    ) -> CancelablePoll<io::Result<()>>;
+
+    /// Truncates or extends the file.
+    ///
+    /// If `size` is less than the current file size, then the file will be truncated. If it is
+    /// greater than the current file size, then the file will be extended to `size` and have all
+    /// intermediate data filled with zeros.
+    ///
+    /// The file's cursor stays at the same position, even if the cursor ends up being past the end
+    /// of the file after this operation.
+    ///
+    fn file_set_len(
+        &self,
+        waker: Waker,
+        file: &Handle,
+        size: u64,
+    ) -> CancelablePoll<io::Result<()>>;
 
     /// Returns the canonical form of a path.
     /// The returned path is in absolute form with all intermediate components
@@ -172,7 +241,7 @@ pub trait FileSystem: Sync + Send {
         &self,
         waker: Waker,
         path: &Path,
-        perm: Permissions,
+        perm: &Permissions,
     ) -> CancelablePoll<io::Result<()>>;
 
     /// Reads metadata for a path without following symbolic links.
