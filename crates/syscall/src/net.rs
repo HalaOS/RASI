@@ -211,7 +211,7 @@ pub fn register_global_network<E: Network + 'static>(executor: E) {
     }
 }
 
-/// Get global register [`Network`] syscall interface.
+/// Get the globally registered instance of [`Network`].
 ///
 /// # Panic
 ///

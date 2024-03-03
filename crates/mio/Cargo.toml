@@ -1,0 +1,18 @@
+[package]
+description = "a reference implementation of RASI network and timer syscalls"
+documentation = "https://docs.rs/rasi-mio"
+edition.workspace = true
+license = "MIT"
+name = "rasi-mio"
+repository.workspace = true
+version.workspace = true
+
+
+[dependencies]
+mio = { workspace = true }
+parking_lot = { workspace = true }
+num_cpus = { workspace = true }
+boxcar = { workspace = true }
+dashmap = { workspace = true }
+
+rasi-syscall = { workspace = true, features = ["net", "time"] }

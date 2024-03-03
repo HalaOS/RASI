@@ -37,7 +37,7 @@ pub fn register_global_timer<E: Timer + 'static>(executor: E) {
     }
 }
 
-/// Get global register [`Timer`] syscall interface.
+/// Get the globally registered instance of [`Timer`].
 ///
 /// # Panic
 ///

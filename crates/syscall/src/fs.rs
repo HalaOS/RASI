@@ -265,7 +265,7 @@ pub fn register_global_filesystem<FS: FileSystem + 'static>(fs: FS) {
     }
 }
 
-/// Get global register [`FileSystem`] syscall interface.
+/// Get the globally registered instance of [`FileSystem`].
 ///
 /// # Panic
 ///

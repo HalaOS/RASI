@@ -49,7 +49,7 @@ pub fn register_global_executor<E: Executor + 'static>(executor: E) {
     }
 }
 
-/// Get global register [`Executor`] syscall interface.
+/// Get the globally registered instance of [`Executor`].
 ///
 /// # Panic
 ///
