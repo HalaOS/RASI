@@ -8,18 +8,21 @@ use std::{
 };
 
 use futures::Future;
-use rasi_syscall::Handle;
+use rasi_syscall::{global_timer, Handle};
 
 struct Timer {
     deadline: Instant,
     handle: Option<Handle>,
+    syscall: &'static dyn rasi_syscall::Timer,
 }
 
 impl Timer {
-    fn new(deadline: Instant) -> Self {
+    /// Create timer future with custom [`syscall`](rasi_syscall::Timer)
+    fn new_with(deadline: Instant, syscall: &'static dyn rasi_syscall::Timer) -> Self {
         Self {
             deadline,
             handle: None,
+            syscall,
         }
     }
 }
@@ -31,8 +34,7 @@ impl Future for Timer {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         if self.handle.is_none() {
-            let handle =
-                rasi_syscall::global_timer().deadline(cx.waker().clone(), self.deadline)?;
+            let handle = self.syscall.deadline(cx.waker().clone(), self.deadline)?;
 
             if handle.is_none() {
                 return Poll::Ready(Ok(()));
@@ -43,7 +45,7 @@ impl Future for Timer {
             return Poll::Pending;
         }
 
-        rasi_syscall::global_timer()
+        self.syscall
             .timeout_wait(cx.waker().clone(), self.handle.as_ref().unwrap())
             .map(|_| Ok(()))
     }
@@ -56,7 +58,12 @@ impl Future for Timer {
 /// You should call [`register_global_timer`](rasi_syscall::register_global_timer) first to register implementation,
 /// otherwise this function will cause a panic with `Call register_global_timer first`
 pub async fn timeout_at(deadline: Instant) {
-    let timer = Timer::new(deadline);
+    timeout_at_with(deadline, global_timer()).await
+}
+
+/// Call `timeout_at` with custom [`syscall`](rasi_syscall::Timer), [`read more`](timeout_at)
+pub async fn timeout_at_with(deadline: Instant, syscall: &'static dyn rasi_syscall::Timer) {
+    let timer = Timer::new_with(deadline, syscall);
 
     timer.await.expect("Call register_global_timer first");
 }
@@ -70,5 +77,10 @@ pub async fn timeout_at(deadline: Instant) {
 /// You should call [`register_global_timer`](rasi_syscall::register_global_timer) first to register implementation,
 /// otherwise this function will cause a panic with `Call register_global_timer first`
 pub async fn sleep(duraton: Duration) {
-    timeout_at(Instant::now() + duraton).await
+    sleep_with(duraton, global_timer()).await
+}
+
+/// Call `sleep` with custom [`syscall`](rasi_syscall::Timer), [`read more`](sleep)
+pub async fn sleep_with(duraton: Duration, syscall: &'static dyn rasi_syscall::Timer) {
+    timeout_at_with(Instant::now() + duraton, syscall).await
 }

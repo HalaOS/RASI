@@ -26,7 +26,7 @@ impl FileSystem {
             syscall: global_filesystem(),
         }
     }
-    /// Create new `FileSystem` with customer [`syscall`](rasi_syscall::FileSystem).
+    /// Create new `FileSystem` with custom [`syscall`](rasi_syscall::FileSystem).
     pub fn new_with(syscall: &'static dyn rasi_syscall::FileSystem) -> Self {
         FileSystem { syscall }
     }

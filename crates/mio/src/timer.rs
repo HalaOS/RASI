@@ -1,4 +1,4 @@
-//! This mod implement the syscall [`Timer`].
+//! The implementation of [`Timer`] syscall.
 //!
 //! You can register [`MioTimer`] to the global registry using [`register_mio_timer`], or use it alone.
 
@@ -10,7 +10,7 @@ use std::{
 use mio::Token;
 use rasi_syscall::{register_global_timer, Handle, Timer};
 
-use crate::{poller::get_global_reactor, TokenSequence};
+use crate::{reactor::get_global_reactor, TokenSequence};
 
 pub(crate) struct TimerHandle {
     deadline: Instant,
@@ -37,7 +37,7 @@ impl Timer for MioTimer {
 
         Ok(get_global_reactor()
             .deadline(token, waker, deadline)
-            .map(|_| Handle::new(TimerHandle::new(token, deadline))))
+            .map(|_| TimerHandle::new(token, deadline)))
     }
 
     fn timeout_wait(
@@ -61,4 +61,28 @@ impl Timer for MioTimer {
 /// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_timer`)
 pub fn register_mio_timer() {
     register_global_timer(MioTimer::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::OnceLock, time::Duration};
+
+    use rasi::time::sleep_with;
+
+    use super::MioTimer;
+
+    static INIT: OnceLock<Box<dyn rasi_syscall::Timer>> = OnceLock::new();
+
+    fn get_syscall() -> &'static dyn rasi_syscall::Timer {
+        INIT.get_or_init(|| Box::new(MioTimer::default())).as_ref()
+    }
+
+    #[futures_test::test]
+    async fn test_timeout() {
+        sleep_with(Duration::from_micros(10), get_syscall()).await;
+
+        sleep_with(Duration::from_millis(20), get_syscall()).await;
+
+        sleep_with(Duration::from_secs(1), get_syscall()).await;
+    }
 }

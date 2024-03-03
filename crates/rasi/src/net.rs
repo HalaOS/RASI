@@ -34,7 +34,7 @@ pub struct TcpListener {
 }
 
 impl TcpListener {
-    /// Creates a new TcpListener with customer [syscall](rasi_syscall::Network) which will be bound to the specified address.
+    /// Creates a new TcpListener with custom [syscall](rasi_syscall::Network) which will be bound to the specified address.
     /// The returned listener is ready for accepting connections.
     /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
     /// The port allocated can be queried via the local_addr method.
@@ -61,7 +61,7 @@ impl TcpListener {
     /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
     /// The port allocated can be queried via the local_addr method.
     ///
-    /// Use function [`bind`](TcpListener::bind_with) to specified customer [syscall](rasi_syscall::Network)
+    /// Use function [`bind`](TcpListener::bind_with) to specified custom [syscall](rasi_syscall::Network)
     ///
     /// # Examples
     /// Create a TCP listener bound to 127.0.0.1:0:
@@ -185,7 +185,7 @@ impl TcpStream {
             read_cancel_handle: None,
         }
     }
-    /// Using customer [`syscall`](rasi_syscall::Network) interface to create a new TCP
+    /// Using custom [`syscall`](rasi_syscall::Network) interface to create a new TCP
     /// stream connected to the specified address.
     ///
     /// see [`connect`](TcpStream::connect) for more information.
@@ -635,7 +635,7 @@ impl UdpSocket {
     pub async fn bind<A: ToSocketAddrs>(laddrs: A) -> io::Result<Self> {
         Self::bind_with(laddrs, global_network()).await
     }
-    /// Use customer syscall interface [`Network`] to create a UDP socket from the given address.
+    /// Use custom syscall interface [`Network`] to create a UDP socket from the given address.
     ///
     /// Binding with a port number of 0 will request that the OS assigns a port to this socket. The
     /// port allocated can be queried via the [`local_addr`] method.

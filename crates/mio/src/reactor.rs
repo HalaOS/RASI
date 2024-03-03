@@ -1,3 +1,21 @@
+//! A reactor pattern implementation based on [`mio::Poll`].
+//!
+//! This is the implementation detail of the `syscall`s and is best not used directly.
+//!
+//! You can get the global instance of [`Reactor`] by calling function [`get_global_reactor`].
+//!
+//! # Examples
+//!
+//! ```no_run
+//! # fn main() {
+//! #
+//! use rasi_mio::reactor;
+//!
+//! let reactor = reactor::get_global_reactor();
+//! #
+//! # }
+//! ```
+//!
 use std::{
     io,
     sync::{
@@ -295,7 +313,7 @@ static GLOBAL_REACTOR: OnceLock<ArcReactor> = OnceLock::new();
 /// # Panic
 ///
 /// Call this function more than once or Call this function after calling any
-/// [`Network`] [`Timer`] system interface , will cause a panic with message
+/// [`Network`](rasi_syscall::Network) [`Timer`](rasi_syscall::Timer) system interface , will cause a panic with message
 /// `Call start_reactor_with twice.`
 pub fn start_reactor_with(tick_interval: Duration) {
     if GLOBAL_REACTOR
@@ -395,13 +413,15 @@ mod tests {
     #[test]
     fn test_next_tick() {
         let time_wheel = Timewheel::new(Duration::from_millis(100));
+
+        let token = Token::next();
         assert_eq!(
-            time_wheel.new_timer(Token::next(), Instant::now() + Duration::from_millis(100)),
+            time_wheel.new_timer(token, Instant::now() + Duration::from_millis(100)),
             Some(1)
         );
 
         sleep(Duration::from_millis(200));
 
-        assert_eq!(time_wheel.next_tick(), Some(vec![Token(0)]));
+        assert_eq!(time_wheel.next_tick(), Some(vec![token]));
     }
 }

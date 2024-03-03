@@ -33,13 +33,14 @@ impl Handle {
 
     /// Returns `T` reference to the inner value if it is of type `T`, or [`None`].
     ///
-    /// As required by the `NASI`, there is no way to get a mutable reference to `T`,
+    /// As required by the `RASI`, there is no way to get a mutable reference to `T`,
     /// so the inner type `T` should implements `Send + Sync` auto traits.
     pub fn downcast<T>(&self) -> Option<&T>
     where
         T: Send + Sync + 'static,
     {
-        if self.type_id == TypeId::of::<T>() {
+        let type_id = TypeId::of::<T>();
+        if self.type_id == type_id {
             Some(unsafe { &*(self.data as *const T) })
         } else {
             None

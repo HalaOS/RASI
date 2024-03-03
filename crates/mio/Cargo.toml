@@ -16,3 +16,7 @@ boxcar = { workspace = true }
 dashmap = { workspace = true }
 
 rasi-syscall = { workspace = true, features = ["net", "time"] }
+
+[dev-dependencies]
+futures-test = { workspace = true }
+rasi = { workspace = true }
