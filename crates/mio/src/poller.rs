@@ -10,9 +10,6 @@ use std::{
 
 use dashmap::DashMap;
 use mio::{event, Interest, Token};
-use rasi_syscall::Handle;
-
-use crate::TokenSequence;
 
 /// The hashed time wheel implementation to handle a massive set of timer tracking tasks.
 struct Timewheel {
@@ -178,13 +175,19 @@ impl Reactor {
     }
 
     /// Create new `deadline` timer, returns [`None`] if the `deadline` instant is reached.
-    pub fn deadline(&self, deadline: Instant) -> io::Result<Option<Handle>> {
-        let token = Token::next();
+    pub fn deadline(&self, token: Token, waker: Waker, deadline: Instant) -> Option<u64> {
+        self.write_op_wakers.insert(token, waker);
 
-        Ok(self
-            .timewheel
-            .new_timer(token, deadline)
-            .map(|_| Handle::new(token)))
+        // Adding a timer was successful.
+        if let Some(id) = self.timewheel.new_timer(token, deadline) {
+            Some(id)
+        } else {
+            // Adding a timer fails because the `deadline` has expired.
+            //
+            // So remove the waker from memory immediately.
+            self.write_op_wakers.remove(&token);
+            None
+        }
     }
 
     /// Add a [`interests`](Interest) [`listener`](Waker) to this reactor.
@@ -323,6 +326,8 @@ mod tests {
         thread::sleep,
         time::Duration,
     };
+
+    use crate::TokenSequence;
 
     use super::*;
 

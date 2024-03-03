@@ -12,7 +12,7 @@ use crate::handle::Handle;
 /// Timer-related system call interface
 pub trait Timer: Send + Sync {
     /// Create new `deadline` timer, returns [`None`] if the `deadline` instant is reached.
-    fn deadline(&self, deadline: Instant) -> io::Result<Option<Handle>>;
+    fn deadline(&self, waker: Waker, deadline: Instant) -> io::Result<Option<Handle>>;
 
     /// Wait timeout event.
     ///

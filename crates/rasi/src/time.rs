@@ -3,29 +3,49 @@
 
 use std::{
     io,
+    task::Poll,
     time::{Duration, Instant},
 };
 
 use futures::Future;
 use rasi_syscall::Handle;
 
-struct Timer(Handle);
+struct Timer {
+    deadline: Instant,
+    handle: Option<Handle>,
+}
 
 impl Timer {
-    fn new(deadline: Instant) -> io::Result<Option<Self>> {
-        rasi_syscall::global_timer()
-            .deadline(deadline)
-            .map(|h| h.map(|h| Self(h)))
+    fn new(deadline: Instant) -> Self {
+        Self {
+            deadline,
+            handle: None,
+        }
     }
 }
 
 impl Future for Timer {
-    type Output = ();
+    type Output = io::Result<()>;
     fn poll(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        rasi_syscall::global_timer().timeout_wait(cx.waker().clone(), &self.0)
+        if self.handle.is_none() {
+            let handle =
+                rasi_syscall::global_timer().deadline(cx.waker().clone(), self.deadline)?;
+
+            if handle.is_none() {
+                return Poll::Ready(Ok(()));
+            }
+
+            self.handle = handle;
+
+            return Poll::Pending;
+        }
+
+        rasi_syscall::global_timer()
+            .timeout_wait(cx.waker().clone(), self.handle.as_ref().unwrap())
+            .map(|_| Ok(()))
     }
 }
 
@@ -36,9 +56,9 @@ impl Future for Timer {
 /// You should call [`register_global_timer`](rasi_syscall::register_global_timer) first to register implementation,
 /// otherwise this function will cause a panic with `Call register_global_timer first`
 pub async fn timeout_at(deadline: Instant) {
-    if let Some(timer) = Timer::new(deadline).expect("Call register_global_timer first") {
-        timer.await
-    }
+    let timer = Timer::new(deadline);
+
+    timer.await.expect("Call register_global_timer first");
 }
 
 /// Sleeps for the specified amount of time.
