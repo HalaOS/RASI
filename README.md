@@ -40,3 +40,8 @@ The `RASI` defines a set of `Syscalls` to fill in the missing abstractions in th
 
 All of the above `Syscalls` can be implemented separately and injected into a runtime portable program. When replacing any of the system call modules, your program code does not need to be changed except for the `inject code`.
 
+### Examples
+
+Visit the [`reference implementation`](crates/default/README.md) of the syscall for more information.
+
+> *Also, you can apply it to your portable programs as appropriate.*
