@@ -42,6 +42,6 @@ All of the above `Syscalls` can be implemented separately and injected into a ru
 
 ### Examples
 
-Visit the [`reference implementation`](crates/default/README.md) of the syscall for more information.
+Visit the [`reference implementation`](crates/default) of the syscall for more information.
 
 > *Also, you can apply it to your portable programs as appropriate.*
