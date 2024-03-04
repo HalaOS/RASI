@@ -1,5 +1,3 @@
-use std::io;
-
 use futures::{executor::ThreadPool, task::SpawnExt, AsyncReadExt};
 use rasi::{
     futures::AsyncWriteExt,
@@ -8,16 +6,18 @@ use rasi::{
 
 use crate::async_spec;
 
-pub async fn test_tcp_ttl(syscall: &'static dyn rasi_syscall::Network) -> io::Result<()> {
-    let server = TcpListener::bind_with("127.0.0.1:0", syscall).await?;
+pub async fn test_tcp_ttl(syscall: &'static dyn rasi_syscall::Network) {
+    let server = TcpListener::bind_with("127.0.0.1:0", syscall)
+        .await
+        .unwrap();
 
-    server.set_ttl(128)?;
+    server.set_ttl(128).unwrap();
 
-    assert_eq!(128, server.ttl()?);
+    assert_eq!(128, server.ttl().unwrap());
 
     let thread_pool = ThreadPool::new().unwrap();
 
-    let raddr = server.local_addr()?;
+    let raddr = server.local_addr().unwrap();
 
     thread_pool
         .spawn(async move {
@@ -29,25 +29,25 @@ pub async fn test_tcp_ttl(syscall: &'static dyn rasi_syscall::Network) -> io::Re
         })
         .unwrap();
 
-    let client = TcpStream::connect_with(raddr, syscall).await?;
+    let client = TcpStream::connect_with(raddr, syscall).await.unwrap();
 
-    client.set_ttl(128)?;
+    client.set_ttl(128).unwrap();
 
-    assert_eq!(128, client.ttl()?);
+    assert_eq!(128, client.ttl().unwrap());
 
-    client.set_nodelay(true)?;
+    client.set_nodelay(true).unwrap();
 
-    assert!(client.nodelay()?);
-
-    Ok(())
+    assert!(client.nodelay().unwrap());
 }
 
-pub async fn test_tcp_echo(syscall: &'static dyn rasi_syscall::Network) -> io::Result<()> {
+pub async fn test_tcp_echo(syscall: &'static dyn rasi_syscall::Network) {
     let thread_pool = ThreadPool::new().unwrap();
 
-    let server = TcpListener::bind_with("127.0.0.1:0", syscall).await?;
+    let server = TcpListener::bind_with("127.0.0.1:0", syscall)
+        .await
+        .unwrap();
 
-    let raddr = server.local_addr()?;
+    let raddr = server.local_addr().unwrap();
 
     let message = b"hello world";
 
@@ -65,17 +65,15 @@ pub async fn test_tcp_echo(syscall: &'static dyn rasi_syscall::Network) -> io::R
         })
         .unwrap();
 
-    let mut client = TcpStream::connect_with(raddr, syscall).await?;
+    let mut client = TcpStream::connect_with(raddr, syscall).await.unwrap();
 
-    client.write(message).await?;
+    client.write(message).await.unwrap();
 
     let mut buf = vec![0; 32];
 
-    let read_size = client.read(&mut buf).await?;
+    let read_size = client.read(&mut buf).await.unwrap();
 
     assert_eq!(&buf[..read_size], message);
-
-    Ok(())
 }
 
 pub async fn run_tcp_spec(syscall: &'static dyn rasi_syscall::Network) {

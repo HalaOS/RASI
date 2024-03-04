@@ -6,8 +6,10 @@ use std::{
     io::{Read, Seek, Write},
 };
 
-use rasi_syscall::{ready, FileOpenMode, FileSystem, Handle};
+use rasi_syscall::{ready, register_global_filesystem, FileOpenMode, FileSystem, Handle};
 
+/// The wrapper of [`std::fs`] that implement [`FileSystem`] trait.
+#[derive(Default)]
 pub struct StdFileSystem;
 
 impl FileSystem for StdFileSystem {
@@ -296,5 +298,33 @@ impl FileSystem for StdFileSystem {
         path: &std::path::Path,
     ) -> rasi_syscall::CancelablePoll<std::io::Result<std::fs::Metadata>> {
         ready(|| std::fs::symlink_metadata(path))
+    }
+}
+
+/// This function using [`register_global_network`] to register the [`StdFileSystem`] to global registry.
+///
+/// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_filesystem`)
+pub fn register_std_filesystem() {
+    register_global_filesystem(StdFileSystem)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::OnceLock;
+
+    use rasi_spec::fs::run_fs_spec;
+
+    use super::*;
+
+    static INIT: OnceLock<Box<dyn rasi_syscall::FileSystem>> = OnceLock::new();
+
+    fn get_syscall() -> &'static dyn rasi_syscall::FileSystem {
+        INIT.get_or_init(|| Box::new(StdFileSystem::default()))
+            .as_ref()
+    }
+
+    #[futures_test::test]
+    async fn test_std_fs() {
+        run_fs_spec(get_syscall()).await;
     }
 }

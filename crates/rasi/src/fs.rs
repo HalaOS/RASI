@@ -696,9 +696,9 @@ impl AsyncWrite for File {
 
     fn poll_close(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
+        self.poll_flush(cx)
     }
 }
 

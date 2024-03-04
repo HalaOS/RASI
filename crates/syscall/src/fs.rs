@@ -233,7 +233,7 @@ pub trait FileSystem: Sync + Send {
     /// Renames a file or directory to a new location.
     /// If a file or directory already exists at the target location, it will be overwritten by this operation.
     /// This function is an async version of std::fs::rename.
-    fn rename(&self, waker: Waker, frmo: &Path, to: &Path) -> CancelablePoll<io::Result<()>>;
+    fn rename(&self, waker: Waker, from: &Path, to: &Path) -> CancelablePoll<io::Result<()>>;
 
     /// Changes the permissions of a file or directory.
     /// This function is an async version of [`std::fs::set_permissions`].

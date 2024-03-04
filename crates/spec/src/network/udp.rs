@@ -1,32 +1,31 @@
-use std::io;
-
 use rasi::net::UdpSocket;
 
 use crate::async_spec;
 
-pub async fn test_udp_echo(syscall: &'static dyn rasi_syscall::Network) -> io::Result<()> {
-    let client = UdpSocket::bind_with("127.0.0.1:0", syscall).await?;
-    let server = UdpSocket::bind_with("127.0.0.1:0", syscall).await?;
+pub async fn test_udp_echo(syscall: &'static dyn rasi_syscall::Network) {
+    let client = UdpSocket::bind_with("127.0.0.1:0", syscall).await.unwrap();
+    let server = UdpSocket::bind_with("127.0.0.1:0", syscall).await.unwrap();
 
     let message = b"hello world";
 
-    client.send_to(message, server.local_addr()?).await?;
+    client
+        .send_to(message, server.local_addr().unwrap())
+        .await
+        .unwrap();
 
     let mut buf = vec![0; 32];
 
-    let (read_size, raddr) = server.recv_from(&mut buf).await?;
+    let (read_size, raddr) = server.recv_from(&mut buf).await.unwrap();
 
     assert_eq!(&buf[..read_size], message);
-    assert_eq!(raddr, client.local_addr()?);
+    assert_eq!(raddr, client.local_addr().unwrap());
 
-    server.send_to(&buf[..read_size], raddr).await?;
+    server.send_to(&buf[..read_size], raddr).await.unwrap();
 
-    let (read_size, raddr) = client.recv_from(&mut buf).await?;
+    let (read_size, raddr) = client.recv_from(&mut buf).await.unwrap();
 
     assert_eq!(&buf[..read_size], message);
-    assert_eq!(raddr, server.local_addr()?);
-
-    Ok(())
+    assert_eq!(raddr, server.local_addr().unwrap());
 }
 
 pub async fn run_udp_spec(syscall: &'static dyn rasi_syscall::Network) {
