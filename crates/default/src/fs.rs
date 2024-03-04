@@ -4,7 +4,6 @@
 use std::{
     fs::{DirEntry, File, OpenOptions, ReadDir},
     io::{Read, Seek, Write},
-    mem::transmute,
 };
 
 use rasi_syscall::{ready, FileOpenMode, FileSystem, Handle};
