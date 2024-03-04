@@ -56,7 +56,7 @@ impl Timer for MioTimer {
     }
 }
 
-/// This function using [`register_global_timer`] to register the [`MioTimer`] implementation to global registry.
+/// This function using [`register_global_timer`] to register the [`MioTimer`] to global registry.
 ///
 /// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_timer`)
 pub fn register_mio_timer() {

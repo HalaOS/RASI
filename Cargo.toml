@@ -25,3 +25,4 @@ mio = { version = "^0.8.9", features = ["os-poll", "net"] }
 rasi-syscall = { path = "./crates/syscall", default-features = false, version = "^0.1" }
 rasi = { path = "./crates/rasi", version = "^0.1" }
 rasi-spec = { path = "./crates/spec", version = "^0.1" }
+rasi-default = { path = "./crates/default", version = "^0.1" }

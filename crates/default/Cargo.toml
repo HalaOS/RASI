@@ -1,9 +1,9 @@
 [package]
-description = "a reference implementation of RASI network and timer syscalls"
+description = "a reference implementation of RASI syscalls"
 documentation = "https://docs.rs/rasi-mio"
 edition.workspace = true
 license = "MIT"
-name = "rasi-mio"
+name = "rasi-default"
 repository.workspace = true
 version.workspace = true
 
@@ -15,6 +15,7 @@ num_cpus = { workspace = true }
 boxcar = { workspace = true }
 dashmap = { workspace = true }
 thiserror = { workspace = true }
+futures = { workspace = true, features = ["std", "executor", "thread-pool"] }
 
 rasi-syscall = { workspace = true, features = ["net", "time"] }
 

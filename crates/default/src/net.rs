@@ -9,7 +9,7 @@ use mio::{
     net::{TcpListener, TcpStream, UdpSocket},
     Interest, Token,
 };
-use rasi_syscall::{ready, Handle, Network};
+use rasi_syscall::{ready, register_global_network, Handle, Network};
 
 use crate::{
     reactor::{get_global_reactor, would_block, MioSocket},
@@ -369,6 +369,13 @@ impl Network for MioNetwork {
 
         socket.shutdown(how)
     }
+}
+
+/// This function using [`register_global_network`] to register the [`MioNetwork`] to global registry.
+///
+/// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_network`)
+pub fn register_mio_network() {
+    register_global_network(MioNetwork::default())
 }
 
 #[cfg(test)]
