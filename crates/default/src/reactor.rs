@@ -9,7 +9,7 @@
 //! ```no_run
 //! # fn main() {
 //! #
-//! use rasi_mio::reactor;
+//! use rasi_default::reactor;
 //!
 //! let reactor = reactor::get_global_reactor();
 //! #
