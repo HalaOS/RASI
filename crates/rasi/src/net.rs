@@ -7,7 +7,7 @@
 use std::{
     fmt::Display,
     io,
-    net::{IpAddr, SocketAddr, ToSocketAddrs},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     sync::Arc,
     task::Poll,
 };
@@ -415,7 +415,7 @@ impl AsyncRead for TcpStream {
             .syscall
             .tcp_stream_read(cx.waker().clone(), &self.sys_socket, buf)
         {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
                 self.read_cancel_handle = Some(read_cancel_handle);
                 Poll::Pending
@@ -434,7 +434,7 @@ impl AsyncWrite for TcpStream {
             .syscall
             .tcp_stream_write(cx.waker().clone(), &self.sys_socket, buf)
         {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
                 self.write_cancel_handle = Some(write_cancel_handle);
                 Poll::Pending
@@ -493,7 +493,7 @@ impl AsyncRead for TcpStreamRead {
             .syscall
             .tcp_stream_read(cx.waker().clone(), &self.sys_socket, buf)
         {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
                 self.read_cancel_handle = Some(read_cancel_handle);
                 Poll::Pending
@@ -537,7 +537,7 @@ impl AsyncWrite for TcpStreamWrite {
             .syscall
             .tcp_stream_write(cx.waker().clone(), &self.sys_socket, buf)
         {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
                 self.write_cancel_handle = Some(write_cancel_handle);
                 Poll::Pending
@@ -788,16 +788,40 @@ impl UdpSocket {
     /// a valid multicast address, and `interface` is the address of the local interface with which
     /// the system should join the multicast group. If it's equal to `INADDR_ANY` then an
     /// appropriate interface is chosen by the system.
-    pub fn join_multicast(&self, multiaddr: IpAddr, interface: IpAddr) -> io::Result<()> {
+    pub fn join_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> io::Result<()> {
         self.syscall
-            .udp_join_multicast(&self.sys_socket, &multiaddr, &interface)
+            .udp_join_multicast_v4(&self.sys_socket, multiaddr, interface)
+    }
+
+    /// Executes an operation of the `IPV6_ADD_MEMBERSHIP` type.
+    ///
+    /// This function specifies a new multicast group for this socket to join.
+    /// The address must be a valid multicast address, and `interface` is the
+    /// index of the interface to join/leave (or 0 to indicate any interface).
+    pub fn join_multicast_v6(&self, multiaddr: Ipv6Addr, interface: u32) -> io::Result<()> {
+        self.syscall
+            .udp_join_multicast_v6(&self.sys_socket, &multiaddr, interface)
     }
 
     /// Executes an operation of the `IP_DROP_MEMBERSHIP` type.
     ///
-    /// For more information about this option, see [`join_multicast`](UdpSocket::join_multicast).
-    pub fn leave_multicast(&self, multiaddr: IpAddr, interface: IpAddr) -> io::Result<()> {
+    /// For more information about this option, see
+    /// [`join_multicast_v4`][link].
+    ///
+    /// [link]: #method.join_multicast_v4
+    pub fn leave_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> io::Result<()> {
         self.syscall
-            .udp_leave_multicast(&self.sys_socket, &multiaddr, &interface)
+            .udp_leave_multicast_v4(&self.sys_socket, multiaddr, interface)
+    }
+
+    /// Executes an operation of the `IPV6_DROP_MEMBERSHIP` type.
+    ///
+    /// For more information about this option, see
+    /// [`join_multicast_v6`][link].
+    ///
+    /// [link]: #method.join_multicast_v6
+    pub fn leave_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> io::Result<()> {
+        self.syscall
+            .udp_leave_multicast_v6(&self.sys_socket, multiaddr, interface)
     }
 }

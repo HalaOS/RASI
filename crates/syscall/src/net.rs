@@ -2,7 +2,7 @@
 
 use std::{
     io,
-    net::{IpAddr, Shutdown, SocketAddr},
+    net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr},
     sync::OnceLock,
     task::Waker,
 };
@@ -18,20 +18,49 @@ pub trait Network: Sync + Send {
     /// address of the local interface with which the system should join the
     /// multicast group. If it’s equal to INADDR_ANY then an appropriate
     /// interface is chosen by the system.
-    fn udp_join_multicast(
+    fn udp_join_multicast_v4(
         &self,
         handle: &Handle,
-        multiaddr: &IpAddr,
-        interface: &IpAddr,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
     ) -> io::Result<()>;
 
-    /// Executes an operation of the IP_DROP_MEMBERSHIP type.
-    /// For more information about this option, see [`udp_join_multicast`](Self::udp_join_multicast).
-    fn udp_leave_multicast(
+    /// Executes an operation of the `IPV6_ADD_MEMBERSHIP` type.
+    ///
+    /// This function specifies a new multicast group for this socket to join.
+    /// The address must be a valid multicast address, and `interface` is the
+    /// index of the interface to join/leave (or 0 to indicate any interface).
+    fn udp_join_multicast_v6(
         &self,
         handle: &Handle,
-        multiaddr: &IpAddr,
-        interface: &IpAddr,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
+    ) -> io::Result<()>;
+
+    /// Executes an operation of the `IP_DROP_MEMBERSHIP` type.
+    ///
+    /// For more information about this option, see
+    /// [`join_multicast_v4`][link].
+    ///
+    /// [link]: #method.join_multicast_v4
+    fn udp_leave_multicast_v4(
+        &self,
+        handle: &Handle,
+        multiaddr: &Ipv4Addr,
+        interface: &Ipv4Addr,
+    ) -> io::Result<()>;
+
+    /// Executes an operation of the `IPV6_DROP_MEMBERSHIP` type.
+    ///
+    /// For more information about this option, see
+    /// [`join_multicast_v6`][link].
+    ///
+    /// [link]: #method.join_multicast_v6
+    fn udp_leave_multicast_v6(
+        &self,
+        handle: &Handle,
+        multiaddr: &Ipv6Addr,
+        interface: u32,
     ) -> io::Result<()>;
 
     /// Sets the value of the SO_BROADCAST option for this socket.

@@ -22,7 +22,7 @@ where
 
     fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match (self.f)(cx) {
-            CancelablePoll::Success(v) => Poll::Ready(v),
+            CancelablePoll::Ready(v) => Poll::Ready(v),
             CancelablePoll::Pending(cancel_handle) => {
                 self.cancel_handle = Some(cancel_handle);
 

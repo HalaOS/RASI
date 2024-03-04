@@ -673,7 +673,7 @@ impl AsyncWrite for File {
             .syscall
             .file_write(cx.waker().clone(), &self.handle, buf)
         {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
                 self.write_cancel_handle = Some(write_cancel_handle);
                 Poll::Pending
@@ -686,7 +686,7 @@ impl AsyncWrite for File {
         cx: &mut std::task::Context<'_>,
     ) -> Poll<io::Result<()>> {
         match self.syscall.file_flush(cx.waker().clone(), &self.handle) {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
                 self.write_cancel_handle = Some(write_cancel_handle);
                 Poll::Pending
@@ -712,7 +712,7 @@ impl AsyncRead for File {
             .syscall
             .file_read(cx.waker().clone(), &self.handle, buf)
         {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
                 self.write_cancel_handle = Some(write_cancel_handle);
                 Poll::Pending
@@ -731,7 +731,7 @@ impl AsyncSeek for File {
             .syscall
             .file_seek(cx.waker().clone(), &self.handle, pos)
         {
-            rasi_syscall::CancelablePoll::Success(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
                 self.read_cancel_handle = Some(read_cancel_handle);
                 Poll::Pending
@@ -766,13 +766,13 @@ impl Stream for ReadDir {
             .syscall
             .dir_entry_next(cx.waker().clone(), &self.handle)
         {
-            rasi_syscall::CancelablePoll::Success(Ok(r)) => Poll::Ready(r.map(|h| {
+            rasi_syscall::CancelablePoll::Ready(Ok(r)) => Poll::Ready(r.map(|h| {
                 Ok(DirEntry {
                     handle: h,
                     syscall: self.syscall,
                 })
             })),
-            rasi_syscall::CancelablePoll::Success(Err(err)) => Poll::Ready(Some(Err(err))),
+            rasi_syscall::CancelablePoll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
             rasi_syscall::CancelablePoll::Pending(cancel_handle) => {
                 self.cancel_handle = Some(cancel_handle);
                 Poll::Pending

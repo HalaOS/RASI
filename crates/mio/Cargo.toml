@@ -14,6 +14,7 @@ parking_lot = { workspace = true }
 num_cpus = { workspace = true }
 boxcar = { workspace = true }
 dashmap = { workspace = true }
+thiserror = { workspace = true }
 
 rasi-syscall = { workspace = true, features = ["net", "time"] }
 

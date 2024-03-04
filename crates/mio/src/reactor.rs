@@ -18,6 +18,7 @@
 //!
 use std::{
     io,
+    ops::Deref,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, OnceLock,
@@ -27,7 +28,79 @@ use std::{
 };
 
 use dashmap::DashMap;
-use mio::{event, Interest, Token};
+use mio::{
+    event::{self, Source},
+    Interest, Token,
+};
+use rasi_syscall::{CancelablePoll, Handle};
+
+/// A wrapper of mio event source.
+pub(crate) struct MioSocket<S: Source> {
+    /// Associcated token.
+    pub(crate) token: Token,
+    /// net source type.
+    pub(crate) socket: S,
+}
+
+impl<S: Source> From<(Token, S)> for MioSocket<S> {
+    fn from(value: (Token, S)) -> Self {
+        Self {
+            token: value.0,
+            socket: value.1,
+        }
+    }
+}
+
+impl<S: Source> Deref for MioSocket<S> {
+    type Target = S;
+    fn deref(&self) -> &Self::Target {
+        &self.socket
+    }
+}
+
+impl<S: Source> Drop for MioSocket<S> {
+    fn drop(&mut self) {
+        get_global_reactor().deregister(&mut self.socket).unwrap();
+    }
+}
+
+/// Create a [`CancelablePoll`] instance from [`std::io::Result`] that returns by function `f`.
+///
+/// If the function `f` result error is [`Interrupted`](io::ErrorKind::Interrupted),
+/// `would_block` will call `f` again immediately.
+pub(crate) fn would_block<T, F>(
+    token: Token,
+    waker: Waker,
+    interests: Interest,
+    mut f: F,
+) -> CancelablePoll<io::Result<T>>
+where
+    F: FnMut() -> io::Result<T>,
+{
+    get_global_reactor().once(token, interests, waker);
+
+    loop {
+        match f() {
+            Ok(t) => {
+                return {
+                    get_global_reactor().remove_listeners(token, interests);
+
+                    CancelablePoll::Ready(Ok(t))
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                return CancelablePoll::Pending(Handle::new(()));
+            }
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => {
+                continue;
+            }
+            Err(err) => {
+                get_global_reactor().remove_listeners(token, interests);
+                return CancelablePoll::Ready(Err(err));
+            }
+        }
+    }
+}
 
 /// The hashed time wheel implementation to handle a massive set of timer tracking tasks.
 struct Timewheel {
@@ -190,6 +263,14 @@ impl Reactor {
         S: event::Source + ?Sized,
     {
         self.mio_registry.register(source, token, interests)
+    }
+
+    /// Deregister an [`event::Source`] from the underlying [`mio::Poll`] instance.
+    pub fn deregister<S>(&self, source: &mut S) -> io::Result<()>
+    where
+        S: event::Source + ?Sized,
+    {
+        self.mio_registry.deregister(source)
     }
 
     /// Create new `deadline` timer, returns [`None`] if the `deadline` instant is reached.
