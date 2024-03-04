@@ -538,6 +538,22 @@ impl FileSystem {
     }
 
     /// Opens a file with provided [`mode`](FileOpenMode)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+    /// #
+    /// use rasi::fs;
+    /// use rasi::prelude::*;
+    ///
+    /// fs::open_file(
+    ///    "does_not_exist.txt",
+    ///    FileOpenMode::CreateNew | FileOpenMode::Writable,
+    /// ).await?;
+    /// #
+    /// # Ok(()) }) }
+    /// ```
     pub async fn open_file<P: AsRef<Path>>(
         &self,
         path: P,
@@ -946,7 +962,7 @@ impl DirEntry {
     }
 }
 
-/// Invoke `canonicalize` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `canonicalize` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::canonicalize`] for more details.
 #[inline]
@@ -954,7 +970,7 @@ pub async fn canonicalize<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
     FileSystem::new().canonicalize(path).await
 }
 
-/// Invoke `copy` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `copy` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::copy`] for more details.
 #[inline]
@@ -962,7 +978,7 @@ pub async fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<
     FileSystem::new().copy(from, to).await
 }
 
-/// Invoke `create_dir` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `create_dir` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::create_dir`] for more details.
 #[inline]
@@ -970,7 +986,7 @@ pub async fn create_dir<P: AsRef<Path>>(path: P) -> io::Result<()> {
     FileSystem::new().create_dir(path).await
 }
 
-/// Invoke `create_dir_all` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `create_dir_all` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::create_dir_all`] for more details.
 #[inline]
@@ -978,7 +994,7 @@ pub async fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     FileSystem::new().create_dir_all(path).await
 }
 
-/// Invoke `hard_link` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `hard_link` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::hard_link`] for more details.
 #[inline]
@@ -986,7 +1002,7 @@ pub async fn hard_link<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Re
     FileSystem::new().hard_link(from, to).await
 }
 
-/// Invoke `metadata` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `metadata` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::metadata`] for more details.
 #[inline]
@@ -994,7 +1010,7 @@ pub async fn metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata> {
     FileSystem::new().metadata(path).await
 }
 
-/// Invoke `read_link` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `read_link` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::read_link`] for more details.
 #[inline]
@@ -1002,7 +1018,7 @@ pub async fn read_link<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
     FileSystem::new().read_link(path).await
 }
 
-/// Invoke `remove_dir` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `remove_dir` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::remove_dir`] for more details.
 #[inline]
@@ -1010,7 +1026,7 @@ pub async fn remove_dir<P: AsRef<Path>>(path: P) -> io::Result<()> {
     FileSystem::new().remove_dir(path).await
 }
 
-/// Invoke `remove_dir_all` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `remove_dir_all` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::remove_dir_all`] for more details.
 #[inline]
@@ -1018,7 +1034,7 @@ pub async fn remove_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
     FileSystem::new().remove_dir_all(path).await
 }
 
-/// Invoke `remove_file` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `remove_file` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::remove_file`] for more details.
 #[inline]
@@ -1026,7 +1042,7 @@ pub async fn remove_file<P: AsRef<Path>>(path: P) -> io::Result<()> {
     FileSystem::new().remove_file(path).await
 }
 
-/// Invoke `rename` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `rename` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::rename`] for more details.
 #[inline]
@@ -1034,7 +1050,7 @@ pub async fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Resul
     FileSystem::new().rename(from, to).await
 }
 
-/// Invoke `set_permissions` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `set_permissions` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::set_permissions`] for more details.
 #[inline]
@@ -1042,7 +1058,7 @@ pub async fn set_permissions<P: AsRef<Path>>(path: P, perm: Permissions) -> io::
     FileSystem::new().set_permissions(path, perm).await
 }
 
-/// Invoke `symlink_metadata` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `symlink_metadata` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::symlink_metadata`] for more details.
 #[inline]
@@ -1050,7 +1066,7 @@ pub async fn symlink_metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata> {
     FileSystem::new().symlink_metadata(path).await
 }
 
-/// Invoke `read_dir` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `read_dir` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::read_dir`] for more details.
 #[inline]
@@ -1058,7 +1074,7 @@ pub async fn read_dir<P: AsRef<Path>>(path: P) -> io::Result<ReadDir> {
     FileSystem::new().read_dir(path).await
 }
 
-/// Invoke `open_file` via global register [`syscall`](rasi_syscall::FileSystem)
+/// Invoke `open_file` via global registered [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::open_file`] for more details.
 /// Opens a file with [`open_mode`](FileOpenMode)
@@ -1066,7 +1082,7 @@ pub async fn open_file<P: AsRef<Path>>(path: P, open_mode: FileOpenMode) -> io::
     FileSystem::new().open_file(path, open_mode).await
 }
 
-/// Invoke `exists` via global register [`syscall`](rasi_syscall::FileSystem) to check if provided path is exists.
+/// Invoke `exists` via global registered [`syscall`](rasi_syscall::FileSystem) to check if provided path is exists.
 ///
 /// See [`FileSystem::exists`] for more details.
 pub async fn exists<P: AsRef<Path>>(path: P) -> bool {
