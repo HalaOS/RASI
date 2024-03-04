@@ -16,7 +16,7 @@ use crate::{
     TokenSequence,
 };
 
-/// This type implements the system call [`network`] using the underlying [`mio`].
+/// This type implements the system call [`Network`] using the underlying [`mio`].
 #[derive(Default)]
 pub struct MioNetwork {}
 
