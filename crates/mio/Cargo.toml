@@ -19,4 +19,4 @@ rasi-syscall = { workspace = true, features = ["net", "time"] }
 
 [dev-dependencies]
 futures-test = { workspace = true }
-rasi = { workspace = true }
+rasi-spec = { workspace = true }

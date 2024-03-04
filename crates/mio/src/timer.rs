@@ -65,9 +65,9 @@ pub fn register_mio_timer() {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::OnceLock, time::Duration};
+    use std::sync::OnceLock;
 
-    use rasi::time::sleep_with;
+    use rasi_spec::timer::run_timer_spec;
 
     use super::MioTimer;
 
@@ -79,10 +79,6 @@ mod tests {
 
     #[futures_test::test]
     async fn test_timeout() {
-        sleep_with(Duration::from_micros(10), get_syscall()).await;
-
-        sleep_with(Duration::from_millis(20), get_syscall()).await;
-
-        sleep_with(Duration::from_secs(1), get_syscall()).await;
+        run_timer_spec(get_syscall()).await;
     }
 }
