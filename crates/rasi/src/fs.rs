@@ -537,7 +537,7 @@ impl FileSystem {
         })
     }
 
-    /// Opens a file with provide mode
+    /// Opens a file with provided [`mode`](FileOpenMode)
     pub async fn open_file<P: AsRef<Path>>(
         &self,
         path: P,
@@ -550,6 +550,25 @@ impl FileSystem {
         .await?;
 
         Ok(File::new(handle, self.syscall))
+    }
+
+    /// Returns true if the path points at an existing entity.
+    /// This function will traverse symbolic links to query information about the destination file. In case of broken symbolic links this will return false.
+    ///
+    /// If you cannot access the directory containing the file, e.g., because of a permission error, this will return false.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+    /// #
+    /// use std::path::Path;
+    /// assert_eq!(rasi::fs::exists(Path::new("does_not_exist.txt")).await, false);
+    /// #
+    /// # Ok(()) }) }
+    /// ```
+    pub async fn exists<P: AsRef<Path>>(&self, path: P) -> bool {
+        self.metadata(path).await.is_ok()
     }
 }
 
@@ -1042,7 +1061,14 @@ pub async fn read_dir<P: AsRef<Path>>(path: P) -> io::Result<ReadDir> {
 /// Invoke `open_file` via global register [`syscall`](rasi_syscall::FileSystem)
 ///
 /// See [`FileSystem::open_file`] for more details.
-/// Opens a file with provide mode
+/// Opens a file with [`open_mode`](FileOpenMode)
 pub async fn open_file<P: AsRef<Path>>(path: P, open_mode: FileOpenMode) -> io::Result<File> {
     FileSystem::new().open_file(path, open_mode).await
+}
+
+/// Invoke `exists` via global register [`syscall`](rasi_syscall::FileSystem) to check if provided path is exists.
+///
+/// See [`FileSystem::exists`] for more details.
+pub async fn exists<P: AsRef<Path>>(path: P) -> bool {
+    FileSystem::new().exists(path).await
 }

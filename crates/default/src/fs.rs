@@ -301,7 +301,7 @@ impl FileSystem for StdFileSystem {
     }
 }
 
-/// This function using [`register_global_network`] to register the [`StdFileSystem`] to global registry.
+/// This function using [`register_global_filesystem`] to register the [`StdFileSystem`] to global registry.
 ///
 /// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_filesystem`)
 pub fn register_std_filesystem() {
