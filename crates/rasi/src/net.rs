@@ -124,6 +124,18 @@ impl TcpListener {
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.syscall.tcp_listener_local_addr(&self.sys_socket)
     }
+
+    /// Gets the value of the IP_TTL option for this socket.
+    /// For more information about this option, see [`set_ttl`](Self::set_ttl).
+    pub fn ttl(&self) -> io::Result<u32> {
+        self.syscall.tcp_listener_ttl(&self.sys_socket)
+    }
+
+    /// Sets the value for the IP_TTL option on this socket.
+    /// This value sets the time-to-live field that is used in every packet sent from this socket.
+    pub fn set_ttl(&self, ttl: u32) -> io::Result<()> {
+        self.syscall.tcp_listener_set_ttl(&self.sys_socket, ttl)
+    }
 }
 
 /// A TCP stream between a local and a remote socket.

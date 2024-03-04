@@ -17,6 +17,7 @@ use crate::{
 };
 
 /// This type implements the system call [`network`] using the underlying [`mio`].
+#[derive(Default)]
 pub struct MioNetwork {}
 
 impl Network for MioNetwork {
@@ -229,9 +230,20 @@ impl Network for MioNetwork {
             .expect("Expect TcpListener.");
 
         would_block(socket.token, waker, Interest::READABLE, || {
-            socket.accept().map(|(stream, raddr)| {
-                (Handle::new(MioSocket::from((Token::next(), stream))), raddr)
-            })
+            match socket.accept() {
+                Ok((mut stream, raddr)) => {
+                    let token = Token::next();
+
+                    get_global_reactor().register(
+                        &mut stream,
+                        token,
+                        Interest::READABLE.add(Interest::WRITABLE),
+                    )?;
+
+                    Ok((Handle::new(MioSocket::from((token, stream))), raddr))
+                }
+                Err(err) => Err(err),
+            }
         })
     }
 
@@ -356,5 +368,26 @@ impl Network for MioNetwork {
             .expect("Expect TcpStream.");
 
         socket.shutdown(how)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::OnceLock;
+
+    use rasi_spec::network::run_network_spec;
+
+    use super::*;
+
+    static INIT: OnceLock<Box<dyn rasi_syscall::Network>> = OnceLock::new();
+
+    fn get_syscall() -> &'static dyn rasi_syscall::Network {
+        INIT.get_or_init(|| Box::new(MioNetwork::default()))
+            .as_ref()
+    }
+
+    #[futures_test::test]
+    async fn test_network() {
+        run_network_spec(get_syscall()).await;
     }
 }

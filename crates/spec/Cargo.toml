@@ -20,3 +20,5 @@ rasi-syscall = { workspace = true, features = [
 rasi = { workspace = true }
 
 futures-test = { workspace = true }
+
+futures = { workspace = true, features = ["std", "executor", "thread-pool"] }

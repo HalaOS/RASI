@@ -60,7 +60,9 @@ impl<S: Source> Deref for MioSocket<S> {
 
 impl<S: Source> Drop for MioSocket<S> {
     fn drop(&mut self) {
-        get_global_reactor().deregister(&mut self.socket).unwrap();
+        if get_global_reactor().deregister(&mut self.socket).is_err() {
+            println!("");
+        }
     }
 }
 
