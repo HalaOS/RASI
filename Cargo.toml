@@ -1,6 +1,5 @@
 [workspace]
-members = ["crates/*"]
-exclude = ["creates/default"]
+members = ["crates/syscall", "crates/rasi", "crates/spec"]
 resolver = "2"
 
 [workspace.package]
