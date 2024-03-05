@@ -16,6 +16,7 @@ parking_lot = "^0.12"
 num_cpus = "^1.16"
 boxcar = "^0.2.4"
 dashmap = "5.5.3"
+cooked-waker = "^5"
 
 futures = { version = "^0.3", default-features = false }
 futures-test = "0.3.30"
@@ -24,5 +25,6 @@ mio = { version = "^0.8.9", features = ["os-poll", "net"] }
 
 rasi-syscall = { path = "./crates/syscall", default-features = false, version = "^0.1" }
 rasi = { path = "./crates/rasi", version = "^0.1" }
+rasi-ext = { path = "./crates/rasi-ext", version = "^0.1" }
 rasi-spec = { path = "./crates/spec", version = "^0.1" }
 rasi-default = { path = "./crates/default", version = "^0.1" }
