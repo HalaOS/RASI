@@ -13,15 +13,17 @@ version.workspace = true
 
 [dependencies]
 rasi = { workspace = true }
-dashmap = { workspace = true }
+dashmap = { workspace = true, optional = true }
 cooked-waker = { workspace = true }
-parking_lot = { workspace = true }
+parking_lot = { workspace = true, optional = true }
 
 [dev-dependencies]
 rasi-default = { workspace = true }
 futures-test = { workspace = true }
 
 [features]
-default = ["event_map"]
+default = ["event_map", "batching"]
 
-event_map = []
+event_map = ["dashmap"]
+batching = ["parking_lot", "queue"]
+queue = ["dashmap"]
