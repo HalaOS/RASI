@@ -18,8 +18,8 @@ default = ["net", "fs", "time", "executor", "std"]
 
 net = ["rasi-syscall/net"]
 fs = ["rasi-syscall/fs"]
-time = ["rasi-syscall/time"]
+time = ["rasi-syscall/time", "futures/async-await"]
 executor = ["rasi-syscall/executor"]
 
-std = ["rasi-syscall/std"]
-alloc = ["rasi-syscall/alloc"]
+std = ["rasi-syscall/std", "futures/std"]
+alloc = ["rasi-syscall/alloc", "futures/alloc"]

@@ -7,16 +7,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::Future;
+use futures::{Future, FutureExt};
 use rasi_syscall::{global_timer, Handle};
 
-struct Timer {
+struct Sleep {
     deadline: Instant,
     handle: Option<Handle>,
     syscall: &'static dyn rasi_syscall::Timer,
 }
 
-impl Timer {
+impl Sleep {
     /// Create timer future with custom [`syscall`](rasi_syscall::Timer)
     fn new_with(deadline: Instant, syscall: &'static dyn rasi_syscall::Timer) -> Self {
         Self {
@@ -27,7 +27,7 @@ impl Timer {
     }
 }
 
-impl Future for Timer {
+impl Future for Sleep {
     type Output = io::Result<()>;
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -51,23 +51,6 @@ impl Future for Timer {
     }
 }
 
-/// Create a new timer and block the calling task until the "deadline" is reached.
-///
-/// # Panic
-///
-/// You should call [`register_global_timer`](rasi_syscall::register_global_timer) first to register implementation,
-/// otherwise this function will cause a panic with `Call register_global_timer first`
-pub async fn timeout_at(deadline: Instant) {
-    timeout_at_with(deadline, global_timer()).await
-}
-
-/// Call `timeout_at` with custom [`syscall`](rasi_syscall::Timer), [`read more`](timeout_at)
-pub async fn timeout_at_with(deadline: Instant, syscall: &'static dyn rasi_syscall::Timer) {
-    let timer = Timer::new_with(deadline, syscall);
-
-    timer.await.expect("Call register_global_timer first");
-}
-
 /// Sleeps for the specified amount of time.
 ///
 /// This function might sleep for slightly longer than the specified duration but never less.
@@ -82,5 +65,63 @@ pub async fn sleep(duraton: Duration) {
 
 /// Call `sleep` with custom [`syscall`](rasi_syscall::Timer), [`read more`](sleep)
 pub async fn sleep_with(duraton: Duration, syscall: &'static dyn rasi_syscall::Timer) {
-    timeout_at_with(Instant::now() + duraton, syscall).await
+    let timer = Sleep::new_with(Instant::now() + duraton, syscall);
+
+    timer.await.expect("Call register_global_timer first");
 }
+
+/// Extension trait for [`Future`].
+///
+/// This trait brings a timeout capability to any object that implements the [`Future`] trait.
+pub trait TimeoutExt: Future {
+    /// Awaits a future or times out after a duration of time.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+    /// #
+    /// use std::time::Duration;
+    ///
+    /// use rasi::prelude::*;
+    ///
+    /// let never = futures::future::pending::<()>();
+    /// let dur = Duration::from_millis(5);
+    /// assert!(never.timeout(dur).await.is_none());
+    /// #
+    /// # Ok(()) }) }
+    /// ```
+
+    fn timeout(self, duration: Duration) -> impl Future<Output = Option<Self::Output>>
+    where
+        Self: Sized,
+    {
+        self.timeout_with(duration, global_timer())
+    }
+
+    /// Using custom [`syscall`](rasi_syscall::Timer) to await a future or times out after a duration of time.
+    ///
+    /// see [`timeout`](TimeoutExt::timeout) for more information.
+    fn timeout_with(
+        self,
+        duration: Duration,
+        syscall: &'static dyn rasi_syscall::Timer,
+    ) -> impl Future<Output = Option<Self::Output>>
+    where
+        Self: Sized,
+    {
+        async move {
+            futures::select! {
+                _ = sleep_with(duration,syscall).fuse() => {
+                    None
+                }
+                fut = self.fuse() => {
+                    Some(fut)
+                }
+
+            }
+        }
+    }
+}
+
+impl<T> TimeoutExt for T where T: Future {}
