@@ -8,7 +8,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
 Note: In this file, do not use the hard wrap in the middle of a sentence for compatibility with GitHub comment style markdown rendering.
 -->
 
-## [0.1.3] - 2024-03-05
+## [0.1.4] - 2024-03-05
 
 - Add official specification test suite.
 - Add [`path`](/crates/syscall/src/path/) mod which is an async version of [`std::path`].
