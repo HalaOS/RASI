@@ -15,10 +15,24 @@ num_cpus = { workspace = true }
 boxcar = { workspace = true }
 dashmap = { workspace = true }
 thiserror = { workspace = true }
-futures = { workspace = true, features = ["std", "executor", "thread-pool"] }
+futures = { workspace = true, optional = true }
 
-rasi-syscall = { workspace = true, features = ["net", "time"] }
+rasi-syscall = { workspace = true, optional = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }
 rasi-spec = { workspace = true }
+
+
+[features]
+
+default = ["std", "fs", "net", "time", "executor"]
+
+fs = ["rasi-syscall/fs"]
+net = ["rasi-syscall/net"]
+time = ["rasi-syscall/time"]
+executor = ["rasi-syscall/executor", "futures/executor", "futures/thread-pool"]
+
+alloc = ["futures/alloc", "futures/executor"]
+
+std = ["futures/std", "futures/executor"]
