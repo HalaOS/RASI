@@ -40,11 +40,18 @@ pub struct Group<R> {
 
 impl<R> Group<R> {
     /// Create `FutureGroup` with default config.
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> (Self, Ready<R>) {
+        let this = Self {
             pending: Default::default(),
             wake_by_key: Default::default(),
-        }
+        };
+
+        let ready = Ready {
+            pending: this.pending.clone(),
+            wake_by_key: this.wake_by_key.clone(),
+        };
+
+        (this, ready)
     }
 
     /// Add `fut` to the batch poll group.
@@ -67,7 +74,17 @@ impl<R> Group<R> {
     pub fn leave<Q: Borrow<FutureKey>>(&self, key: Q) -> bool {
         self.pending.lock().remove(key.borrow()).is_some()
     }
+}
 
+/// The ready stream of batch poll [`Group`].
+pub struct Ready<R> {
+    /// The pending futures mapping of this group.
+    pending: Arc<parking_lot::Mutex<HashMap<FutureKey, BoxFuture<'static, R>>>>,
+    /// A proxy type that handle [`Waker`] instance and ready fifo queue.
+    wake_by_key: Arc<WakeByKey>,
+}
+
+impl<R> Ready<R> {
     fn batch_poll(self: std::pin::Pin<&mut Self>) -> std::task::Poll<R> {
         while let Some(key) = self.wake_by_key.ready.pop() {
             let fut = self.pending.lock().remove(&key);
@@ -97,7 +114,7 @@ impl<R> Group<R> {
     }
 }
 
-impl<R> Stream for Group<R> {
+impl<R> Stream for Ready<R> {
     type Item = R;
 
     fn poll_next(
@@ -204,7 +221,7 @@ impl cooked_waker::Wake for Box<FutureKeyWaker> {}
 #[cfg(test)]
 mod tests {
 
-    use std::sync::mpsc;
+    use std::{sync::mpsc, time::Duration};
 
     use rasi::futures::{
         executor::ThreadPool,
@@ -217,7 +234,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_batch_poll() {
-        let mut batch_group = Group::<i32>::new();
+        let (batch_group, mut ready) = Group::<i32>::new();
 
         for _ in 0..100000 {
             batch_group.join(async { 1 });
@@ -229,8 +246,8 @@ mod tests {
 
             batch_group.join(async { 3 });
 
-            assert_ne!(batch_group.next().await, Some(2));
-            assert_ne!(batch_group.next().await, Some(2));
+            assert_ne!(ready.next().await, Some(2));
+            assert_ne!(ready.next().await, Some(2));
         }
     }
 
@@ -238,33 +255,33 @@ mod tests {
     async fn test_join_wakeup() {
         let thread_pool = ThreadPool::new().unwrap();
 
-        let batch_group = Group::<i32>::new();
+        let (batch_group, mut ready) = Group::<i32>::new();
 
         for i in 0..100000 {
-            let mut batch_group_cloned = batch_group.clone();
+            let batch_group_cloned = batch_group.clone();
 
-            let handle = thread_pool
-                .spawn_with_handle(async move { batch_group_cloned.next().await })
+            thread_pool
+                .spawn(async move {
+                    batch_group_cloned.join(async move { i });
+                })
                 .unwrap();
 
-            batch_group.join(async move { i });
-
-            assert_eq!(handle.await, Some(i));
+            assert_eq!(ready.next().await, Some(i));
         }
     }
 
     #[futures_test::test]
     async fn test_delay_ready() {
-        let thread_pool = ThreadPool::new().unwrap();
+        let (batch_group, mut ready) = Group::<i32>::new();
 
-        let batch_group = Group::<i32>::new();
+        let (sender, receiver) = mpsc::channel();
 
-        for i in 0..100000 {
-            let mut batch_group_cloned = batch_group.clone();
+        let loops = 100000;
 
-            let (sender, receiver) = mpsc::channel();
-
+        for i in 0..loops {
             let mut sent = false;
+
+            let sender = sender.clone();
 
             batch_group.join(poll_fn(move |cx| {
                 if sent {
@@ -277,16 +294,31 @@ mod tests {
 
                 Poll::Pending
             }));
-
-            let handle = thread_pool
-                .spawn_with_handle(async move { batch_group_cloned.next().await })
-                .unwrap();
-
-            let waker = receiver.recv().unwrap();
-
-            waker.wake();
-
-            assert_eq!(handle.await, Some(i));
         }
+
+        let thread_pool = ThreadPool::new().unwrap();
+
+        assert!(batch_group.wake_by_key.waker.load(Ordering::Relaxed) == null_mut());
+
+        let handle = thread_pool
+            .spawn_with_handle(async move {
+                for _ in 0..loops {
+                    ready.next().await;
+                }
+            })
+            .unwrap();
+
+        // wait
+        std::thread::sleep(Duration::from_secs(1));
+
+        assert!(batch_group.wake_by_key.waker.load(Ordering::Relaxed) != null_mut());
+
+        std::thread::spawn(move || {
+            for _ in 0..loops {
+                receiver.recv().unwrap().wake();
+            }
+        });
+
+        handle.await;
     }
 }
