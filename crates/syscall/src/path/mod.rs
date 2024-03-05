@@ -1,4 +1,4 @@
-//! Cross-platform path manipulation that port from [`rasi_syscall::path`](https://docs.rs/async-std/latest/async_std/path/index.html)
+//! Cross-platform path manipulation that port from [`async_std::path`](https://docs.rs/async-std/latest/async_std/path/index.html)
 //!
 //! This module is an async version of [`std::path`].
 //!
