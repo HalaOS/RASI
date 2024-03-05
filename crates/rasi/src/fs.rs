@@ -5,7 +5,6 @@
 use std::{
     fs::{FileType, Metadata, Permissions},
     io,
-    path::{Path, PathBuf},
     task::Poll,
 };
 
@@ -13,6 +12,7 @@ use futures::{AsyncRead, AsyncSeek, AsyncWrite, Stream};
 use rasi_syscall::{global_filesystem, FileOpenMode, Handle};
 
 use crate::utils::cancelable_would_block;
+use rasi_syscall::path::{Path, PathBuf};
 
 /// A wrap type for filesystem [`syscall`](rasi_syscall::FileSystem).
 pub struct FileSystem {
@@ -578,13 +578,85 @@ impl FileSystem {
     /// ```no_run
     /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
     /// #
-    /// use std::path::Path;
+    /// use rasi::path::Path;
     /// assert_eq!(rasi::fs::exists(Path::new("does_not_exist.txt")).await, false);
     /// #
     /// # Ok(()) }) }
     /// ```
     pub async fn exists<P: AsRef<Path>>(&self, path: P) -> bool {
         self.metadata(path).await.is_ok()
+    }
+
+    /// Returns `true` if the path exists on disk and is pointing at a directory.
+    ///
+    /// This function will traverse symbolic links to query information about the
+    /// destination file. In case of broken symbolic links this will return `false`.
+    ///
+    /// If you cannot access the directory containing the file, e.g., because of a
+    /// permission error, this will return `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+    /// #
+    /// use rasi::path::Path;
+    ///
+    /// assert_eq!(rasi::fs::is_dir(Path::new("./is_a_directory/")).await, true);
+    /// assert_eq!(rasi::fs::is_dir(Path::new("a_file.txt")).await, false);
+    /// #
+    /// # Ok(()) }) }
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// This is a convenience function that coerces errors to false. If you want to
+    /// check errors, call [fs::metadata] and handle its Result. Then call
+    /// [fs::Metadata::is_dir] if it was Ok.
+    ///
+    /// [fs::metadata]: ../fs/fn.metadata.html
+    /// [fs::Metadata::is_dir]: ../fs/struct.Metadata.html#method.is_dir
+    pub async fn is_dir<P: AsRef<Path>>(&self, path: P) -> bool {
+        self.metadata(path)
+            .await
+            .map(|m| m.is_dir())
+            .unwrap_or(false)
+    }
+
+    /// Returns `true` if the path exists on disk and is pointing at a regular file.
+    ///
+    /// This function will traverse symbolic links to query information about the
+    /// destination file. In case of broken symbolic links this will return `false`.
+    ///
+    /// If you cannot access the directory containing the file, e.g., because of a
+    /// permission error, this will return `false`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+    /// #
+    /// use rasi::path::Path;
+    /// assert_eq!(rasi::fs::is_file(Path::new("./is_a_directory/")).await, false);
+    /// assert_eq!(rasi::fs::is_file(Path::new("a_file.txt")).await, true);
+    /// #
+    /// # Ok(()) }) }
+    /// ```
+    ///
+    /// # See Also
+    ///
+    /// This is a convenience function that coerces errors to false. If you want to
+    /// check errors, call [fs::metadata] and handle its Result. Then call
+    /// [fs::Metadata::is_file] if it was Ok.
+    ///
+    /// [fs::metadata]: ../fs/fn.metadata.html
+    /// [fs::Metadata::is_file]: ../fs/struct.Metadata.html#method.is_file
+
+    pub async fn is_file<P: AsRef<Path>>(&self, path: P) -> bool {
+        self.metadata(path)
+            .await
+            .map(|m| m.is_file())
+            .unwrap_or(false)
     }
 }
 
@@ -1087,4 +1159,18 @@ pub async fn open_file<P: AsRef<Path>>(path: P, open_mode: FileOpenMode) -> io::
 /// See [`FileSystem::exists`] for more details.
 pub async fn exists<P: AsRef<Path>>(path: P) -> bool {
     FileSystem::new().exists(path).await
+}
+
+/// Invoke `is_dir` via global registered [`syscall`](rasi_syscall::FileSystem) to check if provided path is a directory.
+///
+/// See [`FileSystem::exists`] for more details.
+pub async fn is_dir<P: AsRef<Path>>(path: P) -> bool {
+    FileSystem::new().is_dir(path).await
+}
+
+/// Invoke `is_file` via global registered [`syscall`](rasi_syscall::FileSystem) to check if provided path is a file.
+///
+/// See [`FileSystem::exists`] for more details.
+pub async fn is_file<P: AsRef<Path>>(path: P) -> bool {
+    FileSystem::new().is_file(path).await
 }

@@ -19,3 +19,5 @@ pub mod time;
 pub mod utils;
 
 pub mod prelude;
+
+pub use rasi_syscall::path;

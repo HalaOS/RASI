@@ -3,13 +3,13 @@
 use std::{
     fs::{FileType, Metadata, Permissions},
     io::{self, SeekFrom},
-    path::{Path, PathBuf},
     sync::OnceLock,
     task::Waker,
 };
 
 use bitmask_enum::bitmask;
 
+use crate::path::{Path, PathBuf};
 use crate::{CancelablePoll, Handle};
 
 /// A bitmask for open file.

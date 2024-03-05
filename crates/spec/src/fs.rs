@@ -27,6 +27,8 @@ async fn test_fs(syscall: &'static dyn rasi_syscall::FileSystem) {
 
     fs.create_dir_all(test_dir.clone()).await.unwrap();
 
+    assert!(fs.is_dir(temp_dir).await);
+
     let mut test_file = test_dir.clone();
     test_file.push("test");
 
@@ -41,6 +43,8 @@ async fn test_fs(syscall: &'static dyn rasi_syscall::FileSystem) {
     let content = b"hellow rasi filesystem.";
 
     file.write_all(content).await.unwrap();
+
+    assert!(fs.is_file(test_file.clone()).await);
 
     let mut test_file2 = test_dir.clone();
     test_file2.push("test1");
