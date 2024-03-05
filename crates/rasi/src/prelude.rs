@@ -5,4 +5,4 @@
 pub use futures::{AsyncReadExt, AsyncWriteExt, SinkExt, StreamExt};
 
 #[cfg(feature = "fs")]
-pub use rasi_syscall::{path::*, FileOpenMode};
+pub use rasi_syscall::{path, FileOpenMode};

@@ -419,14 +419,7 @@ pub fn get_global_reactor() -> ArcReactor {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{
-            atomic::{AtomicU64, Ordering},
-            Arc, Barrier,
-        },
-        thread::sleep,
-        time::Duration,
-    };
+    use std::{sync::Barrier, thread::sleep, time::Duration};
 
     use crate::TokenSequence;
 

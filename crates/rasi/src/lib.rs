@@ -23,3 +23,7 @@ pub mod prelude;
 #[cfg(feature = "fs")]
 #[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
 pub use rasi_syscall::path;
+
+#[cfg(feature = "fs")]
+#[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
+pub use rasi_syscall::FileOpenMode;
