@@ -5,10 +5,7 @@
 [!["Crates.io version"](https://img.shields.io/crates/v/rasi.svg)](https://crates.io/crates/rasi)
 [!["docs.rs docs"](https://img.shields.io/badge/docs-latest-blue.svg)](https://docs.rs/rasi)
 
-
-<p align="center">
-    <img src="doc/architectural.png" alt="architectural" width="300"/>
-</p>
+![architectural](./doc/architectural.png)
 
 The Rust Asynchronous System Interface (RASI) provides a unified API interface to Rust's asynchronous runtimes (such as tokio, async-std, etc.).
 
@@ -16,7 +13,7 @@ The Rust Asynchronous System Interface (RASI) provides a unified API interface t
 
 Now, Rust has various implementations of the `async runtime`, most of which are compatible with the official [`futures`](https://github.com/rust-lang/futures-rs), with the exception of [`tokio`](https://github.com/tokio-rs/tokio), which is a maverick.
 
-However, simply using ***futures*** does not result in a runtime portable program. 
+However, simply using ***futures*** does not result in a runtime portable program.
 
 For example, when you need to improve the performance of your application on the linux platform and try to replace tokio's default network mod implementation with [`io_uring`](https://www.wikiwand.com/en/Io_uring), you can't do it very easily.
 

@@ -6,7 +6,7 @@ license = "MIT"
 name = "rasi-default"
 repository.workspace = true
 version.workspace = true
-
+readme = "README.md"
 
 [dependencies]
 mio = { workspace = true }

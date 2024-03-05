@@ -1,3 +1,4 @@
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "executor")]
