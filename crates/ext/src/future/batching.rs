@@ -235,6 +235,7 @@ mod tests {
 
     use std::{sync::mpsc, time::Duration};
 
+    use futures_test::task::noop_context;
     use rasi::futures::{
         executor::ThreadPool,
         future::{pending, poll_fn},
@@ -332,5 +333,18 @@ mod tests {
         });
 
         handle.await;
+    }
+
+    #[futures_test::test]
+    async fn test_close_group() {
+        let (batch_group, mut ready) = Group::<i32>::new();
+
+        batch_group.join(pending());
+
+        assert!(ready.poll_next_unpin(&mut noop_context()).is_pending());
+
+        batch_group.close();
+
+        assert!(ready.next().await.is_none());
     }
 }
