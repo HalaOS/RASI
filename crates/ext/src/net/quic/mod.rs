@@ -5,3 +5,5 @@
 //! such as [`rasi-default`](https://docs.rs/rasi-default/latest/rasi_default/), etc,.
 //!
 //! # Example
+
+pub struct QuicConn;

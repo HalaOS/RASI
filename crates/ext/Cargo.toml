@@ -16,6 +16,8 @@ rasi = { workspace = true }
 dashmap = { workspace = true, optional = true }
 cooked-waker = { workspace = true }
 parking_lot = { workspace = true, optional = true }
+quiche = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
 
 [dev-dependencies]
 rasi-default = { workspace = true }
@@ -23,12 +25,13 @@ futures-test = { workspace = true }
 divan = { workspace = true }
 
 [features]
-default = ["event_map", "batching"]
+default = ["event_map", "batching", "quic"]
 
 event_map = ["dashmap"]
 batching = ["parking_lot", "queue"]
 queue = ["dashmap"]
-
+quic = ["udp_group", "quiche"]
+udp_group = ["bytes"]
 
 [[bench]]
 harness = false
