@@ -6,14 +6,27 @@ use std::{
     io,
     net::{SocketAddr, ToSocketAddrs},
     sync::Arc,
+    task::Poll,
 };
 
 use bytes::{Bytes, BytesMut};
+use rand::seq::IteratorRandom;
 use rasi::{
-    futures::{Sink, Stream},
+    futures::{future::BoxFuture, FutureExt, Sink, Stream, StreamExt},
     net::UdpSocket,
     syscall::{global_network, Network},
 };
+
+use crate::{future::batching, utils::ReadBuf};
+
+/// Udp data transfer metadata for the data sent to the peers
+/// from the specified local address `from`` to the destination address `to`.
+pub struct PathInfo {
+    /// The specified local address.
+    pub from: SocketAddr,
+    /// The destination address for the data sent to the peer.
+    pub to: SocketAddr,
+}
 
 /// A configuration for batch poll a set of [`udp socket`](rasi::net::UdpSocket)s
 pub struct UdpGroup {
@@ -110,35 +123,100 @@ impl UdpGroup {
     /// #
     /// # Ok(()) }) }
     pub fn split(self) -> (Sender, Receiver) {
-        (Sender {}, Receiver {})
+        let sockets = self.sockets.values().cloned().collect::<Vec<_>>();
+
+        (
+            Sender::new(self.sockets),
+            Receiver::new(&sockets, self.max_recv_buf_len),
+        )
     }
 }
 
-/// Udp data transfer metadata for the data sent to the peers
-/// from the specified local address `from`` to the destination address `to`.
-pub struct PathInfo {
-    /// The specified local address.
-    pub from: SocketAddr,
-    /// The destination address for the data sent to the peer.
-    pub to: SocketAddr,
+struct RecvFrom {
+    group: batching::Group<(RecvFrom, io::Result<(BytesMut, PathInfo)>)>,
+    socket: Arc<UdpSocket>,
+    max_recv_buf_len: u16,
 }
 
 /// Data is received from the peers via this [`UdpGroup`] receiver [`stream`](Stream).
-pub struct Receiver {}
+pub struct Receiver {
+    /// Stream of batch poll result.
+    ready: batching::Ready<(RecvFrom, io::Result<(BytesMut, PathInfo)>)>,
+}
+
+impl Receiver {
+    fn new(sockets: &[Arc<UdpSocket>], max_recv_buf_len: u16) -> Self {
+        let (group, ready) = batching::Group::new();
+
+        for socket in sockets {
+            group.join(Self::recv_from(RecvFrom {
+                group: group.clone(),
+                socket: socket.clone(),
+                max_recv_buf_len,
+            }));
+        }
+
+        Self { ready }
+    }
+
+    async fn recv_from(cx: RecvFrom) -> (RecvFrom, io::Result<(BytesMut, PathInfo)>) {
+        let r = Self::recv_from_impl(cx.socket.clone(), cx.max_recv_buf_len).await;
+
+        (cx, r)
+    }
+
+    async fn recv_from_impl(
+        socket: Arc<UdpSocket>,
+        max_recv_buf_len: u16,
+    ) -> io::Result<(BytesMut, PathInfo)> {
+        let mut buf = ReadBuf::with_capacity(max_recv_buf_len as usize);
+
+        let (read_size, raddr) = socket.recv_from(buf.chunk_mut()).await?;
+
+        let buf = buf.into_bytes_mut(Some(read_size));
+
+        Ok((
+            buf,
+            PathInfo {
+                from: raddr,
+                to: socket.local_addr()?,
+            },
+        ))
+    }
+}
 
 impl Stream for Receiver {
     type Item = io::Result<(BytesMut, PathInfo)>;
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        todo!()
+        match self.ready.poll_next_unpin(cx) {
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(Some((cx, r))) => {
+                let group = cx.group.clone();
+
+                group.join(Self::recv_from(cx));
+
+                Poll::Ready(Some(r))
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
 /// Data is sent to the peers via this [`UdpGroup`] sender [`sink`](Sink).
-pub struct Sender {}
+pub struct Sender {
+    sockets: HashMap<SocketAddr, Arc<UdpSocket>>,
+    fut: Option<BoxFuture<'static, io::Result<usize>>>,
+}
+
+impl Sender {
+    fn new(sockets: HashMap<SocketAddr, Arc<UdpSocket>>) -> Self {
+        Self { sockets, fut: None }
+    }
+}
 
 #[allow(unused)]
 impl Sink<(Bytes, Option<PathInfo>)> for Sender {
@@ -148,21 +226,51 @@ impl Sink<(Bytes, Option<PathInfo>)> for Sender {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        todo!()
+        if self.fut.is_none() {
+            Poll::Ready(Ok(()))
+        } else {
+            Poll::Pending
+        }
     }
 
     fn start_send(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         item: (Bytes, Option<PathInfo>),
     ) -> Result<(), Self::Error> {
-        todo!()
+        if let Some(path_info) = item.1 {
+            let socket = if let Some(socket) = self.sockets.get(&path_info.from).map(Clone::clone) {
+                socket
+            } else {
+                use rand::seq::SliceRandom;
+
+                self.sockets
+                    .values()
+                    .choose(&mut rand::thread_rng())
+                    .unwrap()
+                    .clone()
+            };
+
+            self.fut = Some(Box::pin(async move {
+                socket.send_to(&item.0, path_info.from).await
+            }));
+        }
+
+        Ok(())
     }
 
     fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        todo!()
+        if let Some(mut fut) = self.fut.take() {
+            match fut.poll_unpin(cx) {
+                Poll::Ready(Ok(_)) => return Poll::Ready(Ok(())),
+                Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                Poll::Pending => {}
+            }
+        }
+
+        Poll::Pending
     }
 
     fn poll_close(

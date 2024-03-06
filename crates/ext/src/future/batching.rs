@@ -27,12 +27,20 @@ impl FutureKey {
 /// The primitive type that handle a group of specific type futures.
 ///
 /// The R is the item type of the never end [`Stream`].
-#[derive(Clone)]
 pub struct Group<R> {
     /// The pending futures mapping of this group.
     pending: Arc<parking_lot::Mutex<HashMap<FutureKey, BoxFuture<'static, R>>>>,
     /// A proxy type that handle [`Waker`] instance and ready fifo queue.
     wake_by_key: Arc<WakeByKey>,
+}
+
+impl<R> Clone for Group<R> {
+    fn clone(&self) -> Self {
+        Self {
+            pending: self.pending.clone(),
+            wake_by_key: self.wake_by_key.clone(),
+        }
+    }
 }
 
 impl<R> Group<R> {
