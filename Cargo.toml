@@ -17,6 +17,7 @@ num_cpus = "^1.16"
 boxcar = "^0.2.4"
 dashmap = "5.5.3"
 cooked-waker = "^5"
+divan = "^0.1"
 
 futures = { version = "^0.3", default-features = false }
 futures-test = "0.3.30"

@@ -2,6 +2,7 @@
 
 use std::{
     borrow::Borrow,
+    collections::HashMap,
     future::Future,
     hash::Hash,
     sync::{
@@ -10,8 +11,6 @@ use std::{
     },
     task::{Poll, Waker},
 };
-
-use dashmap::DashMap;
 
 /// The variant for event listener waiting status .
 #[repr(u8)]
@@ -49,7 +48,7 @@ pub struct EventMap<E>
 where
     E: Eq + Hash,
 {
-    listeners: DashMap<E, Listener>,
+    listeners: parking_lot::Mutex<HashMap<E, Listener>>,
 }
 
 impl<E> EventMap<E>
@@ -59,7 +58,7 @@ where
     /// Create new [`EventMap<E>`](EventMap) instance with default config.
     pub fn new() -> Self {
         Self {
-            listeners: DashMap::new(),
+            listeners: Default::default(),
         }
     }
 
@@ -73,7 +72,7 @@ where
 
     /// Notify `event` listener, and set the listener status to `status`.
     pub fn notify<Q: Borrow<E>>(&self, event: Q, status: EventStatus) -> bool {
-        if let Some((_, listener)) = self.listeners.remove(event.borrow()) {
+        if let Some(listener) = self.listeners.lock().remove(event.borrow()) {
             listener.status.store(status.into(), Ordering::Release);
 
             listener.waker.wake();
@@ -86,8 +85,14 @@ where
 
     /// Notify all provided event listeners on `event_list`, and set the listener status to `status`.
     pub fn notify_all<Q: Borrow<E>, L: AsRef<[Q]>>(&self, event_list: L, status: EventStatus) {
+        let mut listeners = self.listeners.lock();
+
         for event in event_list.as_ref() {
-            self.notify(event.borrow(), status);
+            if let Some(listener) = listeners.remove(event.borrow()) {
+                listener.status.store(status.into(), Ordering::Release);
+
+                listener.waker.wake();
+            }
         }
     }
 }
@@ -98,7 +103,7 @@ where
 {
     fn drop(&mut self) {
         assert_eq!(
-            self.listeners.len(),
+            self.listeners.lock().len(),
             0,
             "When WaitKey drops, it must remove itself from the EventMap by which it was created"
         );
@@ -155,7 +160,7 @@ where
             );
             let event = self.event.clone();
 
-            self.event_map.listeners.insert(
+            self.event_map.listeners.lock().insert(
                 event,
                 Listener {
                     waker: cx.waker().clone(),
@@ -181,14 +186,16 @@ where
     E: Eq + Hash + Unpin,
 {
     fn drop(&mut self) {
-        self.event_map.listeners.remove(&self.event);
+        self.event_map.listeners.lock().remove(&self.event);
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{thread::sleep, time::Duration};
+
     use futures_test::task::noop_context;
-    use rasi::futures::{task::SpawnExt, FutureExt};
+    use rasi::futures::{lock, task::SpawnExt, FutureExt};
 
     use super::*;
 
@@ -206,11 +213,11 @@ mod tests {
 
         _ = wait_key.poll_unpin(&mut cx);
 
-        assert!(event_map.listeners.contains_key(&1));
+        assert!(event_map.listeners.lock().contains_key(&1));
 
         drop(wait_key);
 
-        assert!(!event_map.listeners.contains_key(&1));
+        assert!(!event_map.listeners.lock().contains_key(&1));
     }
 
     #[futures_test::test]
@@ -263,5 +270,47 @@ mod tests {
         event_map.once(1, guard).await.unwrap();
 
         let _guard = locker.lock().unwrap();
+    }
+
+    #[futures_test::test]
+    async fn test_notify_all() {
+        let event_map = Arc::new(EventMap::<i32>::new());
+
+        let thread_pool = rasi::futures::executor::ThreadPool::new().unwrap();
+
+        let mut handles = vec![];
+
+        let loops = 100;
+
+        for i in 0..loops {
+            let event_map = event_map.clone();
+
+            handles.push(
+                thread_pool
+                    .spawn_with_handle(async move {
+                        let locker = lock::Mutex::new(());
+
+                        let guard = locker.lock();
+
+                        event_map.once(i, guard).await.unwrap();
+                    })
+                    .unwrap(),
+            );
+        }
+
+        // Waiting for `loop` function `event_map.once` calls to finish
+        loop {
+            sleep(Duration::from_millis(100));
+
+            if event_map.listeners.lock().len() == loops as usize {
+                break;
+            }
+        }
+
+        event_map.notify_all((0..loops).collect::<Vec<_>>(), EventStatus::Ready);
+
+        for (_, handle) in handles.iter_mut().enumerate() {
+            handle.await;
+        }
     }
 }

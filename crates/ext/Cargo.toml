@@ -20,6 +20,7 @@ parking_lot = { workspace = true, optional = true }
 [dev-dependencies]
 rasi-default = { workspace = true }
 futures-test = { workspace = true }
+divan = { workspace = true }
 
 [features]
 default = ["event_map", "batching"]
@@ -27,3 +28,8 @@ default = ["event_map", "batching"]
 event_map = ["dashmap"]
 batching = ["parking_lot", "queue"]
 queue = ["dashmap"]
+
+
+[[bench]]
+harness = false
+name = "map_bench"

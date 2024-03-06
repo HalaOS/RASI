@@ -14,7 +14,7 @@ use std::{
 
 use rasi::futures::{future::BoxFuture, FutureExt, Stream};
 
-use crate::queue::Queue;
+use crate::utils::queue::Queue;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FutureKey(usize);
