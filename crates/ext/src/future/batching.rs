@@ -2,19 +2,16 @@
 
 use std::{
     borrow::Borrow,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     future::Future,
-    ptr::null_mut,
     sync::{
-        atomic::{AtomicPtr, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     },
     task::{Context, Poll, Waker},
 };
 
 use rasi::futures::{future::BoxFuture, FutureExt, Stream};
-
-use crate::utils::queue::Queue;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FutureKey(usize);
@@ -86,7 +83,7 @@ pub struct Ready<R> {
 
 impl<R> Ready<R> {
     fn batch_poll(self: std::pin::Pin<&mut Self>) -> std::task::Poll<R> {
-        while let Some(key) = self.wake_by_key.ready.pop() {
+        while let Some(key) = self.wake_by_key.pop() {
             let fut = self.pending.lock().remove(&key);
 
             if fut.is_none() {
@@ -143,57 +140,39 @@ impl<R> Stream for Ready<R> {
 }
 
 #[derive(Default)]
-struct WakeByKey {
+struct RawWakeByKey {
     /// system waker passed by [`Self::pending`] function.
-    waker: AtomicPtr<Waker>,
+    waker: Option<Waker>,
     /// The [`id`](Token) fifo queue for ready futures.
-    ready: Queue<FutureKey>,
+    ready: VecDeque<FutureKey>,
+}
+
+#[derive(Default)]
+struct WakeByKey {
+    raw: parking_lot::Mutex<RawWakeByKey>,
 }
 
 impl WakeByKey {
     fn pending(&self, waker: Waker) {
-        let waker_ptr = Box::into_raw(Box::new(waker));
-
-        let previous = self.waker.swap(waker_ptr, Ordering::AcqRel);
-
-        // drop previous waker.
-        if previous != null_mut() {
-            // Safety: [`pending`] function is the only way to update the value of `waker` field.
-            let previous = unsafe { Box::from_raw(previous) };
-
-            drop(previous);
-        }
+        self.raw.lock().waker = Some(waker);
     }
 
     fn remove_inner_waker(&self) -> Option<Waker> {
-        loop {
-            let waker_ptr = self.waker.load(Ordering::Acquire);
-
-            if waker_ptr == null_mut() {
-                return None;
-            }
-
-            if self
-                .waker
-                .compare_exchange_weak(waker_ptr, null_mut(), Ordering::AcqRel, Ordering::Relaxed)
-                .is_err()
-            {
-                continue;
-            }
-
-            // Safety: this waker_ptr can only be created by [`pending`](Self::pending) function.
-            let waker = unsafe { Box::from_raw(waker_ptr) };
-
-            return Some(*waker);
-        }
+        self.raw.lock().waker.take()
     }
 
     fn wake(&self, key: FutureKey) {
-        self.ready.push(key);
+        let mut raw = self.raw.lock();
 
-        if let Some(waker) = self.remove_inner_waker() {
+        raw.ready.push_back(key);
+
+        if let Some(waker) = raw.waker.take() {
             waker.wake();
         }
+    }
+
+    fn pop(&self) -> Option<FutureKey> {
+        self.raw.lock().ready.pop_front()
     }
 }
 
@@ -298,7 +277,7 @@ mod tests {
 
         let thread_pool = ThreadPool::new().unwrap();
 
-        assert!(batch_group.wake_by_key.waker.load(Ordering::Relaxed) == null_mut());
+        assert!(batch_group.wake_by_key.raw.lock().waker.is_none());
 
         let handle = thread_pool
             .spawn_with_handle(async move {
@@ -311,7 +290,7 @@ mod tests {
         // wait
         std::thread::sleep(Duration::from_secs(1));
 
-        assert!(batch_group.wake_by_key.waker.load(Ordering::Relaxed) != null_mut());
+        assert!(batch_group.wake_by_key.raw.lock().waker.is_some());
 
         std::thread::spawn(move || {
             for _ in 0..loops {

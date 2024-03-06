@@ -15,7 +15,7 @@ use rasi::{
     syscall::{global_network, Network},
 };
 
-/// A builder for creating the batch [`Receiver`] instance and the batch [`Sender`] instance for a udp group.
+/// A configuration for batch poll a set of [`udp socket`](rasi::net::UdpSocket)s
 pub struct UdpGroup {
     #[allow(unused)]
     /// Inner socket map that mapping local_addr => socket.

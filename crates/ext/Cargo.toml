@@ -36,3 +36,8 @@ udp_group = ["bytes"]
 [[bench]]
 harness = false
 name = "map_bench"
+
+
+[[bench]]
+harness = false
+name = "queue_bench"
