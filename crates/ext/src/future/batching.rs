@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, VecDeque},
     future::Future,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     task::{Context, Poll, Waker},
@@ -32,6 +32,8 @@ pub struct Group<R> {
     pending: Arc<parking_lot::Mutex<HashMap<FutureKey, BoxFuture<'static, R>>>>,
     /// A proxy type that handle [`Waker`] instance and ready fifo queue.
     wake_by_key: Arc<WakeByKey>,
+    /// Group close flag.
+    closed: Arc<AtomicBool>,
 }
 
 impl<R> Clone for Group<R> {
@@ -39,6 +41,7 @@ impl<R> Clone for Group<R> {
         Self {
             pending: self.pending.clone(),
             wake_by_key: self.wake_by_key.clone(),
+            closed: self.closed.clone(),
         }
     }
 }
@@ -49,11 +52,13 @@ impl<R> Group<R> {
         let this = Self {
             pending: Default::default(),
             wake_by_key: Default::default(),
+            closed: Default::default(),
         };
 
         let ready = Ready {
             pending: this.pending.clone(),
             wake_by_key: this.wake_by_key.clone(),
+            closed: this.closed.clone(),
         };
 
         (this, ready)
@@ -70,7 +75,7 @@ impl<R> Group<R> {
 
         self.pending.lock().insert(key, Box::pin(fut));
 
-        self.wake_by_key.wake(key);
+        self.wake_by_key.wake_by_future_key(key);
 
         key
     }
@@ -78,6 +83,17 @@ impl<R> Group<R> {
     /// Remove a pending future by [`FutureKey`] from this group.
     pub fn leave<Q: Borrow<FutureKey>>(&self, key: Q) -> bool {
         self.pending.lock().remove(key.borrow()).is_some()
+    }
+
+    /// Close this group and cancel [`Ready`] stream.
+    pub fn close(&self) {
+        if self
+            .closed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+        {
+            self.wake_by_key.wake();
+        }
     }
 }
 
@@ -87,6 +103,8 @@ pub struct Ready<R> {
     pending: Arc<parking_lot::Mutex<HashMap<FutureKey, BoxFuture<'static, R>>>>,
     /// A proxy type that handle [`Waker`] instance and ready fifo queue.
     wake_by_key: Arc<WakeByKey>,
+    /// Group close flag.
+    closed: Arc<AtomicBool>,
 }
 
 impl<R> Ready<R> {
@@ -126,9 +144,8 @@ impl<R> Stream for Ready<R> {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        match self.as_mut().batch_poll() {
-            std::task::Poll::Ready(r) => return Poll::Ready(Some(r)),
-            std::task::Poll::Pending => {}
+        if self.closed.load(Ordering::Acquire) {
+            return Poll::Ready(None);
         }
 
         self.wake_by_key.pending(cx.waker().clone());
@@ -169,10 +186,18 @@ impl WakeByKey {
         self.raw.lock().waker.take()
     }
 
-    fn wake(&self, key: FutureKey) {
+    fn wake_by_future_key(&self, key: FutureKey) {
         let mut raw = self.raw.lock();
 
         raw.ready.push_back(key);
+
+        if let Some(waker) = raw.waker.take() {
+            waker.wake();
+        }
+    }
+
+    fn wake(&self) {
+        let mut raw = self.raw.lock();
 
         if let Some(waker) = raw.waker.take() {
             waker.wake();
@@ -199,7 +224,7 @@ impl FutureKeyWaker {
 
 impl cooked_waker::WakeRef for FutureKeyWaker {
     fn wake_by_ref(&self) {
-        self.wake_by_key.wake(self.key);
+        self.wake_by_key.wake_by_future_key(self.key);
     }
 }
 

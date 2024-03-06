@@ -125,9 +125,11 @@ impl UdpGroup {
     pub fn split(self) -> (Sender, Receiver) {
         let sockets = self.sockets.values().cloned().collect::<Vec<_>>();
 
+        let (group, ready) = batching::Group::new();
+
         (
-            Sender::new(self.sockets),
-            Receiver::new(&sockets, self.max_recv_buf_len),
+            Sender::new(group.clone(), self.sockets),
+            Receiver::new(group, ready, &sockets, self.max_recv_buf_len),
         )
     }
 }
@@ -145,9 +147,12 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    fn new(sockets: &[Arc<UdpSocket>], max_recv_buf_len: u16) -> Self {
-        let (group, ready) = batching::Group::new();
-
+    fn new(
+        group: batching::Group<(RecvFrom, io::Result<(BytesMut, PathInfo)>)>,
+        ready: batching::Ready<(RecvFrom, io::Result<(BytesMut, PathInfo)>)>,
+        sockets: &[Arc<UdpSocket>],
+        max_recv_buf_len: u16,
+    ) -> Self {
         for socket in sockets {
             group.join(Self::recv_from(RecvFrom {
                 group: group.clone(),
@@ -208,23 +213,30 @@ impl Stream for Receiver {
 
 /// Data is sent to the peers via this [`UdpGroup`] sender [`sink`](Sink).
 pub struct Sender {
+    group: batching::Group<(RecvFrom, io::Result<(BytesMut, PathInfo)>)>,
     sockets: HashMap<SocketAddr, Arc<UdpSocket>>,
     fut: Option<BoxFuture<'static, io::Result<usize>>>,
 }
 
 impl Sender {
-    fn new(sockets: HashMap<SocketAddr, Arc<UdpSocket>>) -> Self {
-        Self { sockets, fut: None }
+    fn new(
+        group: batching::Group<(RecvFrom, io::Result<(BytesMut, PathInfo)>)>,
+        sockets: HashMap<SocketAddr, Arc<UdpSocket>>,
+    ) -> Self {
+        Self {
+            group,
+            sockets,
+            fut: None,
+        }
     }
 }
 
-#[allow(unused)]
 impl Sink<(Bytes, Option<PathInfo>)> for Sender {
     type Error = io::Error;
 
     fn poll_ready(
         self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         if self.fut.is_none() {
             Poll::Ready(Ok(()))
@@ -241,8 +253,7 @@ impl Sink<(Bytes, Option<PathInfo>)> for Sender {
             let socket = if let Some(socket) = self.sockets.get(&path_info.from).map(Clone::clone) {
                 socket
             } else {
-                use rand::seq::SliceRandom;
-
+                // randomly selects one socket to send data.
                 self.sockets
                     .values()
                     .choose(&mut rand::thread_rng())
@@ -275,8 +286,10 @@ impl Sink<(Bytes, Option<PathInfo>)> for Sender {
 
     fn poll_close(
         self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
-        todo!()
+        self.group.close();
+
+        Poll::Ready(Ok(()))
     }
 }
