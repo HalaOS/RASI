@@ -21,7 +21,6 @@ bytes = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 
 [dev-dependencies]
-rasi-default = { workspace = true }
 futures-test = { workspace = true }
 divan = { workspace = true }
 
@@ -29,10 +28,9 @@ divan = { workspace = true }
 default = ["event_map", "batching", "quic"]
 
 event_map = ["dashmap"]
-batching = ["parking_lot", "queue"]
-queue = ["dashmap"]
+batching = ["parking_lot"]
 quic = ["udp_group", "quiche"]
-udp_group = ["bytes", "rand"]
+udp_group = ["bytes", "rand", "batching"]
 
 [[bench]]
 harness = false

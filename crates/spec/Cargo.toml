@@ -22,3 +22,11 @@ rasi = { workspace = true }
 futures-test = { workspace = true }
 
 futures = { workspace = true, features = ["std", "executor", "thread-pool"] }
+
+rasi-ext = { workspace = true }
+
+rand = { workspace = true, optional = true }
+
+[features]
+default = ["udp_group"]
+udp_group = ["rasi-ext/udp_group", "rand"]

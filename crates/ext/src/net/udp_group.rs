@@ -41,7 +41,7 @@ impl UdpGroup {
     /// Use global registered syscall interface [`Network`] to create a UDP socket group from the given address.
     ///
     /// Binding with a port number of 0 will request that the OS assigns a port to this socket. The
-    /// port allocated can be queried via the [`local_addr`] method.
+    /// port allocated can be queried via the [`local_addrs`](Self::local_addrs) method.
     ///
     /// [`local_addr`]: #method.local_addr
     ///
@@ -131,6 +131,26 @@ impl UdpGroup {
             Sender::new(group.clone(), self.sockets),
             Receiver::new(group, ready, &sockets, self.max_recv_buf_len),
         )
+    }
+
+    /// Returns the local addresses iterator that this udp group are bound to.
+    ///
+    /// This can be useful, for example, to identify when binding to port 0 which port was assigned
+    /// by the OS.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> { rasi::futures::executor::block_on(async {
+    /// #
+    /// use rasi_ext::net::udp_group::UdpGroup;
+    ///
+    /// let udp_group = UdpGroup::bind("127.0.0.1:0").await?;
+    /// let laddrs = udp_group.local_addrs().collect::<Vec<_>>();
+    /// #
+    /// # Ok(()) }) }
+    pub fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
+        self.sockets.keys()
     }
 }
 
@@ -231,7 +251,7 @@ impl Sender {
     }
 }
 
-impl Sink<(Bytes, Option<PathInfo>)> for Sender {
+impl Sink<(Bytes, Option<SocketAddr>, SocketAddr)> for Sender {
     type Error = io::Error;
 
     fn poll_ready(
@@ -247,24 +267,28 @@ impl Sink<(Bytes, Option<PathInfo>)> for Sender {
 
     fn start_send(
         mut self: std::pin::Pin<&mut Self>,
-        item: (Bytes, Option<PathInfo>),
+        item: (Bytes, Option<SocketAddr>, SocketAddr),
     ) -> Result<(), Self::Error> {
-        if let Some(path_info) = item.1 {
-            let socket = if let Some(socket) = self.sockets.get(&path_info.from).map(Clone::clone) {
-                socket
-            } else {
-                // randomly selects one socket to send data.
-                self.sockets
-                    .values()
-                    .choose(&mut rand::thread_rng())
-                    .unwrap()
-                    .clone()
-            };
+        let socket = if let Some(from) = item.1 {
+            self.sockets
+                .get(&from)
+                .map(Clone::clone)
+                .ok_or(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("UdpSocket not found, local_addr={:?}", from),
+                ))?
+        } else {
+            // randomly selects one socket to send data.
+            self.sockets
+                .values()
+                .choose(&mut rand::thread_rng())
+                .unwrap()
+                .clone()
+        };
 
-            self.fut = Some(Box::pin(async move {
-                socket.send_to(&item.0, path_info.from).await
-            }));
-        }
+        self.fut = Some(Box::pin(
+            async move { socket.send_to(&item.0, item.2).await },
+        ));
 
         Ok(())
     }
