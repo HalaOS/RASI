@@ -20,6 +20,7 @@ quiche = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 log = { workspace = true }
+ring = { workspace = true, optional = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }
@@ -31,7 +32,7 @@ default = ["event_map", "batching", "quic"]
 
 event_map = ["dashmap"]
 batching = ["parking_lot"]
-quic = ["udp_group", "quiche"]
+quic = ["udp_group", "quiche", "ring"]
 udp_group = ["bytes", "rand", "batching"]
 
 [[bench]]

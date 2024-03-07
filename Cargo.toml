@@ -21,6 +21,8 @@ divan = "^0.1"
 quiche = "^0.20"
 bytes = "^1.5"
 rand = { version = "^0.8", features = ["getrandom"] }
+ring = "^0.17"
+
 
 futures = { version = "^0.3", default-features = false }
 futures-test = "0.3.30"

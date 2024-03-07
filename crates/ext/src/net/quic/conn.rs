@@ -284,7 +284,7 @@ impl QuicConnState {
                 self.event_map
                     .notify_all(raised_events.as_slice(), EventStatus::Ready);
 
-                return Ok(read_size);
+                Ok(read_size)
             }
             Err(err) => {
                 // On error the connection will be closed by calling close() with the appropriate error code.
@@ -294,7 +294,7 @@ impl QuicConnState {
                 // So we must cancel all pending listener of event_map immediately;
                 self.event_map.close();
 
-                return Err(map_quic_error(err));
+                Err(map_quic_error(err))
             }
         }
     }
@@ -497,9 +497,8 @@ impl QuicConnState {
     ///
     /// Returns None, if the connection is draining or has been closed.
     pub async fn accept(&self) -> Option<u64> {
-        let mut raw = self.raw.lock().await;
-
         loop {
+            let mut raw = self.raw.lock().await;
             if let Some(stream_id) = raw.inbound_stream_queue.pop_front() {
                 return Some(stream_id);
             }
@@ -509,9 +508,7 @@ impl QuicConnState {
                 .once(QuicConnStateEvent::Accept(self.scid.clone()), raw)
                 .await
             {
-                Ok(_) => {
-                    raw = self.raw.lock().await;
-                }
+                Ok(_) => {}
                 Err(err) => {
                     log::error!("{}, cancel accept loop with error: {:?}", self, err);
                     return None;
@@ -543,5 +540,11 @@ impl QuicConnState {
         let raw = self.raw.lock().await;
 
         raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64
+    }
+
+    /// Returns true if the connection handshake is complete.
+    pub async fn is_established(&self) -> bool {
+        let raw = self.raw.lock().await;
+        raw.quiche_conn.is_established()
     }
 }

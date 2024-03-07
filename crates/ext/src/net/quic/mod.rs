@@ -6,9 +6,11 @@
 //!
 //! # Example
 
+mod config;
 mod conn;
 mod errors;
 mod listener;
 
+pub use config::*;
 pub use conn::*;
 pub use listener::*;

@@ -50,6 +50,15 @@ where
     listeners: parking_lot::Mutex<(bool, HashMap<E, Listener>)>,
 }
 
+impl<E> Default for EventMap<E>
+where
+    E: Eq + Hash + Unpin,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<E> EventMap<E>
 where
     E: Eq + Hash + Unpin,
