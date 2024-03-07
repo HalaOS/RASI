@@ -19,10 +19,12 @@ parking_lot = { workspace = true, optional = true }
 quiche = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+log = { workspace = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }
 divan = { workspace = true }
+futures = { workspace = true, features = ["executor", "thread-pool"] }
 
 [features]
 default = ["event_map", "batching", "quic"]

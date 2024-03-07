@@ -3,7 +3,6 @@
 use std::{
     borrow::Borrow,
     collections::HashMap,
-    future::Future,
     hash::Hash,
     sync::{
         atomic::{AtomicU8, Ordering},
@@ -48,7 +47,7 @@ pub struct EventMap<E>
 where
     E: Eq + Hash,
 {
-    listeners: parking_lot::Mutex<HashMap<E, Listener>>,
+    listeners: parking_lot::Mutex<(bool, HashMap<E, Listener>)>,
 }
 
 impl<E> EventMap<E>
@@ -72,7 +71,7 @@ where
 
     /// Notify `event` listener, and set the listener status to `status`.
     pub fn notify<Q: Borrow<E>>(&self, event: Q, status: EventStatus) -> bool {
-        if let Some(listener) = self.listeners.lock().remove(event.borrow()) {
+        if let Some(listener) = self.listeners.lock().1.remove(event.borrow()) {
             listener.status.store(status.into(), Ordering::Release);
 
             listener.waker.wake();
@@ -88,11 +87,29 @@ where
         let mut listeners = self.listeners.lock();
 
         for event in event_list.as_ref() {
-            if let Some(listener) = listeners.remove(event.borrow()) {
+            if let Some(listener) = listeners.1.remove(event.borrow()) {
                 listener.status.store(status.into(), Ordering::Release);
 
                 listener.waker.wake();
             }
+        }
+    }
+
+    pub fn close(&self) {
+        let mut inner = self.listeners.lock();
+
+        if inner.0 {
+            return;
+        }
+
+        inner.0 = true;
+
+        for (_, listener) in inner.1.drain() {
+            listener
+                .status
+                .store(EventStatus::Destroy.into(), Ordering::Release);
+
+            listener.waker.wake();
         }
     }
 }
@@ -103,7 +120,7 @@ where
 {
     fn drop(&mut self) {
         assert_eq!(
-            self.listeners.lock().len(),
+            self.listeners.lock().1.len(),
             0,
             "When WaitKey drops, it must remove itself from the EventMap by which it was created"
         );
@@ -141,7 +158,7 @@ where
     }
 }
 
-impl<'a, E, G> Future for WaitKey<'a, E, G>
+impl<'a, E, G> core::future::Future for WaitKey<'a, E, G>
 where
     E: Eq + Hash + Unpin + Clone,
     G: Unpin,
@@ -160,7 +177,15 @@ where
             );
             let event = self.event.clone();
 
-            self.event_map.listeners.lock().insert(
+            let mut inner = self.event_map.listeners.lock();
+
+            // event map closed
+            if inner.0 {
+                drop(guard);
+                return Poll::Ready(Err(EventStatus::Destroy));
+            }
+
+            inner.1.insert(
                 event,
                 Listener {
                     waker: cx.waker().clone(),
@@ -186,7 +211,7 @@ where
     E: Eq + Hash + Unpin,
 {
     fn drop(&mut self) {
-        self.event_map.listeners.lock().remove(&self.event);
+        self.event_map.listeners.lock().1.remove(&self.event);
     }
 }
 
@@ -213,11 +238,11 @@ mod tests {
 
         _ = wait_key.poll_unpin(&mut cx);
 
-        assert!(event_map.listeners.lock().contains_key(&1));
+        assert!(event_map.listeners.lock().1.contains_key(&1));
 
         drop(wait_key);
 
-        assert!(!event_map.listeners.lock().contains_key(&1));
+        assert!(!event_map.listeners.lock().1.contains_key(&1));
     }
 
     #[futures_test::test]
@@ -302,7 +327,7 @@ mod tests {
         loop {
             sleep(Duration::from_millis(100));
 
-            if event_map.listeners.lock().len() == loops as usize {
+            if event_map.listeners.lock().1.len() == loops as usize {
                 break;
             }
         }

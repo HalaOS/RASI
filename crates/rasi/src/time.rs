@@ -70,6 +70,12 @@ pub async fn sleep_with(duraton: Duration, syscall: &'static dyn rasi_syscall::T
     timer.await.expect("Call register_global_timer first");
 }
 
+async fn timeout_at_with(at: Instant, syscall: &'static dyn rasi_syscall::Timer) {
+    let timer = Sleep::new_with(at, syscall);
+
+    timer.await.expect("Call register_global_timer first");
+}
+
 /// Extension trait for [`Future`].
 ///
 /// This trait brings a timeout capability to any object that implements the [`Future`] trait.
@@ -113,6 +119,55 @@ pub trait TimeoutExt: Future {
         async move {
             futures::select! {
                 _ = sleep_with(duration,syscall).fuse() => {
+                    None
+                }
+                fut = self.fuse() => {
+                    Some(fut)
+                }
+
+            }
+        }
+    }
+
+    /// Awaits a future or times out at a time point after now.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+    /// #
+    /// use std::time::{Duration, Instant};
+    ///
+    /// use rasi::prelude::*;
+    ///
+    /// let never = futures::future::pending::<()>();
+    /// let dur = Duration::from_millis(5);
+    /// assert!(never.timeout_at(Instant::now() + dur).await.is_none());
+    /// #
+    /// # Ok(()) }) }
+    /// ```
+
+    fn timeout_at(self, at: Instant) -> impl Future<Output = Option<Self::Output>>
+    where
+        Self: Sized,
+    {
+        self.timeout_at_with(at, global_timer())
+    }
+
+    /// Using custom [`syscall`](rasi_syscall::Timer) to await a future or times out at a time point after now.
+    ///
+    /// see [`timeout`](TimeoutExt::timeout_at) for more information.
+    fn timeout_at_with(
+        self,
+        at: Instant,
+        syscall: &'static dyn rasi_syscall::Timer,
+    ) -> impl Future<Output = Option<Self::Output>>
+    where
+        Self: Sized,
+    {
+        async move {
+            futures::select! {
+                _ = timeout_at_with(at,syscall).fuse() => {
                     None
                 }
                 fut = self.fuse() => {
