@@ -26,7 +26,7 @@ ring = { workspace = true, optional = true }
 futures-test = { workspace = true }
 divan = { workspace = true }
 futures = { workspace = true, features = ["executor", "thread-pool"] }
-
+rasi-default = { workspace = true }
 [features]
 default = ["event_map", "batching", "quic"]
 

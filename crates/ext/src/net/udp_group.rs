@@ -317,3 +317,73 @@ impl Sink<(Bytes, Option<SocketAddr>, SocketAddr)> for Sender {
         Poll::Ready(Ok(()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use futures::{SinkExt, TryStreamExt};
+    use rasi_default::net::MioNetwork;
+
+    use super::*;
+
+    use std::{net::SocketAddr, sync::OnceLock};
+
+    static INIT: OnceLock<Box<dyn rasi::syscall::Network>> = OnceLock::new();
+
+    fn get_syscall() -> &'static dyn rasi::syscall::Network {
+        INIT.get_or_init(|| Box::new(MioNetwork::default()))
+            .as_ref()
+    }
+
+    #[futures_test::test]
+    async fn test_udp_group_echo() {
+        let syscall = get_syscall();
+
+        let addrs: Vec<SocketAddr> = ["127.0.0.1:0".parse().unwrap()].repeat(4);
+        let (mut client_sender, mut client_receiver) =
+            UdpGroup::bind_with(addrs.as_slice(), syscall)
+                .await
+                .unwrap()
+                .split();
+
+        let server = UdpGroup::bind_with(addrs.as_slice(), syscall)
+            .await
+            .unwrap();
+
+        let raddrs = server.local_addrs().cloned().collect::<Vec<_>>();
+
+        let (mut server_sender, mut server_receiver) = server.split();
+
+        let random_raddr = raddrs
+            .iter()
+            .choose(&mut rand::thread_rng())
+            .cloned()
+            .unwrap();
+
+        client_sender
+            .send((Bytes::from_static(b"hello world"), None, random_raddr))
+            .await
+            .unwrap();
+
+        let (buf, path_info) = server_receiver.try_next().await.unwrap().unwrap();
+
+        let buf = buf.freeze();
+
+        assert_eq!(buf, Bytes::from_static(b"hello world"));
+
+        server_sender
+            .send((
+                Bytes::from_static(b"hello world"),
+                Some(path_info.to),
+                path_info.from,
+            ))
+            .await
+            .unwrap();
+
+        let (buf, _) = client_receiver.try_next().await.unwrap().unwrap();
+
+        let buf = buf.freeze();
+
+        assert_eq!(buf, Bytes::from_static(b"hello world"));
+    }
+}
