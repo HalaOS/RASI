@@ -3,6 +3,7 @@ use std::{
     fmt::{Debug, Display},
     io,
     net::SocketAddr,
+    ops,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -14,6 +15,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use crate::{
     future::event_map::{EventMap, EventStatus},
     net::quic::errors::map_event_map_error,
+    utils::DerefExt,
 };
 
 use super::{errors::map_quic_error, Config};
@@ -574,5 +576,10 @@ impl QuicConnState {
     pub async fn is_established(&self) -> bool {
         let raw = self.raw.lock().await;
         raw.quiche_conn.is_established()
+    }
+
+    /// Get reference of inner [`quiche::Connection`] type.
+    pub async fn to_inner_conn(&self) -> impl ops::Deref<Target = quiche::Connection> + '_ {
+        self.raw.lock().await.deref_map(|state| &state.quiche_conn)
     }
 }

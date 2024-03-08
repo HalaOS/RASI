@@ -1,15 +1,15 @@
 use std::{
     collections::{HashMap, VecDeque},
     io,
-    net::SocketAddr,
+    net::{SocketAddr, ToSocketAddrs},
     sync::Arc,
     task::Poll,
 };
 
 use bytes::BytesMut;
 use quiche::{ConnectionId, RecvInfo, SendInfo};
-use rasi::futures::lock::Mutex;
 use rasi::futures::{FutureExt, Stream, StreamExt};
+use rasi::{futures::lock::Mutex, syscall::Network};
 use ring::{hmac::Key, rand::SystemRandom};
 
 use crate::{
@@ -333,7 +333,7 @@ impl Stream for QuicServerStateSender {
     }
 }
 
-/// The stream of the newly incoming connections of the [`QuicListenerState`]
+/// The stream of the newly incoming connections of the [`QuicListenerState`].
 pub struct QuicServerStateIncoming {
     /// raw state machine protected by mutex.
     raw: Arc<Mutex<RawQuicListenerState>>,
@@ -345,8 +345,8 @@ impl QuicServerStateIncoming {
     pub async fn accept(&self) -> Option<QuicConnState> {
         loop {
             let mut raw = self.raw.lock().await;
-            if let Some(stream_id) = raw.incoming_conns.pop_front() {
-                return Some(stream_id);
+            if let Some(conn_state) = raw.incoming_conns.pop_front() {
+                return Some(conn_state);
             }
 
             match self.event_map.once(QuicListenerEvent::Accept, raw).await {
@@ -466,5 +466,28 @@ impl QuicListenerState {
                 read_size: recv_size,
             } => return Ok((recv_size, Some(buf))),
         }
+    }
+}
+
+/// The server socket for quic to listen and accept newly incoming connections.
+///
+/// This implementation use [`UdpGroup`](crate::net::udp_group::UdpGroup) to listen on a range local ports.
+/// unlike the TcpListener, the QuicListener will listen on every address passed in via [`ToSocketAddrs`].
+///
+/// The socket will be closed when the value is dropped.
+pub struct QuicListener {}
+
+impl QuicListener {
+    /// Creates a new TcpListener with custom [syscall](rasi_syscall::Network) which will be bound to the specified address.
+    /// The returned listener is ready for accepting connections.
+    /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
+    /// The port allocated can be queried via the local_addr method.
+    ///
+    /// See [`bind`](TcpListener::bind) for more information.
+    pub async fn bind_with<A: ToSocketAddrs>(
+        _laddrs: A,
+        _syscall: &'static dyn Network,
+    ) -> io::Result<Self> {
+        todo!()
     }
 }
