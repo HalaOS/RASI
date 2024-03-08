@@ -2,19 +2,21 @@ use std::{
     collections::{HashSet, VecDeque},
     fmt::{Debug, Display},
     io,
+    net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use quiche::{ConnectionId, RecvInfo, SendInfo, Shutdown};
 use rasi::futures::lock::Mutex;
+use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::{
     future::event_map::{EventMap, EventStatus},
     net::quic::errors::map_event_map_error,
 };
 
-use super::errors::map_quic_error;
+use super::{errors::map_quic_error, Config};
 
 pub struct QuicConn;
 
@@ -133,6 +135,30 @@ impl Display for QuicConnState {
 }
 
 impl QuicConnState {
+    /// Creates a new client-side connection.
+    ///
+    /// `server_name` parameter is used to verify the peer's
+    /// certificate.
+    pub fn connect(
+        server_name: Option<&str>,
+        laddr: SocketAddr,
+        raddr: SocketAddr,
+        config: &mut Config,
+    ) -> io::Result<Self> {
+        let mut scid = vec![0; quiche::MAX_CONN_ID_LEN];
+
+        SystemRandom::new()
+            .fill(&mut scid)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{}", err)))?;
+
+        let scid = quiche::ConnectionId::from_vec(scid);
+
+        let quiche_conn =
+            quiche::connect(server_name, &scid, laddr, raddr, config).map_err(map_quic_error)?;
+
+        Ok(Self::new(quiche_conn, config.ping_packet_send_interval))
+    }
+
     /// Create new `QuicConnState` with provided parameters.
     ///
     /// # Parameters
@@ -176,6 +202,8 @@ impl QuicConnState {
 
                     // reset the `send_ack_eliciting_instant`
                     raw.send_ack_eliciting_instant = Instant::now();
+
+                    return Ok((send_size, send_info));
                 }
                 Err(quiche::Error::Done) => {
                     // check if the connect status `is_draining`

@@ -28,12 +28,19 @@ impl ops::DerefMut for Config {
 impl Config {
     /// Create new quic config instance with default config.
     pub fn new() -> Self {
-        Config {
+        let mut config = Config {
             quiche_config: quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap(),
             ping_packet_send_interval: Duration::from_secs(10),
             max_recv_udp_payload_size: 65527,
             max_send_udp_payload_size: 1200,
-        }
+        };
+
+        config.set_initial_max_stream_data_bidi_local(1024 * 1024);
+        config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
+        config.set_initial_max_streams_bidi(10);
+        config.set_initial_max_streams_uni(10);
+
+        config
     }
 
     /// Sets the `max_idle_timeout` transport parameter, in milliseconds.

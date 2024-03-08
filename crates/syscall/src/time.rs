@@ -31,8 +31,8 @@ static GLOBAL_TIMER: OnceLock<Box<dyn Timer>> = OnceLock::new();
 /// # Panic
 ///
 /// Multiple calls to this function are not permitted!!!
-pub fn register_global_timer<E: Timer + 'static>(executor: E) {
-    if GLOBAL_TIMER.set(Box::new(executor)).is_err() {
+pub fn register_global_timer<T: Timer + 'static>(timer: T) {
+    if GLOBAL_TIMER.set(Box::new(timer)).is_err() {
         panic!("Multiple calls to register_global_timer are not permitted!!!");
     }
 }

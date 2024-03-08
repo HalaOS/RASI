@@ -6,7 +6,7 @@ use std::{
     task::Poll,
 };
 
-use bytes::Bytes;
+use bytes::BytesMut;
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 use rasi::futures::lock::Mutex;
 use rasi::futures::{FutureExt, Stream, StreamExt};
@@ -29,7 +29,6 @@ enum QuicListenerEvent {
     Accept,
 }
 
-#[allow(unused)]
 enum QuicListenerHandshake {
     Connection {
         conn_state: QuicConnState,
@@ -39,7 +38,7 @@ enum QuicListenerHandshake {
     },
     Response {
         /// buf of response packet.
-        buf: Bytes,
+        buf: BytesMut,
         /// the number of bytes processed from the input buffer
         read_size: usize,
     },
@@ -102,6 +101,7 @@ impl RawQuicListenerState {
         }
     }
 
+    /// Process Initial packet.
     fn handshake<'a>(
         &mut self,
         header: &quiche::Header<'a>,
@@ -169,6 +169,15 @@ impl RawQuicListenerState {
 
         let conn_state = QuicConnState::new(quiche_conn, self.config.ping_packet_send_interval);
 
+        let scid = conn_state.scid.clone();
+
+        if is_established {
+            self.established_conns.insert(scid, conn_state.clone());
+            self.incoming_conns.push_back(conn_state.clone());
+        } else {
+            self.handshaking_conns.insert(scid, conn_state.clone());
+        }
+
         Ok(QuicListenerHandshake::Connection {
             conn_state,
             is_established,
@@ -190,7 +199,7 @@ impl RawQuicListenerState {
         let write_size = quiche::negotiate_version(&scid, &dcid, buf).map_err(map_quic_error)?;
 
         Ok(QuicListenerHandshake::Response {
-            buf: read_buf.into_bytes(Some(write_size)),
+            buf: read_buf.into_bytes_mut(Some(write_size)),
             read_size: buf.len(),
         })
     }
@@ -224,7 +233,7 @@ impl RawQuicListenerState {
         .map_err(map_quic_error)?;
 
         Ok(QuicListenerHandshake::Response {
-            buf: read_buf.into_bytes(Some(write_size)),
+            buf: read_buf.into_bytes_mut(Some(write_size)),
             read_size: buf.len(),
         })
     }
@@ -282,30 +291,30 @@ impl RawQuicListenerState {
 }
 
 /// The stream of the output data of [`QuicListenerState`]
-pub struct QuicListenerStateOutputStream {
+pub struct QuicServerStateSender {
     max_send_udp_payload_size: usize,
-    send_group: batching::Group<(QuicConnState, io::Result<(Bytes, SendInfo)>)>,
-    send_ready: batching::Ready<(QuicConnState, io::Result<(Bytes, SendInfo)>)>,
+    send_group: batching::Group<(QuicConnState, io::Result<(BytesMut, SendInfo)>)>,
+    send_ready: batching::Ready<(QuicConnState, io::Result<(BytesMut, SendInfo)>)>,
 }
 
-impl QuicListenerStateOutputStream {
+impl QuicServerStateSender {
     async fn send(
         state: QuicConnState,
         max_send_udp_payload_size: usize,
-    ) -> (QuicConnState, io::Result<(Bytes, SendInfo)>) {
+    ) -> (QuicConnState, io::Result<(BytesMut, SendInfo)>) {
         let mut buf = ReadBuf::with_capacity(max_send_udp_payload_size);
 
         match state.send(buf.chunk_mut()).await {
             Ok((send_size, send_info)) => {
-                return (state, Ok((buf.into_bytes(Some(send_size)), send_info)));
+                return (state, Ok((buf.into_bytes_mut(Some(send_size)), send_info)));
             }
             Err(err) => return (state, Err(err)),
         }
     }
 }
 
-impl Stream for QuicListenerStateOutputStream {
-    type Item = io::Result<(Bytes, SendInfo)>;
+impl Stream for QuicServerStateSender {
+    type Item = io::Result<(BytesMut, SendInfo)>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -325,14 +334,14 @@ impl Stream for QuicListenerStateOutputStream {
 }
 
 /// The stream of the newly incoming connections of the [`QuicListenerState`]
-pub struct QuicListenerStateIncoming {
+pub struct QuicServerStateIncoming {
     /// raw state machine protected by mutex.
     raw: Arc<Mutex<RawQuicListenerState>>,
     /// the event center of this quic server listener.
     event_map: Arc<EventMap<QuicListenerEvent>>,
 }
 
-impl QuicListenerStateIncoming {
+impl QuicServerStateIncoming {
     pub async fn accept(&self) -> Option<QuicConnState> {
         loop {
             let mut raw = self.raw.lock().await;
@@ -351,7 +360,7 @@ impl QuicListenerStateIncoming {
     }
 }
 
-impl Stream for QuicListenerStateIncoming {
+impl Stream for QuicServerStateIncoming {
     type Item = QuicConnState;
 
     fn poll_next(
@@ -369,18 +378,14 @@ pub struct QuicListenerState {
     /// the event center of this quic server listener.
     event_map: Arc<EventMap<QuicListenerEvent>>,
     /// batch read group.
-    send_group: batching::Group<(QuicConnState, io::Result<(Bytes, SendInfo)>)>,
+    send_group: batching::Group<(QuicConnState, io::Result<(BytesMut, SendInfo)>)>,
 }
 
 impl QuicListenerState {
     /// Create new `QuicListenerState` instance with provided [`Config`]
     pub fn new(
         config: Config,
-    ) -> io::Result<(
-        Self,
-        QuicListenerStateIncoming,
-        QuicListenerStateOutputStream,
-    )> {
+    ) -> io::Result<(Self, QuicServerStateIncoming, QuicServerStateSender)> {
         let max_send_udp_payload_size = config.max_send_udp_payload_size;
         let (send_group, send_ready) = batching::Group::new();
 
@@ -394,8 +399,8 @@ impl QuicListenerState {
                 event_map: event_map.clone(),
                 send_group: send_group.clone(),
             },
-            QuicListenerStateIncoming { raw, event_map },
-            QuicListenerStateOutputStream {
+            QuicServerStateIncoming { raw, event_map },
+            QuicServerStateSender {
                 max_send_udp_payload_size,
                 send_group,
                 send_ready,
@@ -410,7 +415,7 @@ impl QuicListenerState {
         &self,
         buf: &mut [u8],
         recv_info: RecvInfo,
-    ) -> io::Result<(usize, Option<Bytes>)> {
+    ) -> io::Result<(usize, Option<BytesMut>)> {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(map_quic_error)?;
 
@@ -439,11 +444,17 @@ impl QuicListenerState {
         match raw.handshake(&header, buf, recv_info)? {
             QuicListenerHandshake::Connection {
                 conn_state,
-                is_established: _,
+                is_established,
                 read_size,
             } => {
+                // notify incoming queue read ops.
+                if is_established {
+                    self.event_map
+                        .notify(QuicListenerEvent::Accept, EventStatus::Ready);
+                }
+
                 // add conn_state into batch send group.
-                self.send_group.join(QuicListenerStateOutputStream::send(
+                self.send_group.join(QuicServerStateSender::send(
                     conn_state,
                     raw.config.max_send_udp_payload_size,
                 ));

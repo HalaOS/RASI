@@ -27,6 +27,8 @@ futures-test = { workspace = true }
 divan = { workspace = true }
 futures = { workspace = true, features = ["executor", "thread-pool"] }
 rasi-default = { workspace = true }
+pretty_env_logger = { workspace = true }
+
 [features]
 default = ["event_map", "batching", "quic"]
 
