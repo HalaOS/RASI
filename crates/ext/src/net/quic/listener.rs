@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     io,
+    net::SocketAddr,
     sync::Arc,
     task::Poll,
 };
@@ -107,7 +108,176 @@ impl RawQuicListenerState {
         buf: &'a mut [u8],
         recv_info: RecvInfo,
     ) -> io::Result<QuicListenerHandshake> {
-        todo!()
+        if header.ty != quiche::Type::Initial {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid packet: {:?}", recv_info),
+            ));
+        }
+
+        self.client_hello(header, buf, recv_info)
+    }
+
+    fn client_hello<'a>(
+        &mut self,
+        header: &quiche::Header<'a>,
+        buf: &'a mut [u8],
+        recv_info: RecvInfo,
+    ) -> io::Result<QuicListenerHandshake> {
+        if !quiche::version_is_supported(header.version) {
+            return self.negotiation_version(header, recv_info, buf);
+        }
+
+        let token = header.token.as_ref().unwrap();
+
+        // generate new token and retry
+        if token.is_empty() {
+            return self.retry(header, recv_info, buf);
+        }
+
+        // check token .
+        let odcid = Self::validate_token(token, &recv_info.from)?;
+
+        let scid: quiche::ConnectionId<'_> = header.dcid.clone();
+
+        if quiche::MAX_CONN_ID_LEN != scid.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                format!("Check dcid length error, len={}", scid.len()),
+            ));
+        }
+
+        let mut quiche_conn = quiche::accept(
+            &scid,
+            Some(&odcid),
+            recv_info.to,
+            recv_info.from,
+            &mut self.config,
+        )
+        .map_err(map_quic_error)?;
+
+        let read_size = quiche_conn.recv(buf, recv_info).map_err(map_quic_error)?;
+
+        log::trace!(
+            "Create new incoming conn, scid={:?}, dcid={:?}, read_size={}",
+            quiche_conn.source_id(),
+            quiche_conn.destination_id(),
+            read_size,
+        );
+
+        let is_established = quiche_conn.is_established();
+
+        let conn_state = QuicConnState::new(quiche_conn, self.config.ping_packet_send_interval);
+
+        Ok(QuicListenerHandshake::Connection {
+            conn_state,
+            is_established,
+            read_size,
+        })
+    }
+
+    fn negotiation_version<'a>(
+        &mut self,
+        header: &quiche::Header<'a>,
+        recv_info: RecvInfo,
+        buf: &mut [u8],
+    ) -> io::Result<QuicListenerHandshake> {
+        let scid = header.scid.clone().into_owned();
+        let dcid = header.dcid.clone().into_owned();
+
+        let mut read_buf = ReadBuf::with_capacity(self.config.max_send_udp_payload_size);
+
+        let write_size = quiche::negotiate_version(&scid, &dcid, buf).map_err(map_quic_error)?;
+
+        Ok(QuicListenerHandshake::Response {
+            buf: read_buf.into_bytes(Some(write_size)),
+            read_size: buf.len(),
+        })
+    }
+    /// Generate retry package
+    fn retry<'a>(
+        &mut self,
+        header: &quiche::Header<'a>,
+        recv_info: RecvInfo,
+        buf: &mut [u8],
+    ) -> io::Result<QuicListenerHandshake> {
+        let token = self.mint_token(&header, &recv_info.from);
+
+        let new_scid = ring::hmac::sign(&self.scid_seed, &header.dcid);
+        let new_scid = &new_scid.as_ref()[..quiche::MAX_CONN_ID_LEN];
+        let new_scid = quiche::ConnectionId::from_vec(new_scid.to_vec());
+
+        let scid = header.scid.clone().into_owned();
+        let dcid: ConnectionId<'_> = header.dcid.clone().into_owned();
+        let version = header.version;
+
+        let mut read_buf = ReadBuf::with_capacity(self.config.max_send_udp_payload_size);
+
+        let write_size = quiche::retry(
+            &scid,
+            &dcid,
+            &new_scid,
+            &token,
+            version,
+            read_buf.chunk_mut(),
+        )
+        .map_err(map_quic_error)?;
+
+        Ok(QuicListenerHandshake::Response {
+            buf: read_buf.into_bytes(Some(write_size)),
+            read_size: buf.len(),
+        })
+    }
+
+    fn validate_token<'a>(
+        token: &'a [u8],
+        src: &SocketAddr,
+    ) -> io::Result<quiche::ConnectionId<'a>> {
+        if token.len() < 6 {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                format!("Invalid token, token length < 6"),
+            ));
+        }
+
+        if &token[..6] != b"quiche" {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                format!("Invalid token, not start with 'quiche'"),
+            ));
+        }
+
+        let token = &token[6..];
+
+        let addr = match src.ip() {
+            std::net::IpAddr::V4(a) => a.octets().to_vec(),
+            std::net::IpAddr::V6(a) => a.octets().to_vec(),
+        };
+
+        if token.len() < addr.len() || &token[..addr.len()] != addr.as_slice() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                format!("Invalid token, address mismatch"),
+            ));
+        }
+
+        Ok(quiche::ConnectionId::from_ref(&token[addr.len()..]))
+    }
+
+    fn mint_token<'a>(&self, hdr: &quiche::Header<'a>, src: &SocketAddr) -> Vec<u8> {
+        let mut token = Vec::new();
+
+        token.extend_from_slice(b"quiche");
+
+        let addr = match src.ip() {
+            std::net::IpAddr::V4(a) => a.octets().to_vec(),
+            std::net::IpAddr::V6(a) => a.octets().to_vec(),
+        };
+
+        token.extend_from_slice(&addr);
+        token.extend_from_slice(&hdr.dcid);
+
+        token
     }
 }
 
