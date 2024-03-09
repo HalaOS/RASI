@@ -232,16 +232,20 @@ impl QuicConnState {
 
                     let event = QuicConnStateEvent::Send(self.scid.clone());
 
-                    if let Some(timeout) = raw.quiche_conn.timeout_instant() {
+                    if let Some(mut timeout_at) = raw.quiche_conn.timeout_instant() {
                         use rasi::time::TimeoutExt;
 
-                        log::trace!(
-                            "{} waiting send data with timeout at {:#?}",
-                            self,
-                            timeout - Instant::now()
-                        );
+                        let send_ack_eliciting_at =
+                            raw.send_ack_eliciting_instant + raw.ping_send_intervals;
 
-                        match self.event_map.once(event, raw).timeout_at(timeout).await {
+                        let mut send_ack_eliciting = false;
+
+                        if send_ack_eliciting_at < timeout_at {
+                            timeout_at = send_ack_eliciting_at;
+                            send_ack_eliciting = true;
+                        }
+
+                        match self.event_map.once(event, raw).timeout_at(timeout_at).await {
                             Some(Ok(_)) => {
                                 // try send data again.
                                 raw = self.raw.lock().await;
@@ -256,8 +260,16 @@ impl QuicConnState {
 
                                 log::trace!("{} on_timeout", self);
 
-                                // timeout, call quic connection timeout.
-                                raw.quiche_conn.on_timeout();
+                                if send_ack_eliciting {
+                                    // send ping packet.
+                                    raw.quiche_conn
+                                        .send_ack_eliciting()
+                                        .map_err(map_quic_error)?;
+                                } else {
+                                    // timeout, call quic connection timeout.
+                                    raw.quiche_conn.on_timeout();
+                                }
+
                                 continue;
                             }
                         }
