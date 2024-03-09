@@ -41,6 +41,8 @@ enum QuicConnStateEvent {
 
     /// This event notify listener that one incoming stream is valid.
     StreamAccept(ConnectionId<'static>),
+    /// This event notify that peer_streams_left_bidi > 0
+    CanOpenPeerStream(ConnectionId<'static>),
 }
 
 /// The inner state machine for quic connection.
@@ -143,8 +145,7 @@ impl Display for QuicConnState {
 impl QuicConnState {
     /// Creates a new client-side connection.
     ///
-    /// `server_name` parameter is used to verify the peer's
-    /// certificate.
+    /// `server_name` parameter is used to verify the peer's certificate.
     pub fn connect(
         server_name: Option<&str>,
         laddr: SocketAddr,
@@ -327,6 +328,13 @@ impl QuicConnState {
                         self.scid.clone(),
                         stream_id,
                     ));
+                }
+
+                let peer_streams_left_bidi =
+                    raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64;
+
+                if peer_streams_left_bidi > 0 {
+                    raised_events.push(QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()));
                 }
 
                 self.event_map
@@ -566,17 +574,44 @@ impl QuicConnState {
     }
 
     /// Open a outbound stream. returns the new stream id.
-    pub async fn stream_open(&self) -> u64 {
-        let mut raw = self.raw.lock().await;
+    ///
+    /// If `stream_limits_error` is true, this function will raise `StreamLimits` error,
+    /// Otherwise it blocks the current task until a new data stream can be opened.
+    pub async fn stream_open(&self, stream_limits_error: bool) -> io::Result<u64> {
+        loop {
+            let mut raw = self.raw.lock().await;
 
-        let stream_id = raw.next_outbound_stream_id;
+            let peer_streams_left_bidi =
+                raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64;
 
-        raw.next_outbound_stream_id += 4;
+            if peer_streams_left_bidi == 0 {
+                if stream_limits_error {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        quiche::Error::StreamLimit,
+                    ));
+                }
 
-        // removed after first call to stream_send.
-        raw.outbound_stream_ids.insert(stream_id);
+                self.event_map
+                    .once(
+                        QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()),
+                        raw,
+                    )
+                    .await
+                    .map_err(map_event_map_error)?;
 
-        stream_id
+                continue;
+            }
+
+            let stream_id = raw.next_outbound_stream_id;
+
+            raw.next_outbound_stream_id += 4;
+
+            // removed after first call to stream_send.
+            raw.outbound_stream_ids.insert(stream_id);
+
+            return Ok(stream_id);
+        }
     }
 
     /// Returns the number of bidirectional streams that can be created
@@ -751,8 +786,24 @@ impl QuicConn {
     ///
     /// The `stream_open` does not really open a stream until
     /// the first byte is sent by [`send`](QuicConnState::stream_send) function.
-    pub async fn stream_open(&self) -> QuicStream {
-        QuicStream::new(self.inner.0.stream_open().await, self.inner.clone())
+    ///
+    /// If `stream_limits_error` is true, this function will raise `StreamLimits` error,
+    /// Otherwise it blocks the current task until a new data stream can be opened.
+    pub async fn stream_open(&self, stream_limits_error: bool) -> io::Result<QuicStream> {
+        self.inner
+            .0
+            .stream_open(stream_limits_error)
+            .await
+            .map(|stream_id| QuicStream::new(stream_id, self.inner.clone()))
+    }
+
+    /// Returns the number of bidirectional streams that can be created
+    /// before the peer's stream count limit is reached.
+    ///
+    /// This can be useful to know if it's possible to create a bidirectional
+    /// stream without trying it first.
+    pub async fn peer_streams_left_bidi(&self) -> u64 {
+        self.inner.0.peer_streams_left_bidi().await
     }
 }
 
@@ -843,7 +894,7 @@ impl Drop for QuicStreamFinalizer {
 
         spawn(async move {
             match state.stream_close(stream_id).await {
-                Ok(_) => todo!(),
+                Ok(_) => {}
                 Err(err) => {
                     log::error!(
                         "{}, stream_id={}, drop with error: {}",
@@ -861,6 +912,12 @@ impl Drop for QuicStreamFinalizer {
 #[derive(Clone)]
 pub struct QuicStream {
     inner: Arc<QuicStreamFinalizer>,
+}
+
+impl Display for QuicStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}, stream_id={}", self.inner.1 .0, self.inner.0)
+    }
 }
 
 impl QuicStream {

@@ -35,6 +35,11 @@ impl Config {
             max_send_udp_payload_size: 1200,
         };
 
+        config.set_max_idle_timeout(50000);
+        assert_eq!(
+            config.ping_packet_send_interval,
+            Duration::from_millis(25000)
+        );
         config.set_initial_max_stream_data_bidi_local(1024 * 1024);
         config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
         config.set_initial_max_streams_bidi(10);

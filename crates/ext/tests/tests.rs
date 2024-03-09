@@ -76,7 +76,7 @@ async fn test_echo() {
         }
     });
 
-    let mut stream = client.stream_open().await;
+    let mut stream = client.stream_open(false).await.unwrap();
 
     for _ in 0..100 {
         stream.write_all(b"hello world").await.unwrap();
@@ -107,16 +107,24 @@ async fn test_echo_per_stream() {
     spawn(async move {
         while let Some(conn) = listener.accept().await {
             while let Some(mut stream) = conn.stream_accept().await {
-                let mut buf = vec![0; 100];
-                let read_size = stream.read(&mut buf).await.unwrap();
+                spawn(async move {
+                    loop {
+                        let mut buf = vec![0; 100];
+                        let read_size = stream.read(&mut buf).await.unwrap();
 
-                stream.write_all(&buf[..read_size]).await.unwrap();
+                        if read_size == 0 {
+                            break;
+                        }
+
+                        stream.write_all(&buf[..read_size]).await.unwrap();
+                    }
+                })
             }
         }
     });
 
-    for _ in 0..6 {
-        let mut stream = client.stream_open().await;
+    for _ in 0..1000 {
+        let mut stream = client.stream_open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
 
@@ -125,5 +133,9 @@ async fn test_echo_per_stream() {
         let read_size = stream.read(&mut buf).await.unwrap();
 
         assert_eq!(&buf[..read_size], b"hello world");
+
+        while client.peer_streams_left_bidi().await == 0 {
+            println!("===========");
+        }
     }
 }
