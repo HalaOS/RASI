@@ -167,13 +167,12 @@ pub trait TimeoutExt: Future {
     {
         async move {
             futures::select! {
-                _ = timeout_at_with(at,syscall).fuse() => {
-                    None
-                }
                 fut = self.fuse() => {
                     Some(fut)
                 }
-
+                _ = timeout_at_with(at,syscall).fuse() => {
+                    None
+                }
             }
         }
     }
