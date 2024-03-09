@@ -326,6 +326,8 @@ impl Stream for QuicServerStateSender {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
+        // perhaps: there is a bug.
+
         match self.send_ready.poll_next_unpin(cx) {
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some((cx, r))) => {

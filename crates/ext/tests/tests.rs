@@ -94,7 +94,9 @@ async fn test_echo_per_stream() {
     init::init();
     // pretty_env_logger::init();
 
-    let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))
+    let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
+
+    let listener = QuicListener::bind(laddrs.as_slice(), mock_config(true))
         .await
         .unwrap();
 
@@ -123,7 +125,7 @@ async fn test_echo_per_stream() {
         }
     });
 
-    for _ in 0..1000 {
+    for _ in 0..10000 {
         let mut stream = client.stream_open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
