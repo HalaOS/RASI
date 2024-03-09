@@ -86,6 +86,8 @@ where
 {
     locker: &'a AsyncLockableMaker<Locker, Wakers>,
     inner_guard: Option<Locker::GuardMut<'a>>,
+    #[cfg(feature = "trace_lock")]
+    caller: &'static Location<'static>,
 }
 
 impl<'a, Locker, Wakers, Mediator> AsyncGuardMut<'a>
@@ -140,6 +142,13 @@ where
     fn drop(&mut self) {
         if let Some(guard) = self.inner_guard.take() {
             drop(guard);
+
+            #[cfg(feature = "trace_lock")]
+            log::trace!(
+                "async unlocked, caller: {}({})",
+                self.caller.file(),
+                self.caller.line(),
+            );
 
             let mut wakers = self.locker.wakers.lock();
 
@@ -199,11 +208,22 @@ where
             return std::task::Poll::Ready(AsyncLockableMakerGuard {
                 locker: self.locker,
                 inner_guard: Some(guard),
+                #[cfg(feature = "trace_lock")]
+                caller: self.caller,
             });
         }
 
         let mut wakers = self.locker.wakers.lock();
-        self.wait_key = Some(wakers.wait_lockable(cx));
+
+        #[cfg(feature = "trace_lock")]
+        {
+            self.wait_key = Some(wakers.wait_lockable(cx, self.caller));
+        }
+
+        #[cfg(not(feature = "trace_lock"))]
+        {
+            self.wait_key = Some(wakers.wait_lockable(cx));
+        }
 
         // Ensure that we haven't raced `MutexGuard::drop`'s unlock path by
         // attempting to acquire the lock again
@@ -216,11 +236,10 @@ where
             return std::task::Poll::Ready(AsyncLockableMakerGuard {
                 locker: self.locker,
                 inner_guard: Some(guard),
+                #[cfg(feature = "trace_lock")]
+                caller: self.caller,
             });
         }
-
-        #[cfg(feature = "trace_lock")]
-        log::trace!("async lock pending, {:?}", self);
 
         std::task::Poll::Pending
     }
@@ -228,6 +247,9 @@ where
 
 pub struct DefaultAsyncLockableMediator {
     key_next: usize,
+    #[cfg(feature = "trace_lock")]
+    wakers: HashMap<usize, (&'static Location<'static>, Waker)>,
+    #[cfg(not(feature = "trace_lock"))]
     wakers: HashMap<usize, Waker>,
 }
 
@@ -241,6 +263,7 @@ impl Default for DefaultAsyncLockableMediator {
 }
 
 impl AsyncLockableMediator for DefaultAsyncLockableMediator {
+    #[cfg(not(feature = "trace_lock"))]
     fn wait_lockable(&mut self, cx: &mut std::task::Context<'_>) -> usize {
         let key = self.key_next;
         self.key_next += 1;
@@ -250,17 +273,98 @@ impl AsyncLockableMediator for DefaultAsyncLockableMediator {
         key
     }
 
+    #[cfg(feature = "trace_lock")]
+    fn wait_lockable(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+        tracer: &'static Location<'static>,
+    ) -> usize {
+        let key = self.key_next;
+        self.key_next += 1;
+
+        log::trace!(
+            "async locked pending,caller: {}({}), ptr={:?}",
+            tracer.file(),
+            tracer.line(),
+            self as *mut Self,
+        );
+
+        self.wakers.insert(key, (tracer, cx.waker().clone()));
+
+        key
+    }
+
     fn cancel(&mut self, key: usize) -> bool {
-        self.wakers.remove(&key).is_some()
+        #[cfg(feature = "trace_lock")]
+        {
+            if let Some((tracer, _)) = self.wakers.remove(&key) {
+                log::trace!(
+                    "async locked remove pending,caller: {}({}), ptr={:?}",
+                    tracer.file(),
+                    tracer.line(),
+                    self as *mut Self,
+                );
+
+                true
+            } else {
+                false
+            }
+        }
+
+        #[cfg(not(feature = "trace_lock"))]
+        {
+            return self.wakers.remove(&key).is_some();
+        }
     }
 
     fn notify_one(&mut self) {
-        if let Some(key) = self.wakers.keys().next().map(|key| *key) {
-            self.wakers.remove(&key).unwrap().wake();
+        #[cfg(feature = "trace_lock")]
+        log::trace!(
+            "waker list notify one. total len={}, ptr={:?}",
+            self.wakers.len(),
+            self as *mut Self,
+        );
+
+        let mut keys = self.wakers.keys().cloned().collect::<Vec<_>>();
+
+        if !keys.is_empty() {
+            keys.sort();
+
+            #[cfg(feature = "trace_lock")]
+            {
+                let (tracer, waker) = self.wakers.remove(&keys[0]).unwrap();
+                log::trace!(
+                    "notify async lock pending, caller: {}({}), ptr={:?}",
+                    tracer.file(),
+                    tracer.line(),
+                    self as *mut Self,
+                );
+
+                waker.wake();
+            }
+
+            #[cfg(not(feature = "trace_lock"))]
+            {
+                let waker = self.wakers.remove(&keys[0]).unwrap();
+
+                waker.wake();
+            }
         }
     }
 
     fn notify_all(&mut self) {
+        #[cfg(feature = "trace_lock")]
+        for (_, (tracer, waker)) in self.wakers.drain() {
+            log::trace!(
+                "notify async lock pending, caller: {}({})",
+                tracer.file(),
+                tracer.line()
+            );
+
+            waker.wake();
+        }
+
+        #[cfg(not(feature = "trace_lock"))]
         for (_, waker) in self.wakers.drain() {
             waker.wake();
         }

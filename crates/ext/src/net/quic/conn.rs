@@ -3,7 +3,7 @@ use std::{
     fmt::{Debug, Display},
     io,
     net::{SocketAddr, ToSocketAddrs},
-    ops,
+    ops::{self, DerefMut},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -188,6 +188,55 @@ impl QuicConnState {
         }
     }
 
+    fn handle_stream_status<Guard>(&self, raw: &mut Guard)
+    where
+        Guard: DerefMut<Target = RawQuicConnState>,
+    {
+        let mut raised_events = vec![
+            // as [`send`](https://docs.rs/quiche/latest/quiche/struct.Connection.html#method.send)
+            // function description, that is, any time recv() is called, we should call send() again.
+            QuicConnStateEvent::Send(self.scid.clone()),
+        ];
+
+        for stream_id in raw.quiche_conn.readable() {
+            // check if the stream is a new inbound stream.
+            // If true push stream into the acceptance queue instead of triggering a readable event
+            if stream_id % 2 != raw.next_outbound_stream_id % 2
+                && !raw.inbound_stream_ids.contains(&stream_id)
+            {
+                raw.inbound_stream_ids.insert(stream_id);
+                raw.inbound_stream_queue.push_back(stream_id);
+                raised_events.push(QuicConnStateEvent::StreamAccept(self.scid.clone()));
+
+                log::trace!("{} stream_id={}, newly incoming stream", self, stream_id);
+
+                continue;
+            }
+
+            raised_events.push(QuicConnStateEvent::StreamReadable(
+                self.scid.clone(),
+                stream_id,
+            ));
+        }
+
+        for stream_id in raw.quiche_conn.writable() {
+            raised_events.push(QuicConnStateEvent::StreamWritable(
+                self.scid.clone(),
+                stream_id,
+            ));
+        }
+
+        let peer_streams_left_bidi =
+            raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64;
+
+        if peer_streams_left_bidi > 0 {
+            raised_events.push(QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()));
+        }
+
+        self.event_map
+            .notify_all(&raised_events, EventStatus::Ready);
+    }
+
     /// Read sending data from quic connection state machine.
     ///
     /// On success, returns the total number of bytes copied and the [`send information`](SendInfo)
@@ -209,6 +258,10 @@ impl QuicConnState {
 
                     // reset the `send_ack_eliciting_instant`
                     raw.send_ack_eliciting_instant = Instant::now();
+
+                    // On success, the streams status may changed.
+                    // check readable / writable status and trigger events.
+                    self.handle_stream_status(&mut raw);
 
                     return Ok((send_size, send_info));
                 }
@@ -308,49 +361,7 @@ impl QuicConnState {
                 // On success, the streams status may changed.
                 // check readable / writable status and trigger events.
 
-                let mut raised_events = vec![
-                    // as [`send`](https://docs.rs/quiche/latest/quiche/struct.Connection.html#method.send)
-                    // function description, that is, any time recv() is called, we should call send() again.
-                    QuicConnStateEvent::Send(self.scid.clone()),
-                ];
-
-                for stream_id in raw.quiche_conn.readable() {
-                    // check if the stream is a new inbound stream.
-                    // If true push stream into the acceptance queue instead of triggering a readable event
-                    if stream_id % 2 != raw.next_outbound_stream_id % 2
-                        && !raw.inbound_stream_ids.contains(&stream_id)
-                    {
-                        raw.inbound_stream_ids.insert(stream_id);
-                        raw.inbound_stream_queue.push_back(stream_id);
-                        raised_events.push(QuicConnStateEvent::StreamAccept(self.scid.clone()));
-
-                        log::trace!("{} stream_id={}, newly incoming stream", self, stream_id);
-
-                        continue;
-                    }
-
-                    raised_events.push(QuicConnStateEvent::StreamReadable(
-                        self.scid.clone(),
-                        stream_id,
-                    ));
-                }
-
-                for stream_id in raw.quiche_conn.writable() {
-                    raised_events.push(QuicConnStateEvent::StreamWritable(
-                        self.scid.clone(),
-                        stream_id,
-                    ));
-                }
-
-                let peer_streams_left_bidi =
-                    raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64;
-
-                if peer_streams_left_bidi > 0 {
-                    raised_events.push(QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()));
-                }
-
-                self.event_map
-                    .notify_all(&raised_events, EventStatus::Ready);
+                self.handle_stream_status(&mut raw);
 
                 Ok(read_size)
             }
@@ -535,7 +546,7 @@ impl QuicConnState {
                 QuicConnStateEvent::StreamReadable(self.scid.clone(), stream_id),
                 EventStatus::Cancel
             ),
-            "Call stream_drop with stream_recv operation is pending"
+            "Call stream_close with stream_recv operation is pending"
         );
 
         assert!(
@@ -543,7 +554,7 @@ impl QuicConnState {
                 QuicConnStateEvent::StreamWritable(self.scid.clone(), stream_id),
                 EventStatus::Cancel
             ),
-            "Call stream_drop with stream_send operation is pending"
+            "Call stream_close with stream_send operation is pending"
         );
 
         // clear buf datas.
@@ -603,6 +614,8 @@ impl QuicConnState {
                         quiche::Error::StreamLimit,
                     ));
                 }
+
+                println!("{} stream open pending...", self);
 
                 self.event_map
                     .once(
@@ -665,6 +678,17 @@ impl QuicConnState {
             Err(quiche::Error::Done) => Ok(()),
             Err(err) => Err(map_quic_error(err)),
         }
+    }
+
+    async fn update_dcid(&mut self) {
+        self.dcid = self
+            .raw
+            .lock()
+            .await
+            .quiche_conn
+            .destination_id()
+            .clone()
+            .into_owned();
     }
 }
 
@@ -736,7 +760,7 @@ impl QuicConn {
 
         let raddr = raddrs.to_socket_addrs()?.choose(&mut thread_rng()).unwrap();
 
-        let conn_state = QuicConnState::connect(server_name, *laddr, raddr, config)?;
+        let mut conn_state = QuicConnState::connect(server_name, *laddr, raddr, config)?;
 
         let (mut sender, mut receiver) = socket.split();
 
@@ -769,6 +793,7 @@ impl QuicConn {
                 .await?;
 
             if conn_state.is_established().await {
+                conn_state.update_dcid().await;
                 break;
             }
         }

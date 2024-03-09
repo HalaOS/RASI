@@ -63,7 +63,15 @@ pub trait AsyncLockableMediator {
     /// Block the current task and wait for lockable event.
     ///
     /// Return the unique wait key.
+    #[cfg(not(feature = "trace_lock"))]
     fn wait_lockable(&mut self, cx: &mut Context<'_>) -> usize;
+
+    #[cfg(feature = "trace_lock")]
+    fn wait_lockable(
+        &mut self,
+        cx: &mut Context<'_>,
+        tracer: &'static std::panic::Location<'static>,
+    ) -> usize;
 
     /// Cancel the waker by key value.
     /// Returns true if remove waker successfully.

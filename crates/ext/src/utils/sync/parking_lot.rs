@@ -1,6 +1,6 @@
 use std::ops;
 
-use crate::{maker::*, Lockable, LockableNew};
+use super::{maker::*, Lockable, LockableNew};
 
 /// A spin style mutex implementation without handle thread-specific data.
 pub struct SpinMutex<T> {
