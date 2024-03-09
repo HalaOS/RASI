@@ -1,11 +1,8 @@
 use futures::{AsyncReadExt, AsyncWriteExt};
-use parking_lot::Once;
 use rasi::executor::spawn;
-use rasi_default::{
-    executor::register_futures_executor, net::register_mio_network, time::register_mio_timer,
-};
+use rasi_ext::net::quic::{Config, QuicConn, QuicListener};
 
-use super::{Config, QuicConn, QuicListener};
+mod init;
 
 fn mock_config(is_server: bool) -> Config {
     use std::path::Path;
@@ -51,19 +48,9 @@ fn mock_config(is_server: bool) -> Config {
     config
 }
 
-fn init() {
-    static INIT: Once = Once::new();
-
-    INIT.call_once(|| {
-        register_mio_network();
-        register_mio_timer();
-        register_futures_executor(10).unwrap();
-    })
-}
-
 #[futures_test::test]
 async fn test_echo() {
-    init();
+    init::init();
     // pretty_env_logger::init();
 
     let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))
@@ -104,7 +91,7 @@ async fn test_echo() {
 
 #[futures_test::test]
 async fn test_echo_per_stream() {
-    init();
+    init::init();
     // pretty_env_logger::init();
 
     let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))

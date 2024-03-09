@@ -11,7 +11,7 @@
 //! #
 //! use rasi_default::reactor;
 //!
-//! let reactor = reactor::get_global_reactor();
+//! let reactor = reactor::global_reactor();
 //! #
 //! # }
 //! ```

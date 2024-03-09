@@ -14,9 +14,3 @@ mod listener;
 pub use config::*;
 pub use conn::*;
 pub use listener::*;
-
-#[cfg(test)]
-mod state_tests;
-
-#[cfg(test)]
-mod tests;

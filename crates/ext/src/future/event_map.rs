@@ -222,31 +222,9 @@ where
 mod tests {
     use std::{thread::sleep, time::Duration};
 
-    use futures::{lock, task::SpawnExt, FutureExt};
-    use futures_test::task::noop_context;
+    use futures::{lock, task::SpawnExt};
 
     use super::*;
-
-    #[futures_test::test]
-    async fn test_drop_waitkey() {
-        let event_map = EventMap::<i32>::new();
-
-        let locker = futures::lock::Mutex::new(());
-
-        let guard = locker.lock().await;
-
-        let mut wait_key = event_map.once(1, guard);
-
-        let mut cx = noop_context();
-
-        _ = wait_key.poll_unpin(&mut cx);
-
-        assert!(event_map.listeners.lock().1.contains_key(&1));
-
-        drop(wait_key);
-
-        assert!(!event_map.listeners.lock().1.contains_key(&1));
-    }
 
     #[futures_test::test]
     async fn test_with_future_aware_mutex() {

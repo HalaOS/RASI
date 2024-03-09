@@ -1,10 +1,12 @@
 use futures::{io, StreamExt, TryStreamExt};
-use parking_lot::Once;
+
 use quiche::RecvInfo;
 
-use rasi_default::time::register_mio_timer;
+use rasi_ext::net::quic::{
+    Config, QuicConnState, QuicListenerState, QuicServerStateIncoming, QuicServerStateSender,
+};
 
-use super::*;
+mod init;
 
 fn mock_config(is_server: bool) -> Config {
     use std::path::Path;
@@ -49,14 +51,6 @@ fn mock_config(is_server: bool) -> Config {
     config.set_disable_active_migration(false);
 
     config
-}
-
-fn init() {
-    static INIT: Once = Once::new();
-
-    INIT.call_once(|| {
-        register_mio_timer();
-    })
 }
 
 struct MockQuic {
@@ -175,7 +169,7 @@ impl MockQuic {
 
 #[futures_test::test]
 async fn test_connect() {
-    init();
+    init::init();
 
     let mut mock = MockQuic::new().await.unwrap();
 
@@ -199,7 +193,7 @@ async fn test_connect() {
 
 #[futures_test::test]
 async fn test_connect_trigger_fin() {
-    init();
+    init::init();
 
     let mut mock = MockQuic::new().await.unwrap();
 
@@ -220,7 +214,7 @@ async fn test_connect_trigger_fin() {
 
 #[futures_test::test]
 async fn test_stream() {
-    init();
+    init::init();
 
     let mut mock = MockQuic::new().await.unwrap();
 
@@ -262,7 +256,7 @@ async fn test_stream() {
 
 #[futures_test::test]
 async fn verify_client_cert() {
-    init();
+    init::init();
 
     let mut mock = MockQuic::new().await.unwrap();
 
@@ -287,7 +281,7 @@ async fn verify_client_cert() {
 
 #[futures_test::test]
 async fn test_stream_stopped_by_server() {
-    init();
+    init::init();
 
     let mut mock = MockQuic::new().await.unwrap();
 
@@ -338,7 +332,7 @@ async fn test_stream_stopped_by_server() {
 
 #[futures_test::test]
 async fn test_stream_stopped_by_client() {
-    init();
+    init::init();
 
     let mut mock = MockQuic::new().await.unwrap();
 
