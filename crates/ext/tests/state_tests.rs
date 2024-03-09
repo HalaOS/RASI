@@ -173,7 +173,7 @@ async fn test_connect() {
 
     let mut mock = MockQuic::new().await.unwrap();
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     mock.send_to_server().await.unwrap();
 
@@ -197,7 +197,7 @@ async fn test_connect_trigger_fin() {
 
     let mut mock = MockQuic::new().await.unwrap();
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     mock.send_to_server().await.unwrap();
 
@@ -218,11 +218,11 @@ async fn test_stream() {
 
     let mut mock = MockQuic::new().await.unwrap();
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     assert_eq!(stream_id, 4);
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     assert_eq!(stream_id, 8);
 
@@ -241,8 +241,8 @@ async fn test_stream() {
 
     let server_conn = mock.listener_incoming.next().await.unwrap();
 
-    assert_eq!(server_conn.stream_open().await, 5);
-    assert_eq!(server_conn.stream_open().await, 9);
+    assert_eq!(server_conn.stream_open(true).await.unwrap(), 5);
+    assert_eq!(server_conn.stream_open(true).await.unwrap(), 9);
 
     assert_eq!(server_conn.stream_accept().await.unwrap(), stream_id);
 
@@ -260,7 +260,7 @@ async fn verify_client_cert() {
 
     let mut mock = MockQuic::new().await.unwrap();
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     mock.send_to_server().await.unwrap();
 
@@ -285,11 +285,11 @@ async fn test_stream_stopped_by_server() {
 
     let mut mock = MockQuic::new().await.unwrap();
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     assert_eq!(stream_id, 4);
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     assert_eq!(stream_id, 8);
 
@@ -308,8 +308,8 @@ async fn test_stream_stopped_by_server() {
 
     let server_conn = mock.listener_incoming.next().await.unwrap();
 
-    assert_eq!(server_conn.stream_open().await, 5);
-    assert_eq!(server_conn.stream_open().await, 9);
+    assert_eq!(server_conn.stream_open(true).await.unwrap(), 5);
+    assert_eq!(server_conn.stream_open(true).await.unwrap(), 9);
 
     assert_eq!(server_conn.stream_accept().await.unwrap(), stream_id);
 
@@ -336,11 +336,11 @@ async fn test_stream_stopped_by_client() {
 
     let mut mock = MockQuic::new().await.unwrap();
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     assert_eq!(stream_id, 4);
 
-    let stream_id = mock.client.stream_open().await;
+    let stream_id = mock.client.stream_open(true).await.unwrap();
 
     assert_eq!(stream_id, 8);
 
@@ -359,8 +359,8 @@ async fn test_stream_stopped_by_client() {
 
     let server_conn = mock.listener_incoming.next().await.unwrap();
 
-    assert_eq!(server_conn.stream_open().await, 5);
-    assert_eq!(server_conn.stream_open().await, 9);
+    assert_eq!(server_conn.stream_open(true).await.unwrap(), 5);
+    assert_eq!(server_conn.stream_open(true).await.unwrap(), 9);
 
     assert_eq!(server_conn.stream_accept().await.unwrap(), stream_id);
 

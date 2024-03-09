@@ -133,9 +133,5 @@ async fn test_echo_per_stream() {
         let read_size = stream.read(&mut buf).await.unwrap();
 
         assert_eq!(&buf[..read_size], b"hello world");
-
-        while client.peer_streams_left_bidi().await == 0 {
-            println!("===========");
-        }
     }
 }
