@@ -630,7 +630,7 @@ impl Drop for QuicConnFinalizer {
             match state.close(false, 0, b"").await {
                 Ok(_) => {}
                 Err(err) => {
-                    log::error!("drop {} with erro: {}", state, err);
+                    log::error!("{}, drop with error: {}", state, err);
                 }
             }
         });
@@ -834,16 +834,40 @@ impl QuicConn {
     }
 }
 
+struct QuicStreamFinalizer(u64, Arc<QuicConnFinalizer>);
+
+impl Drop for QuicStreamFinalizer {
+    fn drop(&mut self) {
+        let state = self.1 .0.clone();
+        let stream_id = self.0;
+
+        spawn(async move {
+            match state.stream_close(stream_id).await {
+                Ok(_) => todo!(),
+                Err(err) => {
+                    log::error!(
+                        "{}, stream_id={}, drop with error: {}",
+                        state,
+                        stream_id,
+                        err
+                    );
+                }
+            }
+        });
+    }
+}
+
 /// A Quic stream between a local and a remote socket.
 #[derive(Clone)]
 pub struct QuicStream {
-    stream_id: u64,
-    inner: Arc<QuicConnFinalizer>,
+    inner: Arc<QuicStreamFinalizer>,
 }
 
 impl QuicStream {
     fn new(stream_id: u64, inner: Arc<QuicConnFinalizer>) -> Self {
-        Self { stream_id, inner }
+        Self {
+            inner: Arc::new(QuicStreamFinalizer(stream_id, inner)),
+        }
     }
 }
 
@@ -853,7 +877,7 @@ impl AsyncWrite for QuicStream {
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<io::Result<usize>> {
-        Box::pin(self.inner.0.stream_send(self.stream_id, buf, false)).poll_unpin(cx)
+        Box::pin(self.inner.1 .0.stream_send(self.inner.0, buf, false)).poll_unpin(cx)
     }
 
     fn poll_flush(
@@ -867,7 +891,7 @@ impl AsyncWrite for QuicStream {
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<io::Result<()>> {
-        Box::pin(self.inner.0.stream_close(self.stream_id))
+        Box::pin(self.inner.1 .0.stream_close(self.inner.0))
             .poll_unpin(cx)
             .map(|_| Ok(()))
     }
@@ -879,7 +903,7 @@ impl AsyncRead for QuicStream {
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<io::Result<usize>> {
-        Box::pin(self.inner.0.stream_recv(self.stream_id, buf))
+        Box::pin(self.inner.1 .0.stream_recv(self.inner.0, buf))
             .poll_unpin(cx)
             .map(|r| match r {
                 Ok((readsize, _)) => Ok(readsize),
