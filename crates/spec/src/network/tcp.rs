@@ -1,8 +1,7 @@
 use futures::{executor::ThreadPool, task::SpawnExt, AsyncReadExt};
-use rasi::{
-    futures::AsyncWriteExt,
-    net::{TcpListener, TcpStream},
-};
+use rasi::net::{TcpListener, TcpStream};
+
+use futures::AsyncWriteExt;
 
 use crate::async_spec;
 

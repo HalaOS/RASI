@@ -2,7 +2,6 @@
 
 pub use rasi_syscall as syscall;
 
-pub use futures;
 #[cfg(feature = "executor")]
 #[cfg_attr(docsrs, doc(cfg(feature = "executor")))]
 pub mod executor;

@@ -11,7 +11,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use rasi::futures::{future::BoxFuture, FutureExt, Stream};
+use futures::{future::BoxFuture, FutureExt, Stream};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FutureKey(usize);
@@ -235,13 +235,13 @@ mod tests {
 
     use std::{sync::mpsc, time::Duration};
 
-    use futures_test::task::noop_context;
-    use rasi::futures::{
+    use futures::{
         executor::ThreadPool,
         future::{pending, poll_fn},
         task::SpawnExt,
         StreamExt,
     };
+    use futures_test::task::noop_context;
 
     use super::*;
 

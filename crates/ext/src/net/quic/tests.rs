@@ -1,9 +1,11 @@
+use futures::{AsyncReadExt, AsyncWriteExt};
 use parking_lot::Once;
+use rasi::executor::spawn;
 use rasi_default::{
     executor::register_futures_executor, net::register_mio_network, time::register_mio_timer,
 };
 
-use super::{Config, QuicListener};
+use super::{Config, QuicConn, QuicListener};
 
 fn mock_config(is_server: bool) -> Config {
     use std::path::Path;
@@ -63,7 +65,33 @@ fn init() {
 #[futures_test::test]
 async fn test_echo() {
     init();
-    let listener = QuicListener::bind("127.0.0.1", mock_config(true))
+    let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))
         .await
         .unwrap();
+
+    let raddr = listener.local_addrs().collect::<Vec<_>>()[0].clone();
+
+    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        .await
+        .unwrap();
+
+    spawn(async move {
+        while let Some(conn) = listener.accept().await {
+            while let Some(mut stream) = conn.stream_accept().await {
+                let mut buf = vec![0; 100];
+                let read_size = stream.read(&mut buf).await.unwrap();
+
+                stream.write_all(&buf[..read_size]).await.unwrap();
+            }
+        }
+    });
+
+    let mut stream = client.stream_open().await;
+
+    stream.write_all(b"hello world").await.unwrap();
+
+    let mut buf = vec![0; 100];
+    let read_size = stream.read(&mut buf).await.unwrap();
+
+    assert_eq!(&buf[..read_size], b"hello world");
 }

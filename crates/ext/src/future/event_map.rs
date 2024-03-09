@@ -228,8 +228,8 @@ where
 mod tests {
     use std::{thread::sleep, time::Duration};
 
+    use futures::{lock, task::SpawnExt, FutureExt};
     use futures_test::task::noop_context;
-    use rasi::futures::{lock, task::SpawnExt, FutureExt};
 
     use super::*;
 
@@ -237,7 +237,7 @@ mod tests {
     async fn test_drop_waitkey() {
         let event_map = EventMap::<i32>::new();
 
-        let locker = rasi::futures::lock::Mutex::new(());
+        let locker = futures::lock::Mutex::new(());
 
         let guard = locker.lock().await;
 
@@ -258,11 +258,11 @@ mod tests {
     async fn test_with_future_aware_mutex() {
         let event_map = Arc::new(EventMap::<i32>::new());
 
-        let locker = Arc::new(rasi::futures::lock::Mutex::new(()));
+        let locker = Arc::new(futures::lock::Mutex::new(()));
 
         let guard = locker.lock().await;
 
-        let thread_pool = rasi::futures::executor::ThreadPool::new().unwrap();
+        let thread_pool = futures::executor::ThreadPool::new().unwrap();
 
         let event_map_cloned = event_map.clone();
 
@@ -288,7 +288,7 @@ mod tests {
 
         let guard = locker.lock().unwrap();
 
-        let thread_pool = rasi::futures::executor::ThreadPool::new().unwrap();
+        let thread_pool = futures::executor::ThreadPool::new().unwrap();
 
         let event_map_cloned = event_map.clone();
 
@@ -310,7 +310,7 @@ mod tests {
     async fn test_notify_all() {
         let event_map = Arc::new(EventMap::<i32>::new());
 
-        let thread_pool = rasi::futures::executor::ThreadPool::new().unwrap();
+        let thread_pool = futures::executor::ThreadPool::new().unwrap();
 
         let mut handles = vec![];
 

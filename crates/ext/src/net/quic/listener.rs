@@ -8,11 +8,10 @@ use std::{
 
 use bytes::BytesMut;
 use quiche::{ConnectionId, RecvInfo, SendInfo};
-use rasi::{futures::lock::Mutex, syscall::Network};
-use rasi::{
-    futures::{FutureExt, SinkExt, Stream, StreamExt, TryStreamExt},
-    syscall::global_network,
-};
+
+use rasi::syscall::{global_network, Network};
+
+use futures::{lock::Mutex, FutureExt, SinkExt, Stream, StreamExt, TryStreamExt};
 
 use ring::{hmac::Key, rand::SystemRandom};
 
@@ -538,7 +537,7 @@ impl QuicListener {
     }
 
     /// Returns the local addresses iterator that this quic listener is bound to.
-    pub async fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
+    pub fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
         self.laddrs.iter()
     }
 }

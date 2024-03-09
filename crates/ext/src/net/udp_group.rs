@@ -12,10 +12,11 @@ use std::{
 use bytes::{Bytes, BytesMut};
 use rand::seq::IteratorRandom;
 use rasi::{
-    futures::{future::BoxFuture, FutureExt, Sink, Stream, StreamExt},
     net::UdpSocket,
     syscall::{global_network, Network},
 };
+
+use futures::{future::BoxFuture, FutureExt, Sink, Stream, StreamExt};
 
 use crate::{future::batching, utils::ReadBuf};
 
@@ -48,7 +49,7 @@ impl UdpGroup {
     /// # Examples
     ///
     /// ```no_run
-    /// # fn main() -> std::io::Result<()> { rasi::futures::executor::block_on(async {
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
     /// #
     /// use rasi_ext::net::udp_group::UdpGroup;
     ///
@@ -92,7 +93,7 @@ impl UdpGroup {
     /// # Examples
     ///
     /// ```no_run
-    /// # fn main() -> std::io::Result<()> { rasi::futures::executor::block_on(async {
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
     /// #
     /// use rasi_ext::net::udp_group::UdpGroup;
     ///
@@ -115,7 +116,7 @@ impl UdpGroup {
     /// # Examples
     ///
     /// ```no_run
-    /// # fn main() -> std::io::Result<()> { rasi::futures::executor::block_on(async {
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
     /// #
     /// use rasi_ext::net::udp_group::UdpGroup;
     ///
@@ -141,7 +142,7 @@ impl UdpGroup {
     /// # Examples
     ///
     /// ```no_run
-    /// # fn main() -> std::io::Result<()> { rasi::futures::executor::block_on(async {
+    /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
     /// #
     /// use rasi_ext::net::udp_group::UdpGroup;
     ///

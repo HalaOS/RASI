@@ -10,10 +10,10 @@ use std::{
 
 use quiche::{ConnectionId, RecvInfo, SendInfo, Shutdown};
 use rand::{seq::IteratorRandom, thread_rng};
-use rasi::{
-    executor::spawn,
-    futures::{lock::Mutex, AsyncRead, AsyncWrite, FutureExt, SinkExt, TryStreamExt},
-};
+use rasi::{executor::spawn, syscall::global_network};
+
+use futures::{lock::Mutex, AsyncRead, AsyncWrite, FutureExt, SinkExt, TryStreamExt};
+
 use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::{
@@ -641,6 +641,26 @@ impl QuicConn {
         }
     }
 
+    // Using global [`syscall`](rasi_syscall::Network) interface to create a new Quic
+    /// connection connected to the specified addresses.
+    ///
+    /// see [`connect_with`](Self::connect_with) for more informations.
+    pub async fn connect<L: ToSocketAddrs, R: ToSocketAddrs>(
+        server_name: Option<&str>,
+        laddrs: L,
+        raddrs: R,
+        config: &mut Config,
+    ) -> io::Result<Self> {
+        Self::connect_with(server_name, laddrs, raddrs, config, global_network()).await
+    }
+
+    // Using custom [`syscall`](rasi_syscall::Network) interface to create a new Quic
+    /// connection connected to the specified addresses.
+    ///
+    /// This method will create a new Quic socket and attempt to connect it to the `raddrs`
+    /// provided. The [returned future] will be resolved once the connection has successfully
+    /// connected, or it will return an error if one occurs.
+    ///
     pub async fn connect_with<L: ToSocketAddrs, R: ToSocketAddrs>(
         server_name: Option<&str>,
         laddrs: L,
@@ -656,7 +676,40 @@ impl QuicConn {
 
         let conn_state = QuicConnState::connect(server_name, *laddr, raddr, config)?;
 
-        let (sender, receiver) = socket.split();
+        let (mut sender, mut receiver) = socket.split();
+
+        loop {
+            let mut read_buf = ReadBuf::with_capacity(config.max_send_udp_payload_size);
+
+            let (read_size, send_info) = conn_state.send(read_buf.chunk_mut()).await?;
+
+            sender
+                .send((
+                    read_buf.into_bytes(Some(read_size)),
+                    Some(send_info.from),
+                    send_info.to,
+                ))
+                .await?;
+
+            let (mut buf, path_info) = receiver.try_next().await?.ok_or(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Underlying udp socket closed",
+            ))?;
+
+            conn_state
+                .recv(
+                    &mut buf,
+                    RecvInfo {
+                        from: path_info.from,
+                        to: path_info.to,
+                    },
+                )
+                .await?;
+
+            if conn_state.is_established().await {
+                break;
+            }
+        }
 
         spawn(Self::recv_loop(conn_state.clone(), receiver));
         spawn(Self::send_loop(
