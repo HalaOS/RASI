@@ -11,7 +11,7 @@ readme = "../../README.md"
 [dependencies]
 futures = { workspace = true }
 rasi-syscall = { workspace = true }
-
+log = { workspace = true }
 
 [features]
 default = ["net", "fs", "time", "executor", "std"]

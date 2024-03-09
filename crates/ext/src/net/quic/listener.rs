@@ -29,7 +29,7 @@ use crate::{
 
 use super::{Config, QuicConn, QuicConnState};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum QuicListenerEvent {
     /// Newly incoming connection event.
     Accept,

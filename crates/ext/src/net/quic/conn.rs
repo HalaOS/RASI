@@ -8,11 +8,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+// use hala_sync::{AsyncLockable, AsyncSpinMutex};
 use quiche::{ConnectionId, RecvInfo, SendInfo, Shutdown};
 use rand::{seq::IteratorRandom, thread_rng};
 use rasi::{executor::spawn, syscall::global_network};
 
-use futures::{lock::Mutex, AsyncRead, AsyncWrite, FutureExt, SinkExt, TryStreamExt};
+use futures::{AsyncRead, AsyncWrite, FutureExt, SinkExt, TryStreamExt};
 
 use ring::rand::{SecureRandom, SystemRandom};
 
@@ -22,7 +23,7 @@ use crate::{
         quic::errors::map_event_map_error,
         udp_group::{self, UdpGroup},
     },
-    utils::{DerefExt, ReadBuf},
+    utils::{AsyncLockable, AsyncSpinMutex, DerefExt, ReadBuf},
 };
 
 use super::{errors::map_quic_error, Config};
@@ -39,7 +40,7 @@ enum QuicConnStateEvent {
     StreamWritable(ConnectionId<'static>, u64),
 
     /// This event notify listener that one incoming stream is valid.
-    Accept(ConnectionId<'static>),
+    StreamAccept(ConnectionId<'static>),
 }
 
 /// The inner state machine for quic connection.
@@ -118,7 +119,7 @@ impl RawQuicConnState {
 #[derive(Clone)]
 pub struct QuicConnState {
     /// raw state machine protected by mutex.
-    raw: Arc<Mutex<RawQuicConnState>>,
+    raw: Arc<AsyncSpinMutex<RawQuicConnState>>,
     /// the event center of this quic connection.
     event_map: Arc<EventMap<QuicConnStateEvent>>,
     /// The source id of this connection.
@@ -177,7 +178,7 @@ impl QuicConnState {
             is_server: quiche_conn.is_server(),
             scid: quiche_conn.source_id().into_owned(),
             dcid: quiche_conn.destination_id().into_owned(),
-            raw: Arc::new(Mutex::new(RawQuicConnState::new(
+            raw: Arc::new(AsyncSpinMutex::new(RawQuicConnState::new(
                 quiche_conn,
                 ping_send_intervals,
                 next_outbound_stream_id,
@@ -233,6 +234,12 @@ impl QuicConnState {
                     if let Some(timeout) = raw.quiche_conn.timeout_instant() {
                         use rasi::time::TimeoutExt;
 
+                        log::trace!(
+                            "{} waiting send data with timeout at {:#?}",
+                            self,
+                            timeout - Instant::now()
+                        );
+
                         match self.event_map.once(event, raw).timeout_at(timeout).await {
                             Some(Ok(_)) => {
                                 // try send data again.
@@ -245,6 +252,9 @@ impl QuicConnState {
                             }
                             None => {
                                 raw = self.raw.lock().await;
+
+                                log::trace!("{} on_timeout", self);
+
                                 // timeout, call quic connection timeout.
                                 raw.quiche_conn.on_timeout();
                                 continue;
@@ -277,7 +287,7 @@ impl QuicConnState {
 
         match raw.quiche_conn.recv(buf, info) {
             Ok(read_size) => {
-                log::trace!("{} recv data, len={}", self, read_size,);
+                log::trace!("rx {}, len={}", self, read_size);
 
                 // reset the `send_ack_eliciting_instant`
                 raw.send_ack_eliciting_instant = Instant::now();
@@ -294,10 +304,15 @@ impl QuicConnState {
                 for stream_id in raw.quiche_conn.readable() {
                     // check if the stream is a new inbound stream.
                     // If true push stream into the acceptance queue instead of triggering a readable event
-                    if !raw.inbound_stream_ids.contains(&stream_id) {
+                    if stream_id % 2 != raw.next_outbound_stream_id % 2
+                        && !raw.inbound_stream_ids.contains(&stream_id)
+                    {
                         raw.inbound_stream_ids.insert(stream_id);
                         raw.inbound_stream_queue.push_back(stream_id);
-                        raised_events.push(QuicConnStateEvent::Accept(self.scid.clone()));
+                        raised_events.push(QuicConnStateEvent::StreamAccept(self.scid.clone()));
+
+                        log::trace!("{} stream_id={}, newly incoming stream", self, stream_id);
+
                         continue;
                     }
 
@@ -315,7 +330,7 @@ impl QuicConnState {
                 }
 
                 self.event_map
-                    .notify_all(raised_events.as_slice(), EventStatus::Ready);
+                    .notify_all(&raised_events, EventStatus::Ready);
 
                 Ok(read_size)
             }
@@ -538,7 +553,7 @@ impl QuicConnState {
 
             match self
                 .event_map
-                .once(QuicConnStateEvent::Accept(self.scid.clone()), raw)
+                .once(QuicConnStateEvent::StreamAccept(self.scid.clone()), raw)
                 .await
             {
                 Ok(_) => {}

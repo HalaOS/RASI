@@ -3,6 +3,7 @@
 use std::{
     borrow::Borrow,
     collections::HashMap,
+    fmt::Debug,
     hash::Hash,
     sync::{
         atomic::{AtomicU8, Ordering},
@@ -52,7 +53,7 @@ where
 
 impl<E> Default for EventMap<E>
 where
-    E: Eq + Hash + Unpin,
+    E: Eq + Hash + Unpin + Debug,
 {
     fn default() -> Self {
         Self::new()
@@ -61,7 +62,7 @@ where
 
 impl<E> EventMap<E>
 where
-    E: Eq + Hash + Unpin,
+    E: Eq + Hash + Unpin + Debug,
 {
     /// Create new [`EventMap<E>`](EventMap) instance with default config.
     pub fn new() -> Self {
@@ -80,7 +81,9 @@ where
 
     /// Notify `event` listener, and set the listener status to `status`.
     pub fn notify<Q: Borrow<E>>(&self, event: Q, status: EventStatus) -> bool {
-        if let Some(listener) = self.listeners.lock().1.remove(event.borrow()) {
+        let mut inner = self.listeners.lock();
+
+        if let Some(listener) = inner.1.remove(event.borrow()) {
             listener.status.store(status.into(), Ordering::Release);
 
             listener.waker.wake();
@@ -93,10 +96,10 @@ where
 
     /// Notify all provided event listeners on `event_list`, and set the listener status to `status`.
     pub fn notify_all<Q: Borrow<E>, L: AsRef<[Q]>>(&self, event_list: L, status: EventStatus) {
-        let mut listeners = self.listeners.lock();
+        let mut inner = self.listeners.lock();
 
         for event in event_list.as_ref() {
-            if let Some(listener) = listeners.1.remove(event.borrow()) {
+            if let Some(listener) = inner.1.remove(event.borrow()) {
                 listener.status.store(status.into(), Ordering::Release);
 
                 listener.waker.wake();
@@ -120,19 +123,6 @@ where
 
             listener.waker.wake();
         }
-    }
-}
-
-impl<E> Drop for EventMap<E>
-where
-    E: Eq + Hash,
-{
-    fn drop(&mut self) {
-        assert_eq!(
-            self.listeners.lock().1.len(),
-            0,
-            "When WaitKey drops, it must remove itself from the EventMap by which it was created"
-        );
     }
 }
 
@@ -167,9 +157,9 @@ where
     }
 }
 
-impl<'a, E, G> core::future::Future for WaitKey<'a, E, G>
+impl<'a, E, G> futures::Future for WaitKey<'a, E, G>
 where
-    E: Eq + Hash + Unpin + Clone,
+    E: Eq + Hash + Unpin + Clone + Debug,
     G: Unpin,
 {
     type Output = Result<(), EventStatus>;
@@ -184,7 +174,6 @@ where
                 EventStatus::Pending.into(),
                 "Init status must be Pending"
             );
-            let event = self.event.clone();
 
             let mut inner = self.event_map.listeners.lock();
 
@@ -193,6 +182,8 @@ where
                 drop(guard);
                 return Poll::Ready(Err(EventStatus::Destroy));
             }
+
+            let event = self.event.clone();
 
             inner.1.insert(
                 event,
@@ -203,24 +194,27 @@ where
             );
 
             drop(guard);
+
+            return Poll::Pending;
         }
 
         let status: EventStatus = self.status.load(Ordering::Acquire).into();
 
         match status {
-            EventStatus::Pending => Poll::Pending,
-            EventStatus::Ready => Poll::Ready(Ok(())),
-            _ => Poll::Ready(Err(status)),
-        }
-    }
-}
+            EventStatus::Pending => {
+                // This future may wrapped by select!, so runtime may call this future's poll without really call `Waker::wake()`.
+                Poll::Pending
+            }
+            EventStatus::Ready => {
+                log::trace!("raised, event={:?}, status={:?}", self.event, status);
 
-impl<'a, E, G> Drop for WaitKey<'a, E, G>
-where
-    E: Eq + Hash + Unpin,
-{
-    fn drop(&mut self) {
-        self.event_map.listeners.lock().1.remove(&self.event);
+                Poll::Ready(Ok(()))
+            }
+            _ => {
+                log::trace!("raised, event={:?}, status={:?}", self.event, status);
+                Poll::Ready(Err(status))
+            }
+        }
     }
 }
 

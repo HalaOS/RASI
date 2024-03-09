@@ -45,7 +45,6 @@ fn mock_config(is_server: bool) -> Config {
         .set_application_protos(&[b"hq-interop", b"hq-29", b"hq-28", b"hq-27", b"http/0.9"])
         .unwrap();
 
-    config.set_max_idle_timeout(5000);
     config.set_initial_max_data(10_000_000);
     config.set_disable_active_migration(false);
 
@@ -65,6 +64,49 @@ fn init() {
 #[futures_test::test]
 async fn test_echo() {
     init();
+    // pretty_env_logger::init();
+
+    let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))
+        .await
+        .unwrap();
+
+    let raddr = listener.local_addrs().collect::<Vec<_>>()[0].clone();
+
+    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        .await
+        .unwrap();
+
+    spawn(async move {
+        while let Some(conn) = listener.accept().await {
+            while let Some(mut stream) = conn.stream_accept().await {
+                loop {
+                    let mut buf = vec![0; 100];
+                    let read_size = stream.read(&mut buf).await.unwrap();
+
+                    stream.write_all(&buf[..read_size]).await.unwrap();
+                }
+            }
+        }
+    });
+
+    let mut stream = client.stream_open().await;
+
+    for _ in 0..100 {
+        stream.write_all(b"hello world").await.unwrap();
+
+        let mut buf = vec![0; 100];
+
+        let read_size = stream.read(&mut buf).await.unwrap();
+
+        assert_eq!(&buf[..read_size], b"hello world");
+    }
+}
+
+#[futures_test::test]
+async fn test_echo_per_stream() {
+    init();
+    // pretty_env_logger::init();
+
     let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))
         .await
         .unwrap();
@@ -86,12 +128,15 @@ async fn test_echo() {
         }
     });
 
-    let mut stream = client.stream_open().await;
+    for _ in 0..6 {
+        let mut stream = client.stream_open().await;
 
-    stream.write_all(b"hello world").await.unwrap();
+        stream.write_all(b"hello world").await.unwrap();
 
-    let mut buf = vec![0; 100];
-    let read_size = stream.read(&mut buf).await.unwrap();
+        let mut buf = vec![0; 100];
 
-    assert_eq!(&buf[..read_size], b"hello world");
+        let read_size = stream.read(&mut buf).await.unwrap();
+
+        assert_eq!(&buf[..read_size], b"hello world");
+    }
 }
