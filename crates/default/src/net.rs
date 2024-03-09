@@ -12,7 +12,7 @@ use mio::{
 use rasi_syscall::{ready, register_global_network, Handle, Network};
 
 use crate::{
-    reactor::{get_global_reactor, would_block, MioSocket},
+    reactor::{global_reactor, would_block, MioSocket},
     TokenSequence,
 };
 
@@ -128,7 +128,7 @@ impl Network for MioNetwork {
             let mut socket = UdpSocket::from_std(std_socket);
             let token = Token::next();
 
-            get_global_reactor().register(
+            global_reactor().register(
                 &mut socket,
                 token,
                 Interest::READABLE.add(Interest::WRITABLE),
@@ -182,7 +182,7 @@ impl Network for MioNetwork {
             let mut socket = TcpListener::from_std(std_socket);
             let token = Token::next();
 
-            get_global_reactor().register(
+            global_reactor().register(
                 &mut socket,
                 token,
                 Interest::READABLE.add(Interest::WRITABLE),
@@ -234,7 +234,7 @@ impl Network for MioNetwork {
                 Ok((mut stream, raddr)) => {
                     let token = Token::next();
 
-                    get_global_reactor().register(
+                    global_reactor().register(
                         &mut stream,
                         token,
                         Interest::READABLE.add(Interest::WRITABLE),
@@ -260,7 +260,7 @@ impl Network for MioNetwork {
             let mut socket = TcpStream::from_std(std_socket);
             let token = Token::next();
 
-            get_global_reactor().register(
+            global_reactor().register(
                 &mut socket,
                 token,
                 Interest::READABLE.add(Interest::WRITABLE),

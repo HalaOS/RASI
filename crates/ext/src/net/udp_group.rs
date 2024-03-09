@@ -21,6 +21,7 @@ use crate::{future::batching, utils::ReadBuf};
 
 /// Udp data transfer metadata for the data sent to the peers
 /// from the specified local address `from`` to the destination address `to`.
+#[derive(Debug)]
 pub struct PathInfo {
     /// The specified local address.
     pub from: SocketAddr,
@@ -30,7 +31,6 @@ pub struct PathInfo {
 
 /// A configuration for batch poll a set of [`udp socket`](rasi::net::UdpSocket)s
 pub struct UdpGroup {
-    #[allow(unused)]
     /// Inner socket map that mapping local_addr => socket.
     sockets: HashMap<SocketAddr, Arc<UdpSocket>>,
     /// The max buf length for batch reading.
@@ -234,8 +234,18 @@ impl Stream for Receiver {
 /// Data is sent to the peers via this [`UdpGroup`] sender [`sink`](Sink).
 pub struct Sender {
     group: batching::Group<(RecvFrom, io::Result<(BytesMut, PathInfo)>)>,
-    sockets: HashMap<SocketAddr, Arc<UdpSocket>>,
+    sockets: Arc<HashMap<SocketAddr, Arc<UdpSocket>>>,
     fut: Option<BoxFuture<'static, io::Result<usize>>>,
+}
+
+impl Clone for Sender {
+    fn clone(&self) -> Self {
+        Self {
+            group: self.group.clone(),
+            sockets: self.sockets.clone(),
+            fut: None,
+        }
+    }
 }
 
 impl Sender {
@@ -245,7 +255,7 @@ impl Sender {
     ) -> Self {
         Self {
             group,
-            sockets,
+            sockets: Arc::new(sockets),
             fut: None,
         }
     }

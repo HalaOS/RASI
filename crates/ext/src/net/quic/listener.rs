@@ -8,8 +8,12 @@ use std::{
 
 use bytes::BytesMut;
 use quiche::{ConnectionId, RecvInfo, SendInfo};
-use rasi::futures::{FutureExt, Stream, StreamExt};
 use rasi::{futures::lock::Mutex, syscall::Network};
+use rasi::{
+    futures::{FutureExt, SinkExt, Stream, StreamExt, TryStreamExt},
+    syscall::global_network,
+};
+
 use ring::{hmac::Key, rand::SystemRandom};
 
 use crate::{
@@ -17,11 +21,14 @@ use crate::{
         batching,
         event_map::{EventMap, EventStatus},
     },
-    net::quic::errors::map_quic_error,
+    net::{
+        quic::errors::map_quic_error,
+        udp_group::{self, UdpGroup},
+    },
     utils::ReadBuf,
 };
 
-use super::{Config, QuicConnState};
+use super::{Config, QuicConn, QuicConnState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum QuicListenerEvent {
@@ -475,19 +482,137 @@ impl QuicListenerState {
 /// unlike the TcpListener, the QuicListener will listen on every address passed in via [`ToSocketAddrs`].
 ///
 /// The socket will be closed when the value is dropped.
-pub struct QuicListener {}
+pub struct QuicListener {
+    incoming: QuicServerStateIncoming,
+    laddrs: Vec<SocketAddr>,
+}
 
 impl QuicListener {
-    /// Creates a new TcpListener with custom [syscall](rasi_syscall::Network) which will be bound to the specified address.
+    /// Creates a new `QuicListener` with custom [syscall](rasi_syscall::Network) which will be bound to the specified address.
+    /// The returned listener is ready for accepting connections.
+    /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
+    /// The port allocated can be queried via the local_addr method.
+    ///
+    /// See [`bind`](QuicListener::bind) for more information.
+    pub async fn bind_with<A: ToSocketAddrs>(
+        laddrs: A,
+        config: Config,
+        syscall: &'static dyn Network,
+    ) -> io::Result<Self> {
+        let socket = UdpGroup::bind_with(laddrs, syscall).await?;
+
+        let laddrs = socket.local_addrs().cloned().collect::<Vec<_>>();
+
+        // bin udp group.
+        let (sender, receiver) = socket.split();
+
+        // create inner sm.
+        let (state, incoming, state_sender) = QuicListenerState::new(config)?;
+
+        // start udp recv loop
+        rasi::executor::spawn(Self::recv_loop(state, receiver, sender.clone()));
+
+        // start udp send loop
+        rasi::executor::spawn(Self::send_loop(state_sender, sender));
+
+        Ok(Self { incoming, laddrs })
+    }
+
+    /// Creates a new `QuicListener` with global registered [syscall](rasi_syscall::Network)
+    /// which will be bound to the specified address.
     /// The returned listener is ready for accepting connections.
     /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
     /// The port allocated can be queried via the local_addr method.
     ///
     /// See [`bind`](TcpListener::bind) for more information.
-    pub async fn bind_with<A: ToSocketAddrs>(
-        _laddrs: A,
-        _syscall: &'static dyn Network,
-    ) -> io::Result<Self> {
-        todo!()
+    pub async fn bind<A: ToSocketAddrs>(laddrs: A, config: Config) -> io::Result<Self> {
+        Self::bind_with(laddrs, config, global_network()).await
+    }
+
+    /// Accepts a new incoming stream via this quic connection.
+    pub async fn accept(&self) -> Option<QuicConn> {
+        self.incoming
+            .accept()
+            .await
+            .map(|state| QuicConn::new(state))
+    }
+
+    /// Returns the local addresses iterator that this quic listener is bound to.
+    pub async fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
+        self.laddrs.iter()
+    }
+}
+
+impl QuicListener {
+    async fn recv_loop(
+        state: QuicListenerState,
+        receiver: udp_group::Receiver,
+        sender: udp_group::Sender,
+    ) {
+        match Self::recv_loop_inner(state, receiver, sender).await {
+            Ok(_) => {
+                log::info!("QuicListener recv_loop stopped.");
+            }
+            Err(err) => {
+                log::error!("QuicListener recv_loop stopped with err: {}", err);
+            }
+        }
+    }
+
+    async fn recv_loop_inner(
+        state: QuicListenerState,
+        mut receiver: udp_group::Receiver,
+        mut sender: udp_group::Sender,
+    ) -> io::Result<()> {
+        while let Some((mut buf, path_info)) = receiver.try_next().await? {
+            let (_, resp) = match state
+                .recv(
+                    &mut buf,
+                    RecvInfo {
+                        from: path_info.from,
+                        to: path_info.to,
+                    },
+                )
+                .await
+            {
+                Ok(r) => r,
+                Err(err) => {
+                    log::error!("handle packet from {:?} error: {}", path_info, err);
+                    continue;
+                }
+            };
+
+            if let Some(resp) = resp {
+                sender
+                    .send((resp.freeze(), Some(path_info.to), path_info.from))
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn send_loop(state_sender: QuicServerStateSender, sender: udp_group::Sender) {
+        match Self::send_loop_inner(state_sender, sender).await {
+            Ok(_) => {
+                log::info!("QuicListener send_loop stopped.");
+            }
+            Err(err) => {
+                log::error!("QuicListener send_loop stopped with err: {}", err);
+            }
+        }
+    }
+
+    async fn send_loop_inner(
+        mut state_sender: QuicServerStateSender,
+        mut sender: udp_group::Sender,
+    ) -> io::Result<()> {
+        while let Some((buf, send_info)) = state_sender.try_next().await? {
+            sender
+                .send((buf.freeze(), Some(send_info.from), send_info.to))
+                .await?;
+        }
+
+        Ok(())
     }
 }

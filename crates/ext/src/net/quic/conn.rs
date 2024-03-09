@@ -2,27 +2,30 @@ use std::{
     collections::{HashSet, VecDeque},
     fmt::{Debug, Display},
     io,
-    net::SocketAddr,
+    net::{SocketAddr, ToSocketAddrs},
     ops,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use quiche::{ConnectionId, RecvInfo, SendInfo, Shutdown};
-use rasi::futures::lock::Mutex;
+use rand::{seq::IteratorRandom, thread_rng};
+use rasi::{
+    executor::spawn,
+    futures::{lock::Mutex, AsyncRead, AsyncWrite, FutureExt, SinkExt, TryStreamExt},
+};
 use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::{
     future::event_map::{EventMap, EventStatus},
-    net::quic::errors::map_event_map_error,
-    utils::DerefExt,
+    net::{
+        quic::errors::map_event_map_error,
+        udp_group::{self, UdpGroup},
+    },
+    utils::{DerefExt, ReadBuf},
 };
 
 use super::{errors::map_quic_error, Config};
-
-pub struct QuicConn;
-
-pub struct QuicStream;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 enum QuicConnStateEvent {
@@ -523,10 +526,10 @@ impl QuicConnState {
         Ok(())
     }
 
-    /// Accepts a new incoming stream to this connection.
+    /// Accepts a new incoming stream via this connection.
     ///
     /// Returns None, if the connection is draining or has been closed.
-    pub async fn accept(&self) -> Option<u64> {
+    pub async fn stream_accept(&self) -> Option<u64> {
         loop {
             let mut raw = self.raw.lock().await;
             if let Some(stream_id) = raw.inbound_stream_queue.pop_front() {
@@ -581,5 +584,244 @@ impl QuicConnState {
     /// Get reference of inner [`quiche::Connection`] type.
     pub async fn to_inner_conn(&self) -> impl ops::Deref<Target = quiche::Connection> + '_ {
         self.raw.lock().await.deref_map(|state| &state.quiche_conn)
+    }
+
+    /// Closes the connection with the given error and reason.
+    ///
+    /// The `app` parameter specifies whether an application close should be
+    /// sent to the peer. Otherwise a normal connection close is sent.
+    ///
+    /// If `app` is true but the connection is not in a state that is safe to
+    /// send an application error (not established nor in early data), in
+    /// accordance with [RFC
+    /// 9000](https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2.3-3), the
+    /// error code is changed to APPLICATION_ERROR and the reason phrase is
+    /// cleared.
+    pub async fn close(&self, app: bool, err: u64, reason: &[u8]) -> io::Result<()> {
+        match self.raw.lock().await.quiche_conn.close(app, err, reason) {
+            Ok(_) => Ok(()),
+            Err(quiche::Error::Done) => Ok(()),
+            Err(err) => Err(map_quic_error(err)),
+        }
+    }
+}
+
+struct QuicConnFinalizer(QuicConnState);
+
+impl Drop for QuicConnFinalizer {
+    fn drop(&mut self) {
+        let state = self.0.clone();
+        spawn(async move {
+            match state.close(false, 0, b"").await {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("drop {} with erro: {}", state, err);
+                }
+            }
+        });
+    }
+}
+
+/// A Quic connection between a local and a remote socket.
+///
+/// A `QuicConn` can either be created by connecting to an endpoint, via the [`connect`](Self::connect) method,
+/// or by [accepting] a connection from a [`listener`](super::QuicListener).
+///
+/// You can either open a stream via the [`open_stream`](Self::open_stream) function,
+/// or accept a inbound stream via the [`stream_accept`](Self::stream_accept) function
+pub struct QuicConn {
+    inner: Arc<QuicConnFinalizer>,
+}
+
+impl QuicConn {
+    /// Create `QuicConn` instance from [`state`](QuicConnState).
+    pub(super) fn new(state: QuicConnState) -> QuicConn {
+        Self {
+            inner: Arc::new(QuicConnFinalizer(state)),
+        }
+    }
+
+    pub async fn connect_with<L: ToSocketAddrs, R: ToSocketAddrs>(
+        server_name: Option<&str>,
+        laddrs: L,
+        raddrs: R,
+        config: &mut Config,
+        syscall: &'static dyn rasi::syscall::Network,
+    ) -> io::Result<Self> {
+        let socket = UdpGroup::bind_with(laddrs, syscall).await?;
+
+        let laddr = socket.local_addrs().choose(&mut thread_rng()).unwrap();
+
+        let raddr = raddrs.to_socket_addrs()?.choose(&mut thread_rng()).unwrap();
+
+        let conn_state = QuicConnState::connect(server_name, *laddr, raddr, config)?;
+
+        let (sender, receiver) = socket.split();
+
+        spawn(Self::recv_loop(conn_state.clone(), receiver));
+        spawn(Self::send_loop(
+            conn_state.clone(),
+            sender,
+            config.max_send_udp_payload_size,
+        ));
+
+        Ok(Self::new(conn_state))
+    }
+
+    /// Accepts a new incoming stream via this connection.
+    ///
+    /// Returns None, if the connection is draining or has been closed.
+    pub async fn stream_accept(&self) -> Option<QuicStream> {
+        self.inner
+            .0
+            .stream_accept()
+            .await
+            .map(|stream_id| QuicStream::new(stream_id, self.inner.clone()))
+    }
+
+    /// Open a outbound stream. returns the new stream id.
+    ///
+    /// The `stream_open` does not really open a stream until
+    /// the first byte is sent by [`send`](QuicConnState::stream_send) function.
+    pub async fn stream_open(&self) -> QuicStream {
+        QuicStream::new(self.inner.0.stream_open().await, self.inner.clone())
+    }
+}
+
+impl QuicConn {
+    async fn recv_loop(state: QuicConnState, receiver: udp_group::Receiver) {
+        match Self::recv_loop_inner(state, receiver).await {
+            Ok(_) => {
+                log::info!("QuicListener recv_loop stopped.");
+            }
+            Err(err) => {
+                log::error!("QuicListener recv_loop stopped with err: {}", err);
+            }
+        }
+    }
+
+    async fn recv_loop_inner(
+        state: QuicConnState,
+        mut receiver: udp_group::Receiver,
+    ) -> io::Result<()> {
+        while let Some((mut buf, path_info)) = receiver.try_next().await? {
+            let _ = match state
+                .recv(
+                    &mut buf,
+                    RecvInfo {
+                        from: path_info.from,
+                        to: path_info.to,
+                    },
+                )
+                .await
+            {
+                Ok(r) => r,
+                Err(err) => {
+                    log::error!(
+                        "Quic client: handle packet from {:?} error: {}",
+                        path_info,
+                        err
+                    );
+                    continue;
+                }
+            };
+        }
+
+        Ok(())
+    }
+
+    async fn send_loop(
+        state: QuicConnState,
+        sender: udp_group::Sender,
+        max_send_udp_payload_size: usize,
+    ) {
+        match Self::send_loop_inner(state, sender, max_send_udp_payload_size).await {
+            Ok(_) => {
+                log::info!("Quic client send_loop stopped.");
+            }
+            Err(err) => {
+                log::error!("Quic client send_loop stopped with err: {}", err);
+            }
+        }
+    }
+
+    async fn send_loop_inner(
+        state: QuicConnState,
+        mut sender: udp_group::Sender,
+        max_send_udp_payload_size: usize,
+    ) -> io::Result<()> {
+        loop {
+            let mut read_buf = ReadBuf::with_capacity(max_send_udp_payload_size);
+
+            let (send_size, send_info) = state.send(read_buf.chunk_mut()).await?;
+
+            sender
+                .send((
+                    read_buf.into_bytes(Some(send_size)),
+                    Some(send_info.from),
+                    send_info.to,
+                ))
+                .await?;
+        }
+    }
+}
+
+/// A Quic stream between a local and a remote socket.
+#[derive(Clone)]
+pub struct QuicStream {
+    stream_id: u64,
+    inner: Arc<QuicConnFinalizer>,
+}
+
+impl QuicStream {
+    fn new(stream_id: u64, inner: Arc<QuicConnFinalizer>) -> Self {
+        Self { stream_id, inner }
+    }
+}
+
+impl AsyncWrite for QuicStream {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<io::Result<usize>> {
+        Box::pin(self.inner.0.stream_send(self.stream_id, buf, false)).poll_unpin(cx)
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        Box::pin(self.inner.0.stream_close(self.stream_id))
+            .poll_unpin(cx)
+            .map(|_| Ok(()))
+    }
+}
+
+impl AsyncRead for QuicStream {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut [u8],
+    ) -> std::task::Poll<io::Result<usize>> {
+        Box::pin(self.inner.0.stream_recv(self.stream_id, buf))
+            .poll_unpin(cx)
+            .map(|r| match r {
+                Ok((readsize, _)) => Ok(readsize),
+                Err(err) => {
+                    if err.kind() == io::ErrorKind::BrokenPipe {
+                        Ok(0)
+                    } else {
+                        Err(err)
+                    }
+                }
+            })
     }
 }

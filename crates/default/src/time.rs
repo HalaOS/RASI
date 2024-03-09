@@ -10,7 +10,7 @@ use std::{
 use mio::Token;
 use rasi_syscall::{register_global_timer, Handle, Timer};
 
-use crate::{reactor::get_global_reactor, TokenSequence};
+use crate::{reactor::global_reactor, TokenSequence};
 
 pub(crate) struct TimerHandle {
     deadline: Instant,
@@ -35,7 +35,7 @@ impl Timer for MioTimer {
     ) -> std::io::Result<Option<rasi_syscall::Handle>> {
         let token = Token::next();
 
-        Ok(get_global_reactor()
+        Ok(global_reactor()
             .deadline(token, waker, deadline)
             .map(|_| TimerHandle::new(token, deadline)))
     }
@@ -49,7 +49,7 @@ impl Timer for MioTimer {
             .downcast::<TimerHandle>()
             .expect("Expect TimeHandle.");
 
-        match get_global_reactor().deadline(time_handle.token, waker, time_handle.deadline) {
+        match global_reactor().deadline(time_handle.token, waker, time_handle.deadline) {
             Some(_) => Poll::Pending,
             None => Poll::Ready(()),
         }

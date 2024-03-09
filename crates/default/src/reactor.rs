@@ -60,7 +60,7 @@ impl<S: Source> Deref for MioSocket<S> {
 
 impl<S: Source> Drop for MioSocket<S> {
     fn drop(&mut self) {
-        if get_global_reactor().deregister(&mut self.socket).is_err() {
+        if global_reactor().deregister(&mut self.socket).is_err() {
             println!("");
         }
     }
@@ -79,13 +79,13 @@ pub(crate) fn would_block<T, F>(
 where
     F: FnMut() -> io::Result<T>,
 {
-    get_global_reactor().once(token, interests, waker);
+    global_reactor().once(token, interests, waker);
 
     loop {
         match f() {
             Ok(t) => {
                 return {
-                    get_global_reactor().remove_listeners(token, interests);
+                    global_reactor().remove_listeners(token, interests);
 
                     CancelablePoll::Ready(Ok(t))
                 }
@@ -97,7 +97,7 @@ where
                 continue;
             }
             Err(err) => {
-                get_global_reactor().remove_listeners(token, interests);
+                global_reactor().remove_listeners(token, interests);
                 return CancelablePoll::Ready(Err(err));
             }
         }
@@ -411,7 +411,7 @@ pub fn start_reactor_with(tick_interval: Duration) {
 ///
 /// If call this function before calling [`start_reactor_with`],
 /// the implementation will start [`Reactor`] with tick_interval = 10ms.
-pub fn get_global_reactor() -> ArcReactor {
+pub fn global_reactor() -> ArcReactor {
     GLOBAL_REACTOR
         .get_or_init(|| Reactor::new(Duration::from_millis(10)).unwrap())
         .clone()

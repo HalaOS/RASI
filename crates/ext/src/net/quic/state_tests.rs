@@ -250,7 +250,7 @@ async fn test_stream() {
     assert_eq!(server_conn.stream_open().await, 5);
     assert_eq!(server_conn.stream_open().await, 9);
 
-    assert_eq!(server_conn.accept().await.unwrap(), stream_id);
+    assert_eq!(server_conn.stream_accept().await.unwrap(), stream_id);
 
     let mut buf = vec![0; 1024];
 
@@ -317,7 +317,7 @@ async fn test_stream_stopped_by_server() {
     assert_eq!(server_conn.stream_open().await, 5);
     assert_eq!(server_conn.stream_open().await, 9);
 
-    assert_eq!(server_conn.accept().await.unwrap(), stream_id);
+    assert_eq!(server_conn.stream_accept().await.unwrap(), stream_id);
 
     let mut buf = vec![0; 1024];
 
@@ -368,7 +368,7 @@ async fn test_stream_stopped_by_client() {
     assert_eq!(server_conn.stream_open().await, 5);
     assert_eq!(server_conn.stream_open().await, 9);
 
-    assert_eq!(server_conn.accept().await.unwrap(), stream_id);
+    assert_eq!(server_conn.stream_accept().await.unwrap(), stream_id);
 
     let mut buf = vec![0; 1024];
 
