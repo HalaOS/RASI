@@ -15,7 +15,7 @@ use crate::path::Path;
 /// let path = Path::new("/foo/bar");
 ///
 /// for ancestor in path.ancestors() {
-///     log::trace!("{}", ancestor.display());
+///     println!("{}", ancestor.display());
 /// }
 /// ```
 ///

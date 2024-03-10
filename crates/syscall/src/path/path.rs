@@ -554,7 +554,7 @@ impl Path {
     ///
     /// let path = Path::new("/tmp/foo.rs");
     ///
-    /// log::trace!("{}", path.display());
+    /// println!("{}", path.display());
     /// ```
     pub fn display(&self) -> Display<'_> {
         self.inner.display()

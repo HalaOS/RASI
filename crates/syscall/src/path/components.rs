@@ -16,7 +16,7 @@ use crate::path::{Component, Path};
 /// let path = Path::new("/tmp/foo/bar.txt");
 ///
 /// for component in path.components() {
-///     log::trace!("{:?}", component);
+///     println!("{:?}", component);
 /// }
 /// ```
 ///
