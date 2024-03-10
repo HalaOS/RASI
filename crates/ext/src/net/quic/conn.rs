@@ -267,12 +267,12 @@ impl QuicConnState {
                 }
                 Err(quiche::Error::Done) => {
                     // check if the connect status `is_draining`
-                    if raw.quiche_conn.is_draining() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::BrokenPipe,
-                            format!("{} is draining.", self),
-                        ));
-                    }
+                    // if raw.quiche_conn.is_draining() {
+                    //     return Err(io::Error::new(
+                    //         io::ErrorKind::BrokenPipe,
+                    //         format!("{} is draining.", self),
+                    //     ));
+                    // }
 
                     if let Some(ping_send_intervals) = raw.ping_send_intervals {
                         if raw.send_ack_eliciting_instant.elapsed() >= ping_send_intervals {
@@ -345,7 +345,9 @@ impl QuicConnState {
                         }
                     }
                 }
-                Err(err) => return Err(map_quic_error(err)),
+                Err(err) => {
+                    return Err(map_quic_error(err));
+                }
             }
         }
     }
@@ -359,6 +361,9 @@ impl QuicConnState {
         match raw.quiche_conn.recv(buf, info) {
             Ok(read_size) => {
                 log::trace!("rx {}, len={}", self, read_size);
+
+                // May received CONNECTION_CLOSE frm.
+                raw.validate_conn_status(&self.event_map)?;
 
                 // reset the `send_ack_eliciting_instant`
                 raw.send_ack_eliciting_instant = Instant::now();
@@ -395,6 +400,8 @@ impl QuicConnState {
         let mut raw = self.raw.lock().await;
 
         loop {
+            raw.validate_conn_status(&self.event_map)?;
+
             match raw.quiche_conn.stream_recv(stream_id, buf) {
                 Ok((read_size, fin)) => {
                     log::trace!(
@@ -452,6 +459,8 @@ impl QuicConnState {
         let mut raw = self.raw.lock().await;
 
         loop {
+            raw.validate_conn_status(&self.event_map)?;
+
             let stream_send = raw.quiche_conn.stream_send(stream_id, buf, fin);
 
             // After calling stream_send,
@@ -583,6 +592,11 @@ impl QuicConnState {
     pub async fn stream_accept(&self) -> Option<u64> {
         loop {
             let mut raw = self.raw.lock().await;
+
+            if raw.validate_conn_status(&self.event_map).is_err() {
+                return None;
+            }
+
             if let Some(stream_id) = raw.inbound_stream_queue.pop_front() {
                 return Some(stream_id);
             }
@@ -608,6 +622,8 @@ impl QuicConnState {
     pub async fn stream_open(&self, stream_limits_error: bool) -> io::Result<u64> {
         loop {
             let mut raw = self.raw.lock().await;
+
+            raw.validate_conn_status(&self.event_map)?;
 
             let peer_streams_left_bidi =
                 raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64;

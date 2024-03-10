@@ -94,7 +94,7 @@ async fn test_echo_per_stream() {
     init::init();
     // pretty_env_logger::init();
 
-    let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(1);
+    let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
 
     let listener = QuicListener::bind(laddrs.as_slice(), mock_config(true))
         .await
@@ -126,6 +126,92 @@ async fn test_echo_per_stream() {
     });
 
     for _ in 0..10000 {
+        let mut stream = client.stream_open(true).await.unwrap();
+
+        stream.write_all(b"hello world").await.unwrap();
+
+        let mut buf = vec![0; 100];
+
+        let read_size = stream.read(&mut buf).await.unwrap();
+
+        assert_eq!(&buf[..read_size], b"hello world");
+    }
+}
+
+#[futures_test::test]
+async fn test_connect_server_close() {
+    init::init();
+    // pretty_env_logger::init();
+
+    let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
+
+    let listener = QuicListener::bind(laddrs.as_slice(), mock_config(true))
+        .await
+        .unwrap();
+
+    let raddr = listener.local_addrs().collect::<Vec<_>>()[0].clone();
+
+    spawn(async move {
+        while let Some(conn) = listener.accept().await {
+            while let Some(mut stream) = conn.stream_accept().await {
+                let mut buf = vec![0; 100];
+                _ = stream.read(&mut buf).await.unwrap();
+
+                break;
+            }
+        }
+    });
+
+    for _ in 0..100 {
+        let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+            .await
+            .unwrap();
+
+        let mut stream = client.stream_open(true).await.unwrap();
+
+        stream.write_all(b"hello world").await.unwrap();
+
+        let mut buf = vec![0; 100];
+
+        assert_eq!(stream.read(&mut buf).await.unwrap(), 0);
+    }
+}
+
+#[futures_test::test]
+async fn test_connect_client_close() {
+    init::init();
+    // pretty_env_logger::init();
+
+    let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
+
+    let listener = QuicListener::bind(laddrs.as_slice(), mock_config(true))
+        .await
+        .unwrap();
+
+    let raddr = listener.local_addrs().collect::<Vec<_>>()[0].clone();
+
+    spawn(async move {
+        while let Some(conn) = listener.accept().await {
+            while let Some(mut stream) = conn.stream_accept().await {
+                loop {
+                    let mut buf = vec![0; 100];
+                    let read_size = stream.read(&mut buf).await.unwrap();
+
+                    if read_size == 0 {
+                        break;
+                    }
+
+                    stream.write_all(&buf[..read_size]).await.unwrap();
+                }
+            }
+        }
+    });
+
+    for _ in 0..100 {
+        let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+            .await
+            .unwrap();
+
         let mut stream = client.stream_open(true).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
