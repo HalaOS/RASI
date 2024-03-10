@@ -3,23 +3,22 @@ use std::{
     io,
     net::{SocketAddr, ToSocketAddrs},
     sync::Arc,
-    task::Poll,
 };
 
 use bytes::BytesMut;
-use quiche::{ConnectionId, RecvInfo, SendInfo};
+use quiche::{ConnectionId, RecvInfo};
 
-use rasi::syscall::{global_network, Network};
+use rasi::{
+    executor::spawn,
+    syscall::{global_network, Network},
+};
 
-use futures::{lock::Mutex, FutureExt, SinkExt, Stream, StreamExt, TryStreamExt};
+use futures::{lock::Mutex, FutureExt, Stream, TryStreamExt};
 
 use ring::{hmac::Key, rand::SystemRandom};
 
 use crate::{
-    future::{
-        batching,
-        event_map::{EventMap, EventStatus},
-    },
+    future::event_map::{EventMap, EventStatus},
     net::{
         quic::errors::map_quic_error,
         udp_group::{self, UdpGroup},
@@ -37,6 +36,7 @@ enum QuicListenerEvent {
 
 enum QuicListenerHandshake {
     Connection {
+        #[allow(unused)]
         conn_state: QuicConnState,
         is_established: bool,
         /// the number of bytes processed from the input buffer
@@ -296,51 +296,6 @@ impl RawQuicListenerState {
     }
 }
 
-/// The stream of the output data of [`QuicListenerState`]
-pub struct QuicServerStateSender {
-    max_send_udp_payload_size: usize,
-    send_group: batching::Group<(QuicConnState, io::Result<(BytesMut, SendInfo)>)>,
-    send_ready: batching::Ready<(QuicConnState, io::Result<(BytesMut, SendInfo)>)>,
-}
-
-impl QuicServerStateSender {
-    async fn send(
-        state: QuicConnState,
-        max_send_udp_payload_size: usize,
-    ) -> (QuicConnState, io::Result<(BytesMut, SendInfo)>) {
-        let mut buf = ReadBuf::with_capacity(max_send_udp_payload_size);
-
-        match state.send(buf.chunk_mut()).await {
-            Ok((send_size, send_info)) => {
-                return (state, Ok((buf.into_bytes_mut(Some(send_size)), send_info)));
-            }
-            Err(err) => return (state, Err(err)),
-        }
-    }
-}
-
-impl Stream for QuicServerStateSender {
-    type Item = io::Result<(BytesMut, SendInfo)>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        // perhaps: there is a bug.
-
-        match self.send_ready.poll_next_unpin(cx) {
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some((cx, r))) => {
-                self.send_group
-                    .join(Self::send(cx, self.max_send_udp_payload_size));
-
-                Poll::Ready(Some(r))
-            }
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
 /// The stream of the newly incoming connections of the [`QuicListenerState`].
 pub struct QuicServerStateIncoming {
     /// raw state machine protected by mutex.
@@ -385,18 +340,11 @@ pub struct QuicListenerState {
     raw: Arc<Mutex<RawQuicListenerState>>,
     /// the event center of this quic server listener.
     event_map: Arc<EventMap<QuicListenerEvent>>,
-    /// batch read group.
-    send_group: batching::Group<(QuicConnState, io::Result<(BytesMut, SendInfo)>)>,
 }
 
 impl QuicListenerState {
     /// Create new `QuicListenerState` instance with provided [`Config`]
-    pub fn new(
-        config: Config,
-    ) -> io::Result<(Self, QuicServerStateIncoming, QuicServerStateSender)> {
-        let max_send_udp_payload_size = config.max_send_udp_payload_size;
-        let (send_group, send_ready) = batching::Group::new();
-
+    pub fn new(config: Config) -> io::Result<(Self, QuicServerStateIncoming)> {
         let raw = Arc::new(Mutex::new(RawQuicListenerState::new(config)?));
 
         let event_map: Arc<EventMap<QuicListenerEvent>> = Default::default();
@@ -405,14 +353,8 @@ impl QuicListenerState {
             Self {
                 raw: raw.clone(),
                 event_map: event_map.clone(),
-                send_group: send_group.clone(),
             },
             QuicServerStateIncoming { raw, event_map },
-            QuicServerStateSender {
-                max_send_udp_payload_size,
-                send_group,
-                send_ready,
-            },
         ))
     }
 
@@ -423,7 +365,7 @@ impl QuicListenerState {
         &self,
         buf: &mut [u8],
         recv_info: RecvInfo,
-    ) -> io::Result<(usize, Option<BytesMut>)> {
+    ) -> io::Result<(usize, Option<BytesMut>, Option<QuicConnState>)> {
         let header =
             quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(map_quic_error)?;
 
@@ -445,7 +387,7 @@ impl QuicListenerState {
                     .notify(QuicListenerEvent::Accept, EventStatus::Ready);
             }
 
-            return Ok((recv_size, None));
+            return Ok((recv_size, None, None));
         }
 
         // Perform the handshake process.
@@ -461,18 +403,12 @@ impl QuicListenerState {
                         .notify(QuicListenerEvent::Accept, EventStatus::Ready);
                 }
 
-                // add conn_state into batch send group.
-                self.send_group.join(QuicServerStateSender::send(
-                    conn_state,
-                    raw.config.max_send_udp_payload_size,
-                ));
-
-                return Ok((read_size, None));
+                return Ok((read_size, None, Some(conn_state)));
             }
             QuicListenerHandshake::Response {
                 buf,
                 read_size: recv_size,
-            } => return Ok((recv_size, Some(buf))),
+            } => return Ok((recv_size, Some(buf), None)),
         }
     }
 }
@@ -500,6 +436,8 @@ impl QuicListener {
         config: Config,
         syscall: &'static dyn Network,
     ) -> io::Result<Self> {
+        let max_send_udp_payload_size = config.max_send_udp_payload_size;
+
         let socket = UdpGroup::bind_with(laddrs, syscall).await?;
 
         let laddrs = socket.local_addrs().cloned().collect::<Vec<_>>();
@@ -508,13 +446,15 @@ impl QuicListener {
         let (sender, receiver) = socket.split();
 
         // create inner sm.
-        let (state, incoming, state_sender) = QuicListenerState::new(config)?;
+        let (state, incoming) = QuicListenerState::new(config)?;
 
         // start udp recv loop
-        rasi::executor::spawn(Self::recv_loop(state, receiver, sender.clone()));
-
-        // start udp send loop
-        rasi::executor::spawn(Self::send_loop(state_sender, sender));
+        rasi::executor::spawn(Self::recv_loop(
+            state,
+            receiver,
+            sender,
+            max_send_udp_payload_size,
+        ));
 
         Ok(Self { incoming, laddrs })
     }
@@ -549,8 +489,9 @@ impl QuicListener {
         state: QuicListenerState,
         receiver: udp_group::Receiver,
         sender: udp_group::Sender,
+        max_send_udp_payload_size: usize,
     ) {
-        match Self::recv_loop_inner(state, receiver, sender).await {
+        match Self::recv_loop_inner(state, receiver, sender, max_send_udp_payload_size).await {
             Ok(_) => {
                 log::info!("QuicListener recv_loop stopped.");
             }
@@ -563,10 +504,11 @@ impl QuicListener {
     async fn recv_loop_inner(
         state: QuicListenerState,
         mut receiver: udp_group::Receiver,
-        mut sender: udp_group::Sender,
+        sender: udp_group::Sender,
+        max_send_udp_payload_size: usize,
     ) -> io::Result<()> {
         while let Some((mut buf, path_info)) = receiver.try_next().await? {
-            let (_, resp) = match state
+            let (_, resp, conn_state) = match state
                 .recv(
                     &mut buf,
                     RecvInfo {
@@ -584,34 +526,16 @@ impl QuicListener {
             };
 
             if let Some(resp) = resp {
-                sender
-                    .send((resp.freeze(), Some(path_info.to), path_info.from))
-                    .await?;
+                sender.send_to_on_path(&resp, path_info.reverse()).await?;
             }
-        }
 
-        Ok(())
-    }
-
-    async fn send_loop(state_sender: QuicServerStateSender, sender: udp_group::Sender) {
-        match Self::send_loop_inner(state_sender, sender).await {
-            Ok(_) => {
-                log::info!("QuicListener send_loop stopped.");
+            if let Some(conn_state) = conn_state {
+                spawn(QuicConn::send_loop(
+                    conn_state,
+                    sender.clone(),
+                    max_send_udp_payload_size,
+                ));
             }
-            Err(err) => {
-                log::error!("QuicListener send_loop stopped with err: {}", err);
-            }
-        }
-    }
-
-    async fn send_loop_inner(
-        mut state_sender: QuicServerStateSender,
-        mut sender: udp_group::Sender,
-    ) -> io::Result<()> {
-        while let Some((buf, send_info)) = state_sender.try_next().await? {
-            sender
-                .send((buf.freeze(), Some(send_info.from), send_info.to))
-                .await?;
         }
 
         Ok(())

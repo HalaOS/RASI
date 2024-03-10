@@ -13,7 +13,7 @@ use quiche::{ConnectionId, RecvInfo, SendInfo, Shutdown};
 use rand::{seq::IteratorRandom, thread_rng};
 use rasi::{executor::spawn, syscall::global_network};
 
-use futures::{AsyncRead, AsyncWrite, FutureExt, SinkExt, TryStreamExt};
+use futures::{AsyncRead, AsyncWrite, FutureExt, TryStreamExt};
 
 use ring::rand::{SecureRandom, SystemRandom};
 
@@ -21,7 +21,7 @@ use crate::{
     future::event_map::{EventMap, EventStatus},
     net::{
         quic::errors::map_event_map_error,
-        udp_group::{self, UdpGroup},
+        udp_group::{self, PathInfo, UdpGroup},
     },
     utils::{AsyncLockable, AsyncSpinMutex, DerefExt, ReadBuf},
 };
@@ -766,7 +766,7 @@ impl QuicConn {
 
         let mut conn_state = QuicConnState::connect(server_name, *laddr, raddr, config)?;
 
-        let (mut sender, mut receiver) = socket.split();
+        let (sender, mut receiver) = socket.split();
 
         loop {
             let mut read_buf = ReadBuf::with_capacity(config.max_send_udp_payload_size);
@@ -774,11 +774,13 @@ impl QuicConn {
             let (read_size, send_info) = conn_state.send(read_buf.chunk_mut()).await?;
 
             sender
-                .send((
-                    read_buf.into_bytes(Some(read_size)),
-                    Some(send_info.from),
-                    send_info.to,
-                ))
+                .send_to_on_path(
+                    &read_buf.into_bytes(Some(read_size)),
+                    PathInfo {
+                        from: send_info.from,
+                        to: send_info.to,
+                    },
+                )
                 .await?;
 
             let (mut buf, path_info) = receiver.try_next().await?.ok_or(io::Error::new(
@@ -890,7 +892,7 @@ impl QuicConn {
         Ok(())
     }
 
-    async fn send_loop(
+    pub(crate) async fn send_loop(
         state: QuicConnState,
         sender: udp_group::Sender,
         max_send_udp_payload_size: usize,
@@ -907,7 +909,7 @@ impl QuicConn {
 
     async fn send_loop_inner(
         state: QuicConnState,
-        mut sender: udp_group::Sender,
+        sender: udp_group::Sender,
         max_send_udp_payload_size: usize,
     ) -> io::Result<()> {
         loop {
@@ -916,11 +918,13 @@ impl QuicConn {
             let (send_size, send_info) = state.send(read_buf.chunk_mut()).await?;
 
             sender
-                .send((
-                    read_buf.into_bytes(Some(send_size)),
-                    Some(send_info.from),
-                    send_info.to,
-                ))
+                .send_to_on_path(
+                    &read_buf.into_bytes(Some(send_size)),
+                    PathInfo {
+                        from: send_info.from,
+                        to: send_info.to,
+                    },
+                )
                 .await?;
         }
     }
