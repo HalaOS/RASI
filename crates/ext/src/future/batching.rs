@@ -5,13 +5,15 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
     future::Future,
-    panic::Location,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     task::{Context, Poll, Waker},
 };
+
+#[cfg(feature = "trace_batching")]
+use std::panic::Location;
 
 use futures::{future::BoxFuture, FutureExt, Stream};
 
@@ -27,15 +29,28 @@ impl FutureKey {
     fn next() -> Self {
         static TOKEN_GEN: AtomicUsize = AtomicUsize::new(0);
 
-        FutureKey(TOKEN_GEN.fetch_add(1, Ordering::Relaxed))
+        FutureKey {
+            id: TOKEN_GEN.fetch_add(1, Ordering::Relaxed),
+        }
     }
 
     #[cfg(feature = "trace_batching")]
     fn next(caller: &'static Location<'static>) -> Self {
-        static TOKEN_GEN: AtomicUsize = AtomicUsize::new(0);
+        use std::sync::OnceLock;
+
+        use rand::{thread_rng, RngCore};
+
+        static TOKEN_GEN: OnceLock<AtomicUsize> = OnceLock::new();
+
+        let gen = TOKEN_GEN.get_or_init(|| {
+            let mut buf = [0u8; 8];
+            thread_rng().fill_bytes(&mut buf);
+
+            AtomicUsize::new(u64::from_be_bytes(buf) as usize)
+        });
 
         FutureKey {
-            id: TOKEN_GEN.fetch_add(1, Ordering::Relaxed),
+            id: gen.fetch_add(1, Ordering::Relaxed),
             caller,
         }
     }
@@ -68,7 +83,7 @@ pub struct Group<R> {
     /// The pending futures mapping of this group.
     pending: Arc<parking_lot::Mutex<HashMap<FutureKey, BoxFuture<'static, R>>>>,
     /// A proxy type that handle [`Waker`] instance and ready fifo queue.
-    wake_by_key: Arc<WakeByKey>,
+    wake_by_key: Arc<parking_lot::Mutex<WakeByKey>>,
     /// Group close flag.
     closed: Arc<AtomicBool>,
 }
@@ -109,11 +124,15 @@ impl<R> Group<R> {
     where
         Fut: Future<Output = R> + Send + 'static,
     {
+        #[cfg(feature = "trace_batching")]
         let key = FutureKey::next(Location::caller());
+
+        #[cfg(not(feature = "trace_batching"))]
+        let key = FutureKey::next();
 
         self.pending.lock().insert(key, Box::pin(fut));
 
-        self.wake_by_key.wake_by_future_key(key);
+        self.wake_by_key.lock().wake_by_future_key(key);
 
         key
     }
@@ -130,7 +149,7 @@ impl<R> Group<R> {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
-            self.wake_by_key.wake();
+            self.wake_by_key.lock().wake();
         }
     }
 }
@@ -140,34 +159,46 @@ pub struct Ready<R> {
     /// The pending futures mapping of this group.
     pending: Arc<parking_lot::Mutex<HashMap<FutureKey, BoxFuture<'static, R>>>>,
     /// A proxy type that handle [`Waker`] instance and ready fifo queue.
-    wake_by_key: Arc<WakeByKey>,
+    wake_by_key: Arc<parking_lot::Mutex<WakeByKey>>,
     /// Group close flag.
     closed: Arc<AtomicBool>,
 }
 
 impl<R> Ready<R> {
-    fn batch_poll(self: std::pin::Pin<&mut Self>) -> std::task::Poll<R> {
-        while let Some(key) = self.wake_by_key.pop() {
-            let fut = self.pending.lock().remove(&key);
+    fn batch_poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> std::task::Poll<R> {
+        self.wake_by_key.lock().waker = Some(cx.waker().clone());
 
-            if fut.is_none() {
-                continue;
-            }
+        loop {
+            let top = self.wake_by_key.lock().ready.pop_front();
 
-            let mut fut = fut.unwrap();
+            if let Some(key) = top {
+                let fut = self.pending.lock().remove(&key);
 
-            use cooked_waker::IntoWaker;
-
-            let waker: Waker =
-                Box::new(FutureKeyWaker::new(key, self.wake_by_key.clone())).into_waker();
-
-            match fut.poll_unpin(&mut Context::from_waker(&waker)) {
-                Poll::Pending => {
-                    self.pending.lock().insert(key, fut);
+                if fut.is_none() {
+                    continue;
                 }
-                Poll::Ready(r) => {
-                    return Poll::Ready(r);
+
+                let mut fut = fut.unwrap();
+
+                use cooked_waker::IntoWaker;
+
+                let waker: Waker =
+                    Box::new(FutureKeyWaker::new(key, self.wake_by_key.clone())).into_waker();
+
+                match fut.poll_unpin(&mut Context::from_waker(&waker)) {
+                    Poll::Pending => {
+                        #[cfg(feature = "trace_batching")]
+                        log::trace!("Batching: pending {:?}", key);
+                        self.pending.lock().insert(key, fut);
+                    }
+                    Poll::Ready(r) => {
+                        #[cfg(feature = "trace_batching")]
+                        log::trace!("Batching: ready {:?}", key);
+                        return Poll::Ready(r);
+                    }
                 }
+            } else {
+                break;
             }
         }
 
@@ -186,12 +217,12 @@ impl<R> Stream for Ready<R> {
             return Poll::Ready(None);
         }
 
-        self.wake_by_key.pending(cx.waker().clone());
+        // self.wake_by_key.pending(cx.waker().clone());
 
-        match self.as_mut().batch_poll() {
+        match self.as_mut().batch_poll(cx) {
             std::task::Poll::Ready(r) => {
                 // may no need to call remove_inner_waker
-                drop(self.wake_by_key.remove_inner_waker());
+                // drop(self.wake_by_key.remove_inner_waker());
 
                 return Poll::Ready(Some(r));
             }
@@ -203,50 +234,29 @@ impl<R> Stream for Ready<R> {
 }
 
 #[derive(Default)]
-struct RawWakeByKey {
+struct WakeByKey {
     /// system waker passed by [`Self::pending`] function.
     waker: Option<Waker>,
     /// The [`id`](Token) fifo queue for ready futures.
     ready: VecDeque<FutureKey>,
 }
 
-#[derive(Default)]
-struct WakeByKey {
-    raw: parking_lot::Mutex<RawWakeByKey>,
-}
-
 impl WakeByKey {
-    fn pending(&self, waker: Waker) {
-        self.raw.lock().waker = Some(waker);
-    }
+    fn wake_by_future_key(&mut self, key: FutureKey) {
+        self.ready.push_back(key);
 
-    fn remove_inner_waker(&self) -> Option<Waker> {
-        self.raw.lock().waker.take()
-    }
+        #[cfg(feature = "trace_batching")]
+        log::trace!("Batching: wake {:?}", key);
 
-    fn wake_by_future_key(&self, key: FutureKey) {
-        let mut raw = self.raw.lock();
-
-        raw.ready.push_back(key);
-
-        if let Some(waker) = raw.waker.take() {
-            waker.wake();
-            println!("wake key: {:?}", key);
-        } else {
-            println!("wake key: {:?} not found", key);
-        }
-    }
-
-    fn wake(&self) {
-        let mut raw = self.raw.lock();
-
-        if let Some(waker) = raw.waker.take() {
+        if let Some(waker) = self.waker.take() {
             waker.wake();
         }
     }
 
-    fn pop(&self) -> Option<FutureKey> {
-        self.raw.lock().ready.pop_front()
+    fn wake(&mut self) {
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
+        }
     }
 }
 
@@ -254,18 +264,18 @@ impl WakeByKey {
 struct FutureKeyWaker {
     key: FutureKey,
     /// A proxy type that handle [`Waker`] instance and ready fifo queue.
-    wake_by_key: Arc<WakeByKey>,
+    wake_by_key: Arc<parking_lot::Mutex<WakeByKey>>,
 }
 
 impl FutureKeyWaker {
-    fn new(key: FutureKey, wake_by_key: Arc<WakeByKey>) -> Self {
+    fn new(key: FutureKey, wake_by_key: Arc<parking_lot::Mutex<WakeByKey>>) -> Self {
         Self { key, wake_by_key }
     }
 }
 
 impl cooked_waker::WakeRef for FutureKeyWaker {
     fn wake_by_ref(&self) {
-        self.wake_by_key.wake_by_future_key(self.key);
+        self.wake_by_key.lock().wake_by_future_key(self.key);
     }
 }
 
@@ -352,7 +362,7 @@ mod tests {
 
         let thread_pool = ThreadPool::new().unwrap();
 
-        assert!(batch_group.wake_by_key.raw.lock().waker.is_none());
+        assert!(batch_group.wake_by_key.lock().waker.is_none());
 
         let handle = thread_pool
             .spawn_with_handle(async move {
@@ -365,7 +375,7 @@ mod tests {
         // wait
         std::thread::sleep(Duration::from_secs(1));
 
-        assert!(batch_group.wake_by_key.raw.lock().waker.is_some());
+        assert!(batch_group.wake_by_key.lock().waker.is_some());
 
         std::thread::spawn(move || {
             for _ in 0..loops {

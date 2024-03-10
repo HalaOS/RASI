@@ -249,6 +249,6 @@ mod tests {
 
         assert_eq!(*shared.lock().await, loops);
 
-        println!("bench_async_lock: {:?}", duration / loops);
+        log::trace!("bench_async_lock: {:?}", duration / loops);
     }
 }

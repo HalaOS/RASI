@@ -78,6 +78,10 @@ pub trait AsyncLockableMediator {
     fn cancel(&mut self, key: usize) -> bool;
 
     /// Randomly notify one listener that it can try to lock this mutex again.
+    #[cfg(feature = "trace_lock")]
+    fn notify_one(&mut self, id: usize, tracer: &'static std::panic::Location<'static>);
+
+    #[cfg(not(feature = "trace_lock"))]
     fn notify_one(&mut self);
 
     /// notify all listeners that they can try to lock this mutex again.

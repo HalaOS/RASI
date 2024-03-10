@@ -519,7 +519,7 @@ impl FileSystem {
     ///
     /// while let Some(res) = entries.next().await {
     ///     let entry = res?;
-    ///     println!("{}", entry.file_name());
+    ///     log::trace!("{}", entry.file_name());
     /// }
     /// #
     /// # Ok(()) }) }
@@ -922,7 +922,7 @@ impl DirEntry {
     ///
     /// while let Some(res) = dir.next().await {
     ///     let entry = res?;
-    ///     println!("{:?}", entry.path());
+    ///     log::trace!("{:?}", entry.path());
     /// }
     /// #
     /// # Ok(()) }) }
@@ -960,7 +960,7 @@ impl DirEntry {
     ///
     /// while let Some(res) = dir.next().await {
     ///     let entry = res?;
-    ///     println!("{:?}", entry.metadata().await?);
+    ///     log::trace!("{:?}", entry.metadata().await?);
     /// }
     /// #
     /// # Ok(()) }) }
@@ -1001,7 +1001,7 @@ impl DirEntry {
     ///
     /// while let Some(res) = dir.next().await {
     ///     let entry = res?;
-    ///     println!("{:?}", entry.file_type().await?);
+    ///     log::trace!("{:?}", entry.file_type().await?);
     /// }
     /// #
     /// # Ok(()) }) }
@@ -1028,7 +1028,7 @@ impl DirEntry {
     ///
     /// while let Some(res) = dir.next().await {
     ///     let entry = res?;
-    ///     println!("{}", entry.file_name());
+    ///     log::trace!("{}", entry.file_name());
     /// }
     /// #
     /// # Ok(()) }) }

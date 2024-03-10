@@ -722,7 +722,7 @@ impl UdpSocket {
     ///
     /// let addr = "127.0.0.1:7878".parse().unwrap();
     /// let sent = socket.send_to(THE_MERCHANT_OF_VENICE, addr).await?;
-    /// println!("Sent {} bytes to {}", sent, addr);
+    /// log::trace!("Sent {} bytes to {}", sent, addr);
     /// #
     /// # Ok(()) }) }
     /// ```
@@ -749,7 +749,7 @@ impl UdpSocket {
     ///
     /// let mut buf = vec![0; 1024];
     /// let (n, peer) = socket.recv_from(&mut buf).await?;
-    /// println!("Received {} bytes from {}", n, peer);
+    /// log::trace!("Received {} bytes from {}", n, peer);
     /// #
     /// # Ok(()) }) }
     /// ```

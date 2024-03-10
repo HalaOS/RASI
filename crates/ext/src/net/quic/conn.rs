@@ -52,7 +52,7 @@ struct RawQuicConnState {
     /// The point in time when the most recent ack packet was sent.
     send_ack_eliciting_instant: Instant,
     /// The time interval for sending ping packets.
-    ping_send_intervals: Duration,
+    ping_send_intervals: Option<Duration>,
     /// Registered inbound stream ids.
     inbound_stream_ids: HashSet<u64>,
     /// Registered outbound stream ids.
@@ -78,7 +78,7 @@ impl Display for RawQuicConnState {
 impl RawQuicConnState {
     fn new(
         quiche_conn: quiche::Connection,
-        ping_send_intervals: Duration,
+        ping_send_intervals: Option<Duration>,
         next_outbound_stream_id: u64,
     ) -> Self {
         let mut this = Self {
@@ -172,7 +172,7 @@ impl QuicConnState {
     ///
     /// - ***quiche_conn*** The underlying quiche [`connection`](quiche::Connection) instance.
     /// - ***ping_send_intervals*** The time interval for sending ping packets.
-    pub fn new(quiche_conn: quiche::Connection, ping_send_intervals: Duration) -> Self {
+    pub fn new(quiche_conn: quiche::Connection, ping_send_intervals: Option<Duration>) -> Self {
         let next_outbound_stream_id = if quiche_conn.is_server() { 5 } else { 4 };
 
         Self {
@@ -274,13 +274,15 @@ impl QuicConnState {
                         ));
                     }
 
-                    if raw.send_ack_eliciting_instant.elapsed() >= raw.ping_send_intervals {
-                        raw.quiche_conn
-                            .send_ack_eliciting()
-                            .map_err(map_quic_error)?;
+                    if let Some(ping_send_intervals) = raw.ping_send_intervals {
+                        if raw.send_ack_eliciting_instant.elapsed() >= ping_send_intervals {
+                            raw.quiche_conn
+                                .send_ack_eliciting()
+                                .map_err(map_quic_error)?;
 
-                        // send `ack_eliciting` immediately.
-                        continue;
+                            // send `ack_eliciting` immediately.
+                            continue;
+                        }
                     }
 
                     let event = QuicConnStateEvent::Send(self.scid.clone());
@@ -288,14 +290,16 @@ impl QuicConnState {
                     if let Some(mut timeout_at) = raw.quiche_conn.timeout_instant() {
                         use rasi::time::TimeoutExt;
 
-                        let send_ack_eliciting_at =
-                            raw.send_ack_eliciting_instant + raw.ping_send_intervals;
-
                         let mut send_ack_eliciting = false;
 
-                        if send_ack_eliciting_at < timeout_at {
-                            timeout_at = send_ack_eliciting_at;
-                            send_ack_eliciting = true;
+                        if let Some(ping_send_intervals) = raw.ping_send_intervals {
+                            let send_ack_eliciting_at =
+                                raw.send_ack_eliciting_instant + ping_send_intervals;
+
+                            if send_ack_eliciting_at < timeout_at {
+                                timeout_at = send_ack_eliciting_at;
+                                send_ack_eliciting = true;
+                            }
                         }
 
                         match self.event_map.once(event, raw).timeout_at(timeout_at).await {
@@ -615,7 +619,7 @@ impl QuicConnState {
                     ));
                 }
 
-                println!("{} stream open pending...", self);
+                log::trace!("{} stream open pending...", self);
 
                 self.event_map
                     .once(

@@ -4,7 +4,7 @@ use std::{ops, time::Duration};
 pub struct Config {
     quiche_config: quiche::Config,
     /// The time interval for sending ping packets.
-    pub ping_packet_send_interval: Duration,
+    pub ping_packet_send_interval: Option<Duration>,
     /// `max_udp_payload_size transport` parameter.
     pub max_recv_udp_payload_size: usize,
     /// `max_udp_payload_size transport` parameter.
@@ -30,16 +30,11 @@ impl Config {
     pub fn new() -> Self {
         let mut config = Config {
             quiche_config: quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap(),
-            ping_packet_send_interval: Duration::from_secs(10),
+            ping_packet_send_interval: None,
             max_recv_udp_payload_size: 65527,
             max_send_udp_payload_size: 1200,
         };
 
-        config.set_max_idle_timeout(50000);
-        assert_eq!(
-            config.ping_packet_send_interval,
-            Duration::from_millis(25000)
-        );
         config.set_initial_max_stream_data_bidi_local(1024 * 1024);
         config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
         config.set_initial_max_streams_bidi(10);
@@ -54,7 +49,7 @@ impl Config {
     ///
     /// This function also set the `ping_packet_send_interval` as `max_idle_timeout` / 2
     pub fn set_max_idle_timeout(&mut self, v: u64) {
-        self.ping_packet_send_interval = Duration::from_millis(v / 2);
+        self.ping_packet_send_interval = Some(Duration::from_millis(v / 2));
         self.quiche_config.set_max_idle_timeout(v)
     }
 

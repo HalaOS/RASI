@@ -32,15 +32,15 @@ rasi-default = { workspace = true }
 pretty_env_logger = { workspace = true }
 
 [features]
-default = ["event_map", "batching", "quic", "use_parking_lot", "trace_batching"]
+default = ["event_map", "batching", "quic", "use_parking_lot"]
 
 event_map = ["dashmap"]
 batching = ["parking_lot"]
 quic = ["udp_group", "quiche", "ring"]
 udp_group = ["bytes", "rand", "batching"]
 use_parking_lot = ["parking_lot"]
-trace_batching = []
-
+# trace_batching = []
+# trace_lock = []
 [[bench]]
 harness = false
 name = "map_bench"
