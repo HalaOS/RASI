@@ -3,7 +3,9 @@
 use std::{
     borrow::Borrow,
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     future::Future,
+    panic::Location,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
@@ -13,14 +15,49 @@ use std::{
 
 use futures::{future::BoxFuture, FutureExt, Stream};
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct FutureKey(usize);
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct FutureKey {
+    id: usize,
+    #[cfg(feature = "trace_batching")]
+    caller: &'static Location<'static>,
+}
 
 impl FutureKey {
+    #[cfg(not(feature = "trace_batching"))]
     fn next() -> Self {
         static TOKEN_GEN: AtomicUsize = AtomicUsize::new(0);
 
         FutureKey(TOKEN_GEN.fetch_add(1, Ordering::Relaxed))
+    }
+
+    #[cfg(feature = "trace_batching")]
+    fn next(caller: &'static Location<'static>) -> Self {
+        static TOKEN_GEN: AtomicUsize = AtomicUsize::new(0);
+
+        FutureKey {
+            id: TOKEN_GEN.fetch_add(1, Ordering::Relaxed),
+            caller,
+        }
+    }
+}
+
+impl Debug for FutureKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #[cfg(feature = "trace_batching")]
+        {
+            write!(
+                f,
+                "FutureKey, id={}, caller: {}({})",
+                self.id,
+                self.caller.file(),
+                self.caller.line()
+            )
+        }
+
+        #[cfg(not(feature = "trace_batching"))]
+        {
+            write!(f, "FutureKey, id={}", self.id)
+        }
     }
 }
 
@@ -67,11 +104,12 @@ impl<R> Group<R> {
     /// Add `fut` to the batch poll group.
     ///
     /// The returns type is [`FutureKey`], you can use it to [`remove`](Self::leave) joined `fut`
+    #[track_caller]
     pub fn join<Fut>(&self, fut: Fut) -> FutureKey
     where
         Fut: Future<Output = R> + Send + 'static,
     {
-        let key = FutureKey::next();
+        let key = FutureKey::next(Location::caller());
 
         self.pending.lock().insert(key, Box::pin(fut));
 
@@ -193,6 +231,9 @@ impl WakeByKey {
 
         if let Some(waker) = raw.waker.take() {
             waker.wake();
+            println!("wake key: {:?}", key);
+        } else {
+            println!("wake key: {:?} not found", key);
         }
     }
 
