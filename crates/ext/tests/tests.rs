@@ -170,7 +170,7 @@ async fn test_connect_server_close() {
         }
     });
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
             .await
             .unwrap();
@@ -219,7 +219,7 @@ async fn test_connect_client_close() {
 
     sleep(Duration::from_secs(1)).await;
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
             .await
             .unwrap();

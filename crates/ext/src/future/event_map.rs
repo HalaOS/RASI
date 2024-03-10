@@ -12,6 +12,8 @@ use std::{
     task::{Poll, Waker},
 };
 
+use crate::utils::{Lockable, SpinMutex};
+
 /// The variant for event listener waiting status .
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
@@ -48,7 +50,7 @@ pub struct EventMap<E>
 where
     E: Eq + Hash,
 {
-    listeners: parking_lot::Mutex<(bool, HashMap<E, Listener>)>,
+    listeners: SpinMutex<(bool, HashMap<E, Listener>)>,
 }
 
 impl<E> Default for EventMap<E>
