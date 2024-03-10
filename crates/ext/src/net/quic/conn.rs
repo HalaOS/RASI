@@ -306,6 +306,7 @@ impl QuicConnState {
                             Some(Ok(_)) => {
                                 // try send data again.
                                 raw = self.raw.lock().await;
+
                                 continue;
                             }
                             Some(Err(err)) => {

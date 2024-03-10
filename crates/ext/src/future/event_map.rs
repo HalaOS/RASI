@@ -88,8 +88,12 @@ where
 
             listener.waker.wake();
 
+            log::trace!("notify {:?}", event.borrow());
+
             true
         } else {
+            log::trace!("notify {:?}, not found", event.borrow());
+
             false
         }
     }
@@ -103,6 +107,10 @@ where
                 listener.status.store(status.into(), Ordering::Release);
 
                 listener.waker.wake();
+
+                log::trace!("notify {:?}", event.borrow());
+            } else {
+                log::trace!("notify {:?}, not found", event.borrow());
             }
         }
     }
@@ -194,6 +202,8 @@ where
             );
 
             drop(guard);
+
+            log::trace!("raised, event={:?}, unlocked", self.event);
 
             return Poll::Pending;
         }
