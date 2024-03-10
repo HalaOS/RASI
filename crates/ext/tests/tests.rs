@@ -1,7 +1,5 @@
-use std::time::Duration;
-
 use futures::{AsyncReadExt, AsyncWriteExt};
-use rasi::{executor::spawn, time::sleep};
+use rasi::executor::spawn;
 use rasi_ext::net::quic::{Config, QuicConn, QuicListener};
 
 mod init;
@@ -110,10 +108,6 @@ async fn test_echo_per_stream() {
 
     let raddr = listener.local_addrs().collect::<Vec<_>>()[0].clone();
 
-    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
-        .await
-        .unwrap();
-
     spawn(async move {
         while let Some(conn) = listener.accept().await {
             while let Some(mut stream) = conn.stream_accept().await {
@@ -132,6 +126,10 @@ async fn test_echo_per_stream() {
             }
         }
     });
+
+    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        .await
+        .unwrap();
 
     for _ in 0..10000 {
         let mut stream = client.stream_open(false).await.unwrap();
@@ -170,7 +168,7 @@ async fn test_connect_server_close() {
         }
     });
 
-    for _ in 0..10 {
+    for _ in 0..100 {
         let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
             .await
             .unwrap();
@@ -217,9 +215,7 @@ async fn test_connect_client_close() {
         }
     });
 
-    sleep(Duration::from_secs(1)).await;
-
-    for _ in 0..10 {
+    for _ in 0..100 {
         let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
             .await
             .unwrap();
