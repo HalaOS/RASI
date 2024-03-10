@@ -740,6 +740,12 @@ pub struct QuicConn {
     inner: Arc<QuicConnFinalizer>,
 }
 
+impl Display for QuicConn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner.0)
+    }
+}
+
 impl QuicConn {
     /// Create `QuicConn` instance from [`state`](QuicConnState).
     pub(super) fn new(state: QuicConnState) -> QuicConn {
@@ -987,6 +993,23 @@ impl QuicStream {
         Self {
             inner: Arc::new(QuicStreamFinalizer(stream_id, inner)),
         }
+    }
+
+    /// Writes data to a stream.
+    ///
+    /// On success the number of bytes written is returned.
+    ///
+    /// Unlike the [`AsyncWrite`], this function you can manual set fin flag.
+    pub async fn stream_send(&self, buf: &[u8], fin: bool) -> io::Result<usize> {
+        self.inner.1 .0.stream_send(self.inner.0, buf, fin).await
+    }
+
+    /// Reads contiguous data from a stream into the provided slice.
+    ///
+    /// On success, returns the number of bytes written and fin flag.
+    ///
+    pub async fn stream_recv(&self, buf: &mut [u8]) -> io::Result<(usize, bool)> {
+        self.inner.1 .0.stream_recv(self.inner.0, buf).await
     }
 }
 

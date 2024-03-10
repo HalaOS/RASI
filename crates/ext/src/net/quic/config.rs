@@ -37,8 +37,8 @@ impl Config {
 
         config.set_initial_max_stream_data_bidi_local(1024 * 1024);
         config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
-        config.set_initial_max_streams_bidi(10);
-        config.set_initial_max_streams_uni(10);
+        config.set_initial_max_streams_bidi(100);
+        config.set_initial_max_streams_uni(100);
 
         config
     }
