@@ -5,10 +5,6 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
     task::{Poll, Waker},
 };
 
@@ -64,7 +60,7 @@ where
 
 impl<E> EventMap<E>
 where
-    E: Eq + Hash + Unpin + Debug,
+    E: Eq + Hash + Unpin + Debug + Unpin,
 {
     /// Create new [`EventMap<E>`](EventMap) instance with default config.
     pub fn new() -> Self {
@@ -77,18 +73,22 @@ where
     ///
     /// # Parameters
     /// - guard: An RAII guard returned by some lock primitives.
-    pub fn once<G>(&self, event: E, guard: G) -> WaitKey<'_, E, G> {
-        WaitKey::new(self, event, guard)
+    pub async fn once<G>(&self, event: E, guard: G) -> Result<(), EventStatus>
+    where
+        G: Unpin,
+        E: Clone,
+    {
+        WaitKey::new(self, event, guard).await
     }
 
     /// Notify `event` listener, and set the listener status to `status`.
     pub fn notify<Q: Borrow<E>>(&self, event: Q, status: EventStatus) -> bool {
         let mut inner = self.listeners.lock();
 
-        if let Some(listener) = inner.1.remove(event.borrow()) {
-            listener.status.store(status.into(), Ordering::Release);
+        if let Some(listener) = inner.1.get_mut(event.borrow()) {
+            listener.status = status;
 
-            listener.waker.wake();
+            listener.waker.wake_by_ref();
 
             log::trace!("notify {:?}", event.borrow());
 
@@ -105,10 +105,10 @@ where
         let mut inner = self.listeners.lock();
 
         for event in event_list.as_ref() {
-            if let Some(listener) = inner.1.remove(event.borrow()) {
-                listener.status.store(status.into(), Ordering::Release);
+            if let Some(listener) = inner.1.get_mut(event.borrow()) {
+                listener.status = status;
 
-                listener.waker.wake();
+                listener.waker.wake_by_ref();
 
                 log::trace!("notify {:?}", event.borrow());
             } else {
@@ -126,19 +126,17 @@ where
 
         inner.0 = true;
 
-        for (_, listener) in inner.1.drain() {
-            listener
-                .status
-                .store(EventStatus::Destroy.into(), Ordering::Release);
+        for (_, listener) in inner.1.iter_mut() {
+            listener.status = EventStatus::Destroy;
 
-            listener.waker.wake();
+            listener.waker.wake_by_ref();
         }
     }
 }
 
 struct Listener {
     waker: Waker,
-    status: Arc<AtomicU8>,
+    status: EventStatus,
 }
 
 /// The type of future that is waiting for a specific event to be notified.
@@ -148,20 +146,18 @@ where
     E: Eq + Hash + Unpin,
 {
     event: E,
-    status: Arc<AtomicU8>,
     event_map: &'a EventMap<E>,
     guard: Option<G>,
 }
 
 impl<'a, E, G> WaitKey<'a, E, G>
 where
-    E: Eq + Hash + Unpin,
+    E: Eq + Hash + Unpin + Debug,
 {
     fn new(event_map: &'a EventMap<E>, event: E, guard: G) -> Self {
         Self {
             guard: Some(guard),
             event,
-            status: Arc::new(AtomicU8::new(EventStatus::Pending.into())),
             event_map,
         }
     }
@@ -178,61 +174,37 @@ where
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        if let Some(guard) = self.guard.take() {
-            assert_eq!(
-                self.status.load(Ordering::Acquire),
-                EventStatus::Pending.into(),
-                "Init status must be Pending"
-            );
+        let mut raw = self.event_map.listeners.lock();
 
-            let mut inner = self.event_map.listeners.lock();
+        let status = if let Some(listener) = raw.1.remove(&self.event) {
+            listener.status
+        } else {
+            EventStatus::Pending
+        };
 
-            // event map closed
-            if inner.0 {
-                drop(guard);
-                return Poll::Ready(Err(EventStatus::Destroy));
-            }
-
-            let event = self.event.clone();
-
-            inner.1.insert(
-                event,
-                Listener {
-                    waker: cx.waker().clone(),
-                    status: self.status.clone(),
-                },
-            );
-
-            drop(guard);
-
-            log::trace!("raised, event={:?}, unlocked", self.event);
-
-            return Poll::Pending;
-        }
-
-        let status: EventStatus = self.status.load(Ordering::Acquire).into();
+        self.guard.take();
 
         match status {
             EventStatus::Pending => {
+                raw.1.insert(
+                    self.event.clone(),
+                    Listener {
+                        waker: cx.waker().clone(),
+                        status,
+                    },
+                );
                 // This future may wrapped by select!, so runtime may call this future's poll without really call `Waker::wake()`.
                 Poll::Pending
             }
-            EventStatus::Ready => {
-                log::trace!("raised, event={:?}, status={:?}", self.event, status);
-
-                Poll::Ready(Ok(()))
-            }
-            _ => {
-                log::trace!("raised, event={:?}, status={:?}", self.event, status);
-                Poll::Ready(Err(status))
-            }
+            EventStatus::Ready => Poll::Ready(Ok(())),
+            _ => Poll::Ready(Err(status)),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{thread::sleep, time::Duration};
+    use std::{sync::Arc, thread::sleep, time::Duration};
 
     use futures::{lock, task::SpawnExt};
 

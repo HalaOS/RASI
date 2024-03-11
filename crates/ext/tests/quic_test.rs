@@ -100,7 +100,7 @@ async fn test_echo() {
 #[futures_test::test]
 async fn test_echo_per_stream() {
     init::init();
-    // pretty_env_logger::init();
+    pretty_env_logger::init();
 
     let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
 

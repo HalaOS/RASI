@@ -399,6 +399,10 @@ impl QuicConnState {
         loop {
             raw.validate_conn_status(&self.event_map)?;
 
+            if raw.quiche_conn.stream_finished(stream_id) {
+                return Ok((0, true));
+            }
+
             match raw.quiche_conn.stream_recv(stream_id, buf) {
                 Ok((read_size, fin)) => {
                     log::trace!(
@@ -466,7 +470,13 @@ impl QuicConnState {
             //
             // So the outbound stream id can be removed from `outbound_stream_ids`, safely.
             if stream_id % 2 == raw.next_outbound_stream_id % 2 {
-                raw.outbound_stream_ids.remove(&stream_id);
+                // notify can open next stream.
+                if raw.outbound_stream_ids.remove(&stream_id) {
+                    self.event_map.notify(
+                        QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()),
+                        EventStatus::Ready,
+                    );
+                }
             }
 
             match stream_send {
@@ -552,32 +562,17 @@ impl QuicConnState {
             }
         }
 
-        assert!(
-            !self.event_map.notify(
-                QuicConnStateEvent::StreamReadable(self.scid.clone(), stream_id),
-                EventStatus::Cancel
-            ),
-            "Call stream_close with stream_recv operation is pending"
-        );
-
-        assert!(
-            !self.event_map.notify(
-                QuicConnStateEvent::StreamWritable(self.scid.clone(), stream_id),
-                EventStatus::Cancel
-            ),
-            "Call stream_close with stream_send operation is pending"
-        );
-
         // clear buf datas.
-
         raw.inbound_stream_ids.remove(&stream_id);
-
         raw.outbound_stream_ids.remove(&stream_id);
 
-        // notify connection to send data.
-        self.event_map.notify(
-            QuicConnStateEvent::Send(self.scid.clone()),
-            EventStatus::Ready,
+        self.event_map.notify_all(
+            &[
+                QuicConnStateEvent::Send(self.scid.clone()),
+                QuicConnStateEvent::StreamReadable(self.scid.clone(), stream_id),
+                QuicConnStateEvent::StreamWritable(self.scid.clone(), stream_id),
+            ],
+            EventStatus::Cancel,
         );
 
         Ok(())
@@ -634,6 +629,21 @@ impl QuicConnState {
 
                 log::trace!("{} stream open pending...", self);
 
+                self.event_map
+                    .once(
+                        QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()),
+                        raw,
+                    )
+                    .await
+                    .map_err(map_event_map_error)?;
+
+                continue;
+            }
+
+            // Safety: the next_outbound_stream_id >= 4
+            let prev_stream_id = raw.next_outbound_stream_id - 4;
+
+            if raw.outbound_stream_ids.contains(&prev_stream_id) {
                 self.event_map
                     .once(
                         QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()),
@@ -741,7 +751,7 @@ impl Drop for QuicConnFinalizer {
             match state.close(false, 0, b"").await {
                 Ok(_) => {}
                 Err(err) => {
-                    log::error!("{}, drop with error: {}", state, err);
+                    log::error!("drop with error: {}", err);
                 }
             }
         });
@@ -1002,12 +1012,7 @@ impl Drop for QuicStreamFinalizer {
             match state.stream_close(stream_id).await {
                 Ok(_) => {}
                 Err(err) => {
-                    log::error!(
-                        "{}, stream_id={}, drop with error: {}",
-                        state,
-                        stream_id,
-                        err
-                    );
+                    log::error!("drop with error: {}", err);
                 }
             }
         });
