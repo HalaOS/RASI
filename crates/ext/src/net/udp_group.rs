@@ -182,6 +182,12 @@ impl UdpGroup {
 
             match socket.recv_from(read_buf.chunk_mut()).await {
                 Ok((read_size, raddr)) => {
+                    log::trace!(
+                        "UdpGroup recv_from, raddr={:?}, read_size={}",
+                        raddr,
+                        read_size
+                    );
+
                     let data = UdpGroupData {
                         result: Ok((read_buf.into_bytes_mut(Some(read_size)), raddr)),
                         to: laddr,

@@ -11,7 +11,7 @@ use std::{
 // use hala_sync::{AsyncLockable, AsyncSpinMutex};
 use quiche::{ConnectionId, RecvInfo, SendInfo, Shutdown};
 use rand::{seq::IteratorRandom, thread_rng};
-use rasi::{executor::spawn, syscall::global_network};
+use rasi::{executor::spawn, syscall::global_network, time::TimeoutExt};
 
 use futures::{AsyncRead, AsyncWrite, FutureExt, TryStreamExt};
 
@@ -285,8 +285,6 @@ impl QuicConnState {
                     let event = QuicConnStateEvent::Send(self.scid.clone());
 
                     if let Some(mut timeout_at) = raw.quiche_conn.timeout_instant() {
-                        use rasi::time::TimeoutExt;
-
                         let mut send_ack_eliciting = false;
 
                         if let Some(ping_send_intervals) = raw.ping_send_intervals {
@@ -663,19 +661,19 @@ impl QuicConnState {
             }
 
             // Safety: the next_outbound_stream_id >= 4
-            let prev_stream_id = raw.next_outbound_stream_id - 4;
+            // let prev_stream_id = raw.next_outbound_stream_id - 4;
 
-            if raw.outbound_stream_ids.contains(&prev_stream_id) {
-                self.event_map
-                    .once(
-                        QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()),
-                        raw,
-                    )
-                    .await
-                    .map_err(map_event_map_error)?;
+            // if raw.outbound_stream_ids.contains(&prev_stream_id) {
+            //     self.event_map
+            //         .once(
+            //             QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()),
+            //             raw,
+            //         )
+            //         .await
+            //         .map_err(map_event_map_error)?;
 
-                continue;
-            }
+            //     continue;
+            // }
 
             let stream_id = raw.next_outbound_stream_id;
 
@@ -861,7 +859,7 @@ impl QuicConn {
 
             let (read_size, send_info) = conn_state.send(read_buf.chunk_mut()).await?;
 
-            sender
+            let send_size = sender
                 .send_to_on_path(
                     &read_buf.into_bytes(Some(read_size)),
                     PathInfo {
@@ -871,10 +869,30 @@ impl QuicConn {
                 )
                 .await?;
 
-            let (mut buf, path_info) = receiver.try_next().await?.ok_or(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "Underlying udp socket closed",
-            ))?;
+            log::trace!("Quic connection, {:?}, send data {}", send_info, send_size);
+
+            let (mut buf, path_info) =
+                if let Some(timeout_at) = conn_state.to_inner_conn().await.timeout_instant() {
+                    match receiver.try_next().timeout_at(timeout_at).await {
+                        Some(Ok(r)) => r.ok_or(io::Error::new(
+                            io::ErrorKind::BrokenPipe,
+                            "Underlying udp socket closed",
+                        ))?,
+                        Some(Err(err)) => {
+                            return Err(err);
+                        }
+                        None => {
+                            continue;
+                        }
+                    }
+                } else {
+                    receiver.try_next().await?.ok_or(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "Underlying udp socket closed",
+                    ))?
+                };
+
+            log::trace!("Quic connection, {:?}, recv data {}", path_info, buf.len());
 
             conn_state
                 .recv(
@@ -960,6 +978,8 @@ impl QuicConn {
         mut receiver: udp_group::Receiver,
     ) -> io::Result<()> {
         while let Some((mut buf, path_info)) = receiver.try_next().await? {
+            log::trace!("QuicConn {:?}, recv data {}", path_info, buf.len());
+
             let _ = match state
                 .recv(
                     &mut buf,
@@ -1010,7 +1030,7 @@ impl QuicConn {
 
             let (send_size, send_info) = state.send(read_buf.chunk_mut()).await?;
 
-            sender
+            let send_size = sender
                 .send_to_on_path(
                     &read_buf.into_bytes(Some(send_size)),
                     PathInfo {
@@ -1019,6 +1039,8 @@ impl QuicConn {
                     },
                 )
                 .await?;
+
+            log::trace!("QuicConn {:?}, send data {}", send_info, send_size);
         }
     }
 }
