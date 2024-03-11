@@ -399,10 +399,6 @@ impl QuicConnState {
         loop {
             raw.validate_conn_status(&self.event_map)?;
 
-            if raw.quiche_conn.stream_finished(stream_id) {
-                return Ok((0, true));
-            }
-
             match raw.quiche_conn.stream_recv(stream_id, buf) {
                 Ok((read_size, fin)) => {
                     log::trace!(
@@ -568,11 +564,15 @@ impl QuicConnState {
 
         self.event_map.notify_all(
             &[
-                QuicConnStateEvent::Send(self.scid.clone()),
                 QuicConnStateEvent::StreamReadable(self.scid.clone(), stream_id),
                 QuicConnStateEvent::StreamWritable(self.scid.clone(), stream_id),
             ],
             EventStatus::Cancel,
+        );
+
+        self.event_map.notify(
+            QuicConnStateEvent::Send(self.scid.clone()),
+            EventStatus::Ready,
         );
 
         Ok(())
