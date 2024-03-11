@@ -442,6 +442,28 @@ impl QuicConnState {
                         }
                     }
                 }
+                Err(quiche::Error::InvalidStreamState(_)) => {
+                    // the stream is not created yet.
+                    if raw.outbound_stream_ids.contains(&stream_id) {
+                        match self
+                            .event_map
+                            .once(
+                                QuicConnStateEvent::StreamReadable(self.scid.clone(), stream_id),
+                                raw,
+                            )
+                            .await
+                        {
+                            Ok(_) => {
+                                raw = self.raw.lock().await;
+                            }
+                            Err(err) => {
+                                return Err(map_event_map_error(err));
+                            }
+                        }
+                    } else {
+                        return Err(map_quic_error(quiche::Error::InvalidStreamState(stream_id)));
+                    }
+                }
                 Err(err) => {
                     return Err(map_quic_error(err));
                 }
