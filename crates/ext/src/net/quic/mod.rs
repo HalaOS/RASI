@@ -16,3 +16,5 @@ pub use config::*;
 pub use conn::*;
 pub use listener::*;
 pub use pool::*;
+
+pub use quiche::{CongestionControlAlgorithm, ConnectionId};
