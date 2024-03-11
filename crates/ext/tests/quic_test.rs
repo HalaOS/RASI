@@ -1,6 +1,8 @@
+use std::{io, time::Duration};
+
 use futures::{AsyncReadExt, AsyncWriteExt};
-use rasi::executor::spawn;
-use rasi_ext::net::quic::{Config, QuicConn, QuicListener};
+use rasi::{executor::spawn, time::sleep};
+use rasi_ext::net::quic::{Config, QuicConn, QuicConnPool, QuicListener};
 
 mod init;
 
@@ -318,5 +320,104 @@ async fn test_stream_server_close_with_fin() {
 
         assert_eq!(&buf[..read_size], b"hello world");
         assert!(fin);
+    }
+}
+
+#[futures_test::test]
+async fn test_conn_pool() {
+    init::init();
+    let mut config = mock_config(true);
+
+    config.set_initial_max_streams_bidi(2);
+
+    let listener = QuicListener::bind("127.0.0.1:0", config).await.unwrap();
+
+    let raddr = listener.local_addrs().next().unwrap().clone();
+
+    spawn(async move {
+        let conn = listener.accept().await.unwrap();
+
+        while let Some(mut stream) = conn.stream_accept().await {
+            spawn(async move {
+                let mut buf = vec![0; 1024];
+
+                let read_size = stream.read(&mut buf).await.unwrap();
+
+                stream
+                    .stream_send(&mut buf[..read_size], true)
+                    .await
+                    .unwrap();
+            });
+        }
+    });
+
+    let mut conn_pool = QuicConnPool::new(None, raddr, mock_config(false)).unwrap();
+
+    conn_pool.set_max_conns(10);
+
+    let mut streams = vec![];
+
+    for _ in 0..10 {
+        let stream = conn_pool.stream_open().await.unwrap();
+
+        // stream.write(b"hello").await.unwrap();
+
+        streams.push(stream);
+    }
+
+    let err = conn_pool.stream_open().await.expect_err("WouldBlock");
+
+    assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
+
+    streams.drain(..);
+
+    loop {
+        // waiting stream closed.
+        sleep(Duration::from_secs(1)).await;
+
+        if conn_pool.stream_open().await.is_ok() {
+            break;
+        }
+    }
+}
+
+#[futures_test::test]
+async fn test_conn_pool_reconnect() {
+    init::init();
+    // pretty_env_logger::init_timed();
+
+    let mut config = mock_config(true);
+
+    config.set_initial_max_streams_bidi(2);
+
+    let listener = QuicListener::bind("127.0.0.1:0", config).await.unwrap();
+
+    let raddr = listener.local_addrs().next().unwrap().clone();
+
+    spawn(async move {
+        while let Some(conn) = listener.accept().await {
+            drop(conn);
+        }
+    });
+
+    let mut conn_pool = QuicConnPool::new(None, raddr, mock_config(false)).unwrap();
+
+    conn_pool.set_max_conns(1);
+
+    for i in 0..10 {
+        log::trace!("open stream {}", i);
+
+        let mut stream = conn_pool.stream_open().await.expect("Reconnect");
+
+        stream.write(b"hello").await.unwrap();
+
+        loop {
+            if let Err(err) = stream.write(b"hello").await {
+                assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+                break;
+            }
+
+            sleep(Duration::from_millis(10)).await;
+        }
     }
 }

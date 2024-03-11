@@ -10,7 +10,9 @@ mod config;
 mod conn;
 mod errors;
 mod listener;
+mod pool;
 
 pub use config::*;
 pub use conn::*;
 pub use listener::*;
+pub use pool::*;

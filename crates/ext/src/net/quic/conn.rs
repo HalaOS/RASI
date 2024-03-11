@@ -226,10 +226,7 @@ impl QuicConnState {
             ));
         }
 
-        let peer_streams_left_bidi =
-            raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64;
-
-        if peer_streams_left_bidi > 0 {
+        if raw.quiche_conn.peer_streams_left_bidi() > raw.outbound_stream_ids.len() as u64 {
             raised_events.push(QuicConnStateEvent::CanOpenPeerStream(self.scid.clone()));
         }
 
@@ -625,8 +622,7 @@ impl QuicConnState {
 
             raw.validate_conn_status(&self.event_map)?;
 
-            let peer_streams_left_bidi =
-                raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64;
+            let peer_streams_left_bidi = Self::peer_streams_left_bidi_inner(&raw);
 
             if peer_streams_left_bidi == 0 {
                 if stream_limits_error {
@@ -668,7 +664,30 @@ impl QuicConnState {
     pub async fn peer_streams_left_bidi(&self) -> u64 {
         let raw = self.raw.lock().await;
 
-        raw.quiche_conn.peer_streams_left_bidi() - raw.outbound_stream_ids.len() as u64
+        Self::peer_streams_left_bidi_inner(&raw)
+    }
+
+    fn peer_streams_left_bidi_inner<Guard>(raw: &Guard) -> u64
+    where
+        Guard: DerefMut<Target = RawQuicConnState>,
+    {
+        let peer_streams_left_bidi = raw.quiche_conn.peer_streams_left_bidi();
+        let outgoing_cached = raw.outbound_stream_ids.len() as u64;
+        let initial_max_streams_bidi = raw
+            .quiche_conn
+            .peer_transport_params()
+            .unwrap()
+            .initial_max_streams_bidi;
+
+        if peer_streams_left_bidi > outgoing_cached {
+            if initial_max_streams_bidi == peer_streams_left_bidi {
+                peer_streams_left_bidi - outgoing_cached - 1
+            } else {
+                peer_streams_left_bidi - outgoing_cached
+            }
+        } else {
+            0
+        }
     }
 
     /// Returns true if the connection handshake is complete.
@@ -747,6 +766,17 @@ impl Display for QuicConn {
 }
 
 impl QuicConn {
+    /// Returns the source connection ID.
+    ///
+    /// When there are multiple IDs, and if there is an active path, the ID used
+    /// on that path is returned. Otherwise the oldest ID is returned.
+    ///
+    /// Note that the value returned can change throughout the connection's
+    /// lifetime.
+    pub fn source_id(&self) -> &ConnectionId<'static> {
+        &self.inner.0.scid
+    }
+
     /// Create `QuicConn` instance from [`state`](QuicConnState).
     pub(super) fn new(state: QuicConnState) -> QuicConn {
         Self {
@@ -767,13 +797,12 @@ impl QuicConn {
         Self::connect_with(server_name, laddrs, raddrs, config, global_network()).await
     }
 
-    // Using custom [`syscall`](rasi_syscall::Network) interface to create a new Quic
+    /// Using custom [`syscall`](rasi_syscall::Network) interface to create a new Quic
     /// connection connected to the specified addresses.
     ///
     /// This method will create a new Quic socket and attempt to connect it to the `raddrs`
     /// provided. The [returned future] will be resolved once the connection has successfully
     /// connected, or it will return an error if one occurs.
-    ///
     pub async fn connect_with<L: ToSocketAddrs, R: ToSocketAddrs>(
         server_name: Option<&str>,
         laddrs: L,
@@ -783,9 +812,13 @@ impl QuicConn {
     ) -> io::Result<Self> {
         let socket = UdpGroup::bind_with(laddrs, syscall).await?;
 
-        let laddr = socket.local_addrs().choose(&mut thread_rng()).unwrap();
-
         let raddr = raddrs.to_socket_addrs()?.choose(&mut thread_rng()).unwrap();
+
+        let laddr = socket
+            .local_addrs()
+            .filter(|addr| raddr.is_ipv4() == addr.is_ipv4())
+            .choose(&mut thread_rng())
+            .unwrap();
 
         let mut conn_state = QuicConnState::connect(server_name, *laddr, raddr, config)?;
 
@@ -870,6 +903,11 @@ impl QuicConn {
     /// stream without trying it first.
     pub async fn peer_streams_left_bidi(&self) -> u64 {
         self.inner.0.peer_streams_left_bidi().await
+    }
+
+    /// Get reference of inner [`quiche::Connection`] type.
+    pub async fn to_inner_conn(&self) -> impl ops::Deref<Target = quiche::Connection> + '_ {
+        self.inner.0.to_inner_conn().await
     }
 }
 
@@ -985,6 +1023,15 @@ pub struct QuicStream {
 impl Display for QuicStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}, stream_id={}", self.inner.1 .0, self.inner.0)
+    }
+}
+
+impl Debug for QuicStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QuicStream")
+            .field("stream_id", &self.inner.0)
+            .field("conn", &self.inner.1 .0.to_string())
+            .finish()
     }
 }
 
