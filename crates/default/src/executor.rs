@@ -32,8 +32,16 @@ impl Executor for FuturesExecutor {
 /// using parameter `pool_size` to specify the [`ThreadPool`] size.
 ///
 /// You may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_executor`)
-pub fn register_futures_executor(pool_size: usize) -> io::Result<()> {
+pub fn register_futures_executor_with_pool_size(pool_size: usize) -> io::Result<()> {
     register_global_executor(FuturesExecutor::new(pool_size)?);
 
     Ok(())
+}
+
+/// Create and register [`ThreadPool`] as the `rasi` global [`Executor`] syscall,
+/// the inner using [`num_cpus::get_physical()`] to specify the pool size.
+///
+/// See [`register_futures_executor_with_pool_size`] for more informations.
+pub fn register_futures_executor() -> io::Result<()> {
+    register_futures_executor_with_pool_size(num_cpus::get_physical())
 }

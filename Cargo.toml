@@ -18,11 +18,11 @@ boxcar = "^0.2.4"
 dashmap = "5.5.3"
 cooked-waker = "^5"
 divan = "^0.1"
-quiche = "^0.20"
+quiche = { version = "^0.20.0", features = ["boringssl-boring-crate"] }
 bytes = "^1.5"
 rand = { version = "^0.8", features = ["getrandom"] }
 ring = "^0.17"
-hala-sync = "0.1.6"
+boring = "^4.4.0"
 
 
 futures = { version = "^0.3", default-features = false }

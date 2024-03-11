@@ -13,14 +13,16 @@ version.workspace = true
 
 [dependencies]
 rasi = { workspace = true }
-dashmap = { workspace = true, optional = true }
-cooked-waker = { workspace = true }
+
 parking_lot = { workspace = true, optional = true }
 quiche = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-log = { workspace = true }
 ring = { workspace = true, optional = true }
+boring = { workspace = true, optional = true }
+
+cooked-waker = { workspace = true }
+log = { workspace = true }
 futures = { workspace = true }
 
 
@@ -30,16 +32,17 @@ divan = { workspace = true }
 futures = { workspace = true, features = ["executor", "thread-pool"] }
 rasi-default = { workspace = true }
 pretty_env_logger = { workspace = true }
+dashmap = { workspace = true }
 
 [features]
 default = ["quic", "sync_parking_lot"]
 
-event_map = ["dashmap"]
+event_map = []
 udp_group = ["bytes", "rand"]
 quic = ["udp_group", "quiche", "ring", "event_map"]
 sync_parking_lot = ["parking_lot"]
-# trace_batching = []
-# trace_lock = []
+tls = []
+
 [[bench]]
 harness = false
 name = "map_bench"

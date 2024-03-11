@@ -299,7 +299,7 @@ mod tests {
 
     use bytes::Bytes;
     use futures::TryStreamExt;
-    use rasi_default::{executor::register_futures_executor, net::MioNetwork};
+    use rasi_default::{executor::register_futures_executor_with_pool_size, net::MioNetwork};
 
     use super::*;
 
@@ -309,7 +309,7 @@ mod tests {
 
     fn get_syscall() -> &'static dyn rasi::syscall::Network {
         INIT.get_or_init(|| {
-            register_futures_executor(10).unwrap();
+            register_futures_executor_with_pool_size(10).unwrap();
             Box::new(MioNetwork::default())
         })
         .as_ref()

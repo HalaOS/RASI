@@ -10,3 +10,7 @@ pub mod quic;
 #[cfg(feature = "udp_group")]
 #[cfg_attr(docsrs, doc(cfg(feature = "udp_group")))]
 pub mod udp_group;
+
+#[cfg(feature = "tls")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
+pub mod tls;

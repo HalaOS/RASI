@@ -5,7 +5,7 @@
 //! This module is an async version of std::net.
 //!
 use std::{
-    fmt::Display,
+    fmt::{Debug, Display},
     io,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
     sync::Arc,
@@ -186,6 +186,18 @@ pub struct TcpStream {
 
     /// The cancel handle reference to latest pending read ops.
     read_cancel_handle: Option<Handle>,
+}
+
+impl Debug for TcpStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TcpStream")
+            .field("socket", &self.sys_socket)
+            .field(
+                "syscall",
+                &format!("{:?}", self.syscall as *const dyn Network),
+            )
+            .finish()
+    }
 }
 
 impl TcpStream {

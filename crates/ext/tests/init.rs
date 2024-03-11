@@ -11,6 +11,6 @@ pub(crate) fn init() {
     INIT.call_once(|| {
         register_mio_network();
         register_mio_timer();
-        register_futures_executor(10).unwrap();
+        register_futures_executor().unwrap();
     })
 }
