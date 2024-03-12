@@ -33,13 +33,14 @@ pretty_env_logger = { workspace = true }
 dashmap = { workspace = true }
 
 [features]
-default = ["quic", "sync_parking_lot", "tls"]
+default = ["quic", "sync_parking_lot", "tls", "http"]
 
 event_map = []
 udp_group = ["bytes", "rand"]
 quic = ["udp_group", "quiche", "ring", "event_map"]
 sync_parking_lot = ["parking_lot"]
 tls = ["boring"]
+http = []
 
 [[bench]]
 harness = false
