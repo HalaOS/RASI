@@ -209,20 +209,22 @@ async fn test_connect_client_close() {
 
     spawn(async move {
         while let Some(conn) = listener.accept().await {
-            while let Some(mut stream) = conn.stream_accept().await {
-                spawn(async move {
-                    loop {
-                        let mut buf = vec![0; 100];
-                        let read_size = stream.read(&mut buf).await.unwrap();
+            spawn(async move {
+                while let Some(mut stream) = conn.stream_accept().await {
+                    spawn(async move {
+                        loop {
+                            let mut buf = vec![0; 100];
+                            let read_size = stream.read(&mut buf).await.unwrap();
 
-                        if read_size == 0 {
-                            break;
+                            if read_size == 0 {
+                                break;
+                            }
+
+                            stream.write_all(&buf[..read_size]).await.unwrap();
                         }
-
-                        stream.write_all(&buf[..read_size]).await.unwrap();
-                    }
-                });
-            }
+                    });
+                }
+            })
         }
     });
 
