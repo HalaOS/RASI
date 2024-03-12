@@ -1,7 +1,7 @@
 //! This module extends [`rasi::net`](https://docs.rs/rasi/latest/rasi/net/index.html)
 //! to add support for additional protocols.
 //!
-//! For example [`QuicConn`], [`UdpGroup`], etc,.
+//! For example [`QuicConn`](quic::QuicConn), [`UdpGroup`](udp_group::UdpGroup), etc,.
 
 #[cfg(feature = "quic")]
 #[cfg_attr(docsrs, doc(cfg(feature = "quic")))]

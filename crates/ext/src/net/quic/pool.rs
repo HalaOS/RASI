@@ -142,7 +142,7 @@ impl QuicConnPool {
     /// and open a new outbound stream.
     ///
     /// If necessary, a new Quic connection will be created.
-    /// If the [`max_conns`] is reached, returns the [`WouldBlock`](io::ErrorKind::WouldBlock) error.
+    /// If the `max_conns` is reached, returns the [`WouldBlock`](io::ErrorKind::WouldBlock) error.
     pub async fn stream_open(&self) -> io::Result<QuicStream> {
         use crate::utils::AsyncLockable;
 

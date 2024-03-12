@@ -1,6 +1,5 @@
 //! Utility to batch poll a set of [`udp sockets`](rasi::net::UdpSocket)
 //!
-//! UdpGroup internally uses `batching::Group` to drive the batch polling. [*Read more*](crate::future::batching::Group)
 use std::{
     collections::HashMap,
     io,
@@ -122,7 +121,7 @@ impl UdpGroup {
 
     /// Helper method for splitting `UdpGroup` object into two halves.
     ///
-    /// The two halves returned implement the [Sink] and [Stream] traits, respectively.
+    /// The two halves returned implement the [Sink](futures::Sink) and [Stream] traits, respectively.
     ///
     /// # Examples
     ///

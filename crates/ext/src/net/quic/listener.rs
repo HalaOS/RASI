@@ -446,7 +446,7 @@ pub struct QuicListener {
 }
 
 impl QuicListener {
-    /// Creates a new `QuicListener` with custom [syscall](rasi_syscall::Network) which will be bound to the specified address.
+    /// Creates a new `QuicListener` with custom [syscall](rasi::syscall::Network) which will be bound to the specified address.
     /// The returned listener is ready for accepting connections.
     /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
     /// The port allocated can be queried via the local_addr method.
@@ -480,13 +480,13 @@ impl QuicListener {
         Ok(Self { incoming, laddrs })
     }
 
-    /// Creates a new `QuicListener` with global registered [syscall](rasi_syscall::Network)
+    /// Creates a new `QuicListener` with global registered [syscall](rasi::syscall::Network)
     /// which will be bound to the specified address.
     /// The returned listener is ready for accepting connections.
     /// Binding with a port number of 0 will request that the OS assigns a port to this listener.
     /// The port allocated can be queried via the local_addr method.
     ///
-    /// See [`bind`](TcpListener::bind) for more information.
+    /// See [`bind`](Self::bind) for more information.
     pub async fn bind<A: ToSocketAddrs>(laddrs: A, config: Config) -> io::Result<Self> {
         Self::bind_with(laddrs, config, global_network()).await
     }

@@ -40,8 +40,6 @@ impl From<u8> for EventStatus {
 
 /// A mediator pattern implementation for rust async rt.
 ///
-/// This type using [`dashmap`] as inner mapping table,
-/// therefore, **EventMap** is only valid on platforms that support [`atomic`](std::sync::atomic) manipulation.
 pub struct EventMap<E>
 where
     E: Eq + Hash,

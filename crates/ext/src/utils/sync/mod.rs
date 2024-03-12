@@ -8,6 +8,7 @@ mod spin;
 #[cfg(not(feature = "sync_parking_lot"))]
 pub use spin::*;
 
+/// Pure userspace spin locker implementation.
 pub mod spin_simple {
     pub use super::spin::*;
 }

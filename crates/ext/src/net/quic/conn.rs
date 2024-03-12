@@ -906,10 +906,10 @@ impl QuicConnector {
 
 /// A Quic connection between a local and a remote socket.
 ///
-/// A `QuicConn` can either be created by connecting to an endpoint, via the [`connect`](Self::connect) method,
-/// or by [accepting] a connection from a [`listener`](super::QuicListener).
+/// A `QuicConn` can either be created by connecting to an endpoint, via the [`QuicConnector`],
+/// or by [accepting](super::QuicListener::accept) a connection from a [`listener`](super::QuicListener).
 ///
-/// You can either open a stream via the [`open_stream`](Self::open_stream) function,
+/// You can either open a stream via the [`open_stream`](Self::stream_open) function,
 /// or accept a inbound stream via the [`stream_accept`](Self::stream_accept) function
 pub struct QuicConn {
     inner: Arc<QuicConnFinalizer>,
