@@ -308,7 +308,7 @@ mod tests {
 
     use super::*;
 
-    use std::{net::SocketAddr, sync::OnceLock};
+    use std::sync::OnceLock;
 
     static INIT: OnceLock<Box<dyn rasi::syscall::Network>> = OnceLock::new();
 

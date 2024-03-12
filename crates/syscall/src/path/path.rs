@@ -1,4 +1,4 @@
-use std::borrow::{Cow, ToOwned};
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::ffi::{OsStr, OsString};
 use std::rc::Rc;

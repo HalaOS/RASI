@@ -1,6 +1,6 @@
 use std::borrow::{Borrow, Cow};
 use std::ffi::{OsStr, OsString};
-use std::iter::{self, FromIterator};
+use std::iter::{self};
 use std::ops::Deref;
 #[cfg(feature = "unstable")]
 use std::pin::Pin;
