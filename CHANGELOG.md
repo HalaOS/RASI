@@ -7,6 +7,10 @@ This project adheres to [Semantic Versioning](https://semver.org).
 <!--
 Note: In this file, do not use the hard wrap in the middle of a sentence for compatibility with GitHub comment style markdown rendering.
 -->
+## [0.1.10] - 2024-03-12
+
+- Quic: QuicListener replace futures::lock::Mutex as [`AsyncSpinMutex`](crates/ext/src/utils/sync/).
+
 ## [0.1.9] - 2024-03-12
 
 - Fixed: ext doc generation bugs.

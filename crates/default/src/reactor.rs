@@ -2,7 +2,7 @@
 //!
 //! This is the implementation detail of the `syscall`s and is best not used directly.
 //!
-//! You can get the global instance of [`Reactor`] by calling function [`get_global_reactor`].
+//! You can get the global instance of [`Reactor`] by calling function [`global_reactor`].
 //!
 //! # Examples
 //!

@@ -21,7 +21,6 @@ rand = { workspace = true, optional = true }
 ring = { workspace = true, optional = true }
 boring = { workspace = true, optional = true }
 
-cooked-waker = { workspace = true }
 log = { workspace = true }
 futures = { workspace = true }
 
@@ -29,7 +28,6 @@ futures = { workspace = true }
 [dev-dependencies]
 futures-test = { workspace = true }
 divan = { workspace = true }
-futures = { workspace = true, features = ["executor", "thread-pool"] }
 rasi-default = { workspace = true }
 pretty_env_logger = { workspace = true }
 dashmap = { workspace = true }

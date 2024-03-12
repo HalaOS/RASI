@@ -22,3 +22,5 @@ pub mod prelude;
 #[cfg(feature = "fs")]
 #[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
 pub use rasi_syscall::path;
+
+pub use futures::{future, io, sink, stream};
