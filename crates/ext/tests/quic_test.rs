@@ -2,7 +2,7 @@ use std::{io, time::Duration};
 
 use futures::{AsyncReadExt, AsyncWriteExt};
 use rasi::{executor::spawn, time::sleep};
-use rasi_ext::net::quic::{Config, QuicConn, QuicConnPool, QuicListener};
+use rasi_ext::net::quic::{Config, QuicConnPool, QuicConnector, QuicListener};
 
 mod init;
 
@@ -80,7 +80,10 @@ async fn test_echo() {
         }
     });
 
-    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+    let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        .await
+        .unwrap()
+        .connect()
         .await
         .unwrap();
 
@@ -129,7 +132,10 @@ async fn test_echo_per_stream() {
         }
     });
 
-    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+    let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        .await
+        .unwrap()
+        .connect()
         .await
         .unwrap();
 
@@ -171,7 +177,10 @@ async fn test_connect_server_close() {
     });
 
     for _ in 0..100 {
-        let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+            .await
+            .unwrap()
+            .connect()
             .await
             .unwrap();
 
@@ -218,7 +227,10 @@ async fn test_connect_client_close() {
     });
 
     for _ in 0..100 {
-        let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+            .await
+            .unwrap()
+            .connect()
             .await
             .unwrap();
 
@@ -258,7 +270,10 @@ async fn test_stream_server_close() {
         }
     });
 
-    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+    let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        .await
+        .unwrap()
+        .connect()
         .await
         .unwrap();
 
@@ -305,7 +320,10 @@ async fn test_stream_server_close_with_fin() {
         }
     });
 
-    let client = QuicConn::connect(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+    let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
+        .await
+        .unwrap()
+        .connect()
         .await
         .unwrap();
 

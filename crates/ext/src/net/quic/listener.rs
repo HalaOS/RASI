@@ -107,6 +107,13 @@ impl RawQuicListenerState {
         }
     }
 
+    /// remove connection from pool.
+    fn remove_conn<'a>(&mut self, id: &ConnectionId<'a>) {
+        let id = id.clone().into_owned();
+        self.handshaking_conns.remove(&id);
+        self.established_conns.remove(&id);
+    }
+
     /// Process Initial packet.
     fn handshake<'a>(
         &mut self,
@@ -375,7 +382,21 @@ impl QuicListenerState {
             // release the lock before call [QuicConnState::recv] function.
             drop(raw);
 
-            let recv_size = conn.recv(buf, recv_info).await?;
+            let recv_size = match conn.recv(buf, recv_info).await {
+                Ok(recv_size) => recv_size,
+                Err(err) => {
+                    if conn.is_closed().await {
+                        // relock the state.
+                        raw = self.raw.lock().await;
+
+                        raw.remove_conn(&header.dcid);
+
+                        log::info!("{}, removed from server pool.", conn);
+                    }
+
+                    return Err(err);
+                }
+            };
 
             if !is_established && conn.is_established().await {
                 // relock the state.

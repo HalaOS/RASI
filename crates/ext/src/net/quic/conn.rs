@@ -146,7 +146,7 @@ impl QuicConnState {
     /// Creates a new client-side connection.
     ///
     /// `server_name` parameter is used to verify the peer's certificate.
-    pub fn connect(
+    pub fn new_client(
         server_name: Option<&str>,
         laddr: SocketAddr,
         raddr: SocketAddr,
@@ -726,6 +726,12 @@ impl QuicConnState {
         raw.quiche_conn.is_established()
     }
 
+    /// Returns true if the connection is closed.
+    pub async fn is_closed(&self) -> bool {
+        let raw = self.raw.lock().await;
+        raw.quiche_conn.is_closed()
+    }
+
     /// Get reference of inner [`quiche::Connection`] type.
     pub async fn to_inner_conn(&self) -> impl ops::Deref<Target = quiche::Connection> + '_ {
         self.raw.lock().await.deref_map(|state| &state.quiche_conn)
@@ -778,6 +784,125 @@ impl Drop for QuicConnFinalizer {
     }
 }
 
+/// A builder for client side [`QuicConn`].
+pub struct QuicConnector {
+    udp_group: UdpGroup,
+    conn_state: QuicConnState,
+    max_send_udp_payload_size: usize,
+}
+
+impl QuicConnector {
+    /// Create new `QuicConnector` instance with global [`syscall`](rasi::syscall::Network),
+    /// to create a new Quic connection connected to the specified addresses.
+    ///
+    /// see [`new_with`](Self::new_with) for more informations.
+    pub async fn new<L: ToSocketAddrs, R: ToSocketAddrs>(
+        server_name: Option<&str>,
+        laddrs: L,
+        raddrs: R,
+        config: &mut Config,
+    ) -> io::Result<Self> {
+        Self::new_with(server_name, laddrs, raddrs, config, global_network()).await
+    }
+    /// Create new `QuicConnector` instance with custom [`syscall`](rasi::syscall::Network),
+    /// to create a new Quic connection connected to the specified addresses.
+    pub async fn new_with<L: ToSocketAddrs, R: ToSocketAddrs>(
+        server_name: Option<&str>,
+        laddrs: L,
+        raddrs: R,
+        config: &mut Config,
+        syscall: &'static dyn rasi::syscall::Network,
+    ) -> io::Result<Self> {
+        let udp_group = UdpGroup::bind_with(laddrs, syscall).await?;
+
+        let raddr = raddrs.to_socket_addrs()?.choose(&mut thread_rng()).unwrap();
+
+        let laddr = udp_group
+            .local_addrs()
+            .filter(|addr| raddr.is_ipv4() == addr.is_ipv4())
+            .choose(&mut thread_rng())
+            .unwrap();
+
+        let conn_state = QuicConnState::new_client(server_name, *laddr, raddr, config)?;
+
+        Ok(Self {
+            conn_state,
+            udp_group,
+            max_send_udp_payload_size: config.max_send_udp_payload_size,
+        })
+    }
+
+    /// Performs a real connection process.
+    pub async fn connect(mut self) -> io::Result<QuicConn> {
+        let (sender, mut receiver) = self.udp_group.split();
+
+        loop {
+            let mut read_buf = ReadBuf::with_capacity(self.max_send_udp_payload_size);
+
+            let (read_size, send_info) = self.conn_state.send(read_buf.chunk_mut()).await?;
+
+            let send_size = sender
+                .send_to_on_path(
+                    &read_buf.into_bytes(Some(read_size)),
+                    PathInfo {
+                        from: send_info.from,
+                        to: send_info.to,
+                    },
+                )
+                .await?;
+
+            log::trace!("Quic connection, {:?}, send data {}", send_info, send_size);
+
+            let (mut buf, path_info) =
+                if let Some(timeout_at) = self.conn_state.to_inner_conn().await.timeout_instant() {
+                    match receiver.try_next().timeout_at(timeout_at).await {
+                        Some(Ok(r)) => r.ok_or(io::Error::new(
+                            io::ErrorKind::BrokenPipe,
+                            "Underlying udp socket closed",
+                        ))?,
+                        Some(Err(err)) => {
+                            return Err(err);
+                        }
+                        None => {
+                            continue;
+                        }
+                    }
+                } else {
+                    receiver.try_next().await?.ok_or(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "Underlying udp socket closed",
+                    ))?
+                };
+
+            log::trace!("Quic connection, {:?}, recv data {}", path_info, buf.len());
+
+            self.conn_state
+                .recv(
+                    &mut buf,
+                    RecvInfo {
+                        from: path_info.from,
+                        to: path_info.to,
+                    },
+                )
+                .await?;
+
+            if self.conn_state.is_established().await {
+                self.conn_state.update_dcid().await;
+                break;
+            }
+        }
+
+        spawn(QuicConn::recv_loop(self.conn_state.clone(), receiver));
+        spawn(QuicConn::send_loop(
+            self.conn_state.clone(),
+            sender,
+            self.max_send_udp_payload_size,
+        ));
+
+        Ok(QuicConn::new(self.conn_state))
+    }
+}
+
 /// A Quic connection between a local and a remote socket.
 ///
 /// A `QuicConn` can either be created by connecting to an endpoint, via the [`connect`](Self::connect) method,
@@ -812,112 +937,6 @@ impl QuicConn {
         Self {
             inner: Arc::new(QuicConnFinalizer(state)),
         }
-    }
-
-    // Using global [`syscall`](rasi_syscall::Network) interface to create a new Quic
-    /// connection connected to the specified addresses.
-    ///
-    /// see [`connect_with`](Self::connect_with) for more informations.
-    pub async fn connect<L: ToSocketAddrs, R: ToSocketAddrs>(
-        server_name: Option<&str>,
-        laddrs: L,
-        raddrs: R,
-        config: &mut Config,
-    ) -> io::Result<Self> {
-        Self::connect_with(server_name, laddrs, raddrs, config, global_network()).await
-    }
-
-    /// Using custom [`syscall`](rasi_syscall::Network) interface to create a new Quic
-    /// connection connected to the specified addresses.
-    ///
-    /// This method will create a new Quic socket and attempt to connect it to the `raddrs`
-    /// provided. The [returned future] will be resolved once the connection has successfully
-    /// connected, or it will return an error if one occurs.
-    pub async fn connect_with<L: ToSocketAddrs, R: ToSocketAddrs>(
-        server_name: Option<&str>,
-        laddrs: L,
-        raddrs: R,
-        config: &mut Config,
-        syscall: &'static dyn rasi::syscall::Network,
-    ) -> io::Result<Self> {
-        let socket = UdpGroup::bind_with(laddrs, syscall).await?;
-
-        let raddr = raddrs.to_socket_addrs()?.choose(&mut thread_rng()).unwrap();
-
-        let laddr = socket
-            .local_addrs()
-            .filter(|addr| raddr.is_ipv4() == addr.is_ipv4())
-            .choose(&mut thread_rng())
-            .unwrap();
-
-        let mut conn_state = QuicConnState::connect(server_name, *laddr, raddr, config)?;
-
-        let (sender, mut receiver) = socket.split();
-
-        loop {
-            let mut read_buf = ReadBuf::with_capacity(config.max_send_udp_payload_size);
-
-            let (read_size, send_info) = conn_state.send(read_buf.chunk_mut()).await?;
-
-            let send_size = sender
-                .send_to_on_path(
-                    &read_buf.into_bytes(Some(read_size)),
-                    PathInfo {
-                        from: send_info.from,
-                        to: send_info.to,
-                    },
-                )
-                .await?;
-
-            log::trace!("Quic connection, {:?}, send data {}", send_info, send_size);
-
-            let (mut buf, path_info) =
-                if let Some(timeout_at) = conn_state.to_inner_conn().await.timeout_instant() {
-                    match receiver.try_next().timeout_at(timeout_at).await {
-                        Some(Ok(r)) => r.ok_or(io::Error::new(
-                            io::ErrorKind::BrokenPipe,
-                            "Underlying udp socket closed",
-                        ))?,
-                        Some(Err(err)) => {
-                            return Err(err);
-                        }
-                        None => {
-                            continue;
-                        }
-                    }
-                } else {
-                    receiver.try_next().await?.ok_or(io::Error::new(
-                        io::ErrorKind::BrokenPipe,
-                        "Underlying udp socket closed",
-                    ))?
-                };
-
-            log::trace!("Quic connection, {:?}, recv data {}", path_info, buf.len());
-
-            conn_state
-                .recv(
-                    &mut buf,
-                    RecvInfo {
-                        from: path_info.from,
-                        to: path_info.to,
-                    },
-                )
-                .await?;
-
-            if conn_state.is_established().await {
-                conn_state.update_dcid().await;
-                break;
-            }
-        }
-
-        spawn(Self::recv_loop(conn_state.clone(), receiver));
-        spawn(Self::send_loop(
-            conn_state.clone(),
-            sender,
-            config.max_send_udp_payload_size,
-        ));
-
-        Ok(Self::new(conn_state))
     }
 
     /// Accepts a new incoming stream via this connection.

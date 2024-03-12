@@ -12,7 +12,12 @@ use rasi::syscall::{global_network, Network};
 
 use crate::utils::AsyncSpinMutex;
 
-use super::{Config, QuicConn, QuicStream};
+use super::{Config, QuicConn, QuicConnector, QuicStream};
+
+enum OpenStream {
+    Stream(QuicStream),
+    Connector(QuicConnector),
+}
 
 struct RawQuicConnPool {
     config: Config,
@@ -26,7 +31,7 @@ impl RawQuicConnPool {
         max_conns: usize,
         raddrs: &[SocketAddr],
         syscall: &'static dyn Network,
-    ) -> io::Result<QuicStream> {
+    ) -> io::Result<OpenStream> {
         let mut conns = self.conns.values().collect::<Vec<_>>();
 
         conns.shuffle(&mut thread_rng());
@@ -36,7 +41,7 @@ impl RawQuicConnPool {
         for conn in conns {
             match conn.stream_open(true).await {
                 Ok(stream) => {
-                    return Ok(stream);
+                    return Ok(OpenStream::Stream(stream));
                 }
                 Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
                     continue;
@@ -63,7 +68,7 @@ impl RawQuicConnPool {
             ));
         }
 
-        let conn = QuicConn::connect_with(
+        let connector = QuicConnector::new_with(
             server_name,
             ["[::]:0".parse().unwrap(), "0.0.0.0:0".parse().unwrap()].as_slice(),
             raddrs,
@@ -72,12 +77,7 @@ impl RawQuicConnPool {
         )
         .await?;
 
-        let stream = conn.stream_open(true).await?;
-
-        // insert newly connection into pool.
-        self.conns.insert(conn.source_id().clone(), conn);
-
-        Ok(stream)
+        Ok(OpenStream::Connector(connector))
     }
 }
 
@@ -146,16 +146,37 @@ impl QuicConnPool {
     pub async fn stream_open(&self) -> io::Result<QuicStream> {
         use crate::utils::AsyncLockable;
 
+        let connector = {
+            let mut inner = self.inner.lock().await;
+
+            match inner
+                .open_stream(
+                    self.server_name.as_ref().map(String::as_str),
+                    self.max_conns,
+                    &self.raddrs,
+                    self.syscall,
+                )
+                .await?
+            {
+                OpenStream::Stream(stream) => return Ok(stream),
+                OpenStream::Connector(connector) => connector,
+            }
+        };
+
+        // performs real connecting process.
+
+        let connection = connector.connect().await?;
+
+        let stream = connection.stream_open(true).await?;
+
+        // relock inner.
         let mut inner = self.inner.lock().await;
 
         inner
-            .open_stream(
-                self.server_name.as_ref().map(String::as_str),
-                self.max_conns,
-                &self.raddrs,
-                self.syscall,
-            )
-            .await
+            .conns
+            .insert(connection.source_id().clone(), connection);
+
+        Ok(stream)
     }
 
     /// Set `max_conns` parameter.
