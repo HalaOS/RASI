@@ -8,6 +8,10 @@ This project adheres to [Semantic Versioning](https://semver.org).
 Note: In this file, do not use the hard wrap in the middle of a sentence for compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.1.8] - 2024-03-12
+
+- Fixed: some quic bugs.
+
 ## [0.1.6] - 2024-03-05
 
 - add utility type **OpenOptions**: a builder for opening files with configurable options.

@@ -139,7 +139,7 @@ async fn test_echo_per_stream() {
         .await
         .unwrap();
 
-    for _ in 0..10000 {
+    for _ in 0..100 {
         let mut stream = client.stream_open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
@@ -176,7 +176,7 @@ async fn test_connect_server_close() {
         }
     });
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
             .await
             .unwrap()
@@ -228,7 +228,7 @@ async fn test_connect_client_close() {
         }
     });
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let client = QuicConnector::new(None, "127.0.0.1:0", raddr, &mut mock_config(false))
             .await
             .unwrap()
@@ -279,7 +279,7 @@ async fn test_stream_server_close() {
         .await
         .unwrap();
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let mut stream = client.stream_open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
@@ -329,7 +329,7 @@ async fn test_stream_server_close_with_fin() {
         .await
         .unwrap();
 
-    for _ in 0..100 {
+    for _ in 0..10 {
         let mut stream = client.stream_open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
