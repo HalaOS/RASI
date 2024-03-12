@@ -567,6 +567,7 @@ impl QuicConnState {
                 .stream_shutdown(stream_id, Shutdown::Read, 0)
             {
                 Ok(_) => {}
+                Err(quiche::Error::Done) => {}
                 Err(err) => {
                     log::error!(
                         "{}, stream_id={}, stream_shutdown with error: {}",
