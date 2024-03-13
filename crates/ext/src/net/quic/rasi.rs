@@ -285,7 +285,7 @@ impl QuicConn {
         Ok(())
     }
 
-    pub(crate) async fn send_loop(
+    async fn send_loop(
         state: QuicConnState,
         sender: udp_group::Sender,
         max_send_udp_payload_size: usize,
@@ -300,7 +300,7 @@ impl QuicConn {
         }
     }
 
-    async fn send_loop_inner(
+    pub(crate) async fn send_loop_inner(
         state: QuicConnState,
         sender: udp_group::Sender,
         max_send_udp_payload_size: usize,
@@ -553,7 +553,8 @@ impl QuicListener {
             }
 
             if let Some(conn_state) = conn_state {
-                spawn(QuicConn::send_loop(
+                spawn(Self::send_loop(
+                    state.clone(),
                     conn_state,
                     sender.clone(),
                     max_send_udp_payload_size,
@@ -562,5 +563,24 @@ impl QuicListener {
         }
 
         Ok(())
+    }
+
+    async fn send_loop(
+        state: QuicListenerState,
+        conn_state: QuicConnState,
+        sender: udp_group::Sender,
+        max_send_udp_payload_size: usize,
+    ) {
+        match QuicConn::send_loop_inner(conn_state.clone(), sender, max_send_udp_payload_size).await
+        {
+            Ok(_) => {
+                log::trace!("{}, stop send loop", conn_state);
+            }
+            Err(err) => {
+                log::error!("{}, stop send loop with error: {}", conn_state, err);
+            }
+        }
+
+        state.remove_conn(&conn_state.scid).await;
     }
 }

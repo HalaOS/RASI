@@ -109,13 +109,27 @@ impl RawQuicConnState {
         this
     }
 
-    fn validate_conn_status(&self, event_map: &EventMap<QuicConnStateEvent>) -> io::Result<()> {
+    fn can_recv_send(&self, event_map: &EventMap<QuicConnStateEvent>) -> io::Result<()> {
         if self.quiche_conn.is_closed() {
             event_map.close();
 
             Err(io::Error::new(
                 io::ErrorKind::BrokenPipe,
                 format!("{} closed", self),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn can_stream_recv_send(&self) -> io::Result<()> {
+        if self.quiche_conn.is_closed()
+            || self.quiche_conn.is_draining()
+            || self.quiche_conn.is_timed_out()
+        {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                format!("{} is draining or closed", self),
             ))
         } else {
             Ok(())
@@ -248,7 +262,7 @@ impl QuicConnState {
 
         loop {
             // check if this connection is closed, and can be dropped.
-            raw.validate_conn_status(&self.event_map)?;
+            raw.can_recv_send(&self.event_map)?;
 
             match raw.quiche_conn.send(buf) {
                 Ok((send_size, send_info)) => {
@@ -364,7 +378,7 @@ impl QuicConnState {
                 log::trace!("rx {}, len={}", self, read_size);
 
                 // May received CONNECTION_CLOSE frm.
-                raw.validate_conn_status(&self.event_map)?;
+                raw.can_recv_send(&self.event_map)?;
 
                 // reset the `send_ack_eliciting_instant`
                 raw.send_ack_eliciting_instant = Instant::now();
@@ -401,7 +415,7 @@ impl QuicConnState {
         let mut raw = self.raw.lock().await;
 
         loop {
-            raw.validate_conn_status(&self.event_map)?;
+            raw.can_stream_recv_send()?;
 
             match raw.quiche_conn.stream_recv(stream_id, buf) {
                 Ok((read_size, fin)) => {
@@ -482,7 +496,7 @@ impl QuicConnState {
         let mut raw = self.raw.lock().await;
 
         loop {
-            raw.validate_conn_status(&self.event_map)?;
+            raw.can_stream_recv_send()?;
 
             let stream_send = raw.quiche_conn.stream_send(stream_id, buf, fin);
 
@@ -612,7 +626,7 @@ impl QuicConnState {
         loop {
             let mut raw = self.raw.lock().await;
 
-            if raw.validate_conn_status(&self.event_map).is_err() {
+            if raw.can_recv_send(&self.event_map).is_err() {
                 return None;
             }
 
@@ -642,7 +656,7 @@ impl QuicConnState {
         loop {
             let mut raw = self.raw.lock().await;
 
-            raw.validate_conn_status(&self.event_map)?;
+            raw.can_stream_recv_send()?;
 
             let peer_streams_left_bidi = Self::peer_streams_left_bidi_inner(&raw);
 
@@ -849,10 +863,17 @@ impl RawQuicListenerState {
     }
 
     /// remove connection from pool.
-    fn remove_conn<'a>(&mut self, id: &ConnectionId<'a>) {
+    fn remove_conn<'a>(&mut self, id: &ConnectionId<'a>) -> bool {
         let id = id.clone().into_owned();
-        self.handshaking_conns.remove(&id);
-        self.established_conns.remove(&id);
+        if self.handshaking_conns.remove(&id).is_some() {
+            return true;
+        }
+
+        if self.established_conns.remove(&id).is_some() {
+            return true;
+        }
+
+        false
     }
 
     /// Process Initial packet.
@@ -1089,6 +1110,7 @@ impl Stream for QuicServerStateIncoming {
 }
 
 /// The state machine of quic server listener.
+#[derive(Clone)]
 pub struct QuicListenerState {
     /// raw state machine protected by mutex.
     raw: Arc<AsyncSpinMutex<RawQuicListenerState>>,
@@ -1177,6 +1199,19 @@ impl QuicListenerState {
                 buf,
                 read_size: recv_size,
             } => return Ok((recv_size, Some(buf), None)),
+        }
+    }
+
+    pub async fn remove_conn(&self, scid: &ConnectionId<'static>) {
+        let mut raw = self.raw.lock().await;
+
+        if raw.remove_conn(scid) {
+            log::info!("scid={:?}, remove connection from server pool", scid);
+        } else {
+            log::warn!(
+                "scid={:?}, removed from server pool with error: not found",
+                scid
+            );
         }
     }
 }
