@@ -225,6 +225,75 @@ pub trait Network: Sync + Send {
     /// This function will cause all pending and future I/O on the specified
     /// portions to return immediately with an appropriate value (see the documentation of Shutdown).
     fn tcp_stream_shutdown(&self, handle: &Handle, how: Shutdown) -> io::Result<()>;
+
+    /// Creates a new UnixListener bound to the specified socket path.
+    #[cfg(unix)]
+    fn unix_listener_bind(
+        &self,
+        waker: Waker,
+        path: &std::path::Path,
+    ) -> CancelablePoll<io::Result<Handle>>;
+
+    /// Accepts a new incoming connection to this listener.
+    /// The call is responsible for ensuring that the listening socket is in non-blocking mode.
+    #[cfg(unix)]
+    fn unix_listener_accept(
+        &self,
+        waker: Waker,
+        handle: &Handle,
+    ) -> CancelablePoll<io::Result<(Handle, std::os::unix::net::SocketAddr)>>;
+
+    /// Returns the local socket address of this listener.
+    #[cfg(unix)]
+    fn unix_listener_local_addr(
+        &self,
+        handle: &Handle,
+    ) -> io::Result<std::os::unix::net::SocketAddr>;
+
+    /// Connects to the unix socket named by address.
+    #[cfg(unix)]
+    fn unix_stream_connect(
+        &self,
+        waker: Waker,
+        path: &std::path::Path,
+    ) -> CancelablePoll<io::Result<Handle>>;
+
+    /// Returns the socket address of the local half of this connection.
+    #[cfg(unix)]
+    fn unix_stream_local_addr(&self, handle: &Handle)
+        -> io::Result<std::os::unix::net::SocketAddr>;
+
+    /// Returns the socket address of the remote half of this connection.
+    #[cfg(unix)]
+    fn unix_stream_peer_addr(&self, handle: &Handle) -> io::Result<std::os::unix::net::SocketAddr>;
+
+    /// huts down the read, write, or both halves of this connection.
+    /// This function will cause all pending and future I/O calls on the specified portions
+    /// to immediately return with an appropriate value (see the documentation of [`Shutdown`]).
+    #[cfg(unix)]
+    fn unix_stream_shutdown(&self, handle: &Handle, how: Shutdown) -> io::Result<()>;
+
+    /// Sends data on the socket to the remote address
+    ///
+    /// On success, returns the number of bytes written.
+    #[cfg(unix)]
+    fn unix_stream_write(
+        &self,
+        waker: Waker,
+        socket: &Handle,
+        buf: &[u8],
+    ) -> CancelablePoll<io::Result<usize>>;
+
+    /// Receives data from the socket.
+    ///
+    /// On success, returns the number of bytes read.
+    #[cfg(unix)]
+    fn unix_stream_read(
+        &self,
+        waker: Waker,
+        socket: &Handle,
+        buf: &mut [u8],
+    ) -> CancelablePoll<io::Result<usize>>;
 }
 
 static GLOBAL_NETWORK: OnceLock<Box<dyn Network>> = OnceLock::new();

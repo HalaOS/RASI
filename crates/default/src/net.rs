@@ -369,6 +369,178 @@ impl Network for MioNetwork {
 
         socket.shutdown(how)
     }
+
+    #[cfg(unix)]
+    fn unix_listener_bind(
+        &self,
+        _waker: std::task::Waker,
+        path: &std::path::Path,
+    ) -> rasi_syscall::CancelablePoll<io::Result<Handle>> {
+        ready(|| {
+            let mut socket = mio::net::UnixListener::bind(path)?;
+
+            let token = Token::next();
+
+            global_reactor().register(
+                &mut socket,
+                token,
+                Interest::READABLE.add(Interest::WRITABLE),
+            )?;
+
+            Ok(Handle::new(MioSocket::from((token, socket))))
+        })
+    }
+
+    #[cfg(unix)]
+    fn unix_listener_accept(
+        &self,
+        waker: std::task::Waker,
+        handle: &Handle,
+    ) -> rasi_syscall::CancelablePoll<io::Result<(Handle, std::os::unix::net::SocketAddr)>> {
+        use mio::net::UnixListener;
+
+        let socket = handle
+            .downcast::<MioSocket<UnixListener>>()
+            .expect("Expect TcpListener.");
+
+        would_block(socket.token, waker, Interest::READABLE, || {
+            match socket.accept() {
+                Ok((mut stream, raddr)) => {
+                    let token = Token::next();
+
+                    global_reactor().register(
+                        &mut stream,
+                        token,
+                        Interest::READABLE.add(Interest::WRITABLE),
+                    )?;
+
+                    let raddr = mio_unix_address_to_std_unix_addr(raddr)?;
+
+                    Ok((Handle::new(MioSocket::from((token, stream))), raddr))
+                }
+                Err(err) => Err(err),
+            }
+        })
+    }
+
+    #[cfg(unix)]
+    fn unix_listener_local_addr(
+        &self,
+        handle: &Handle,
+    ) -> io::Result<std::os::unix::net::SocketAddr> {
+        use mio::net::UnixListener;
+
+        let socket = handle
+            .downcast::<MioSocket<UnixListener>>()
+            .expect("Expect UnixListener.");
+
+        mio_unix_address_to_std_unix_addr(socket.local_addr()?)
+    }
+
+    #[cfg(unix)]
+    fn unix_stream_connect(
+        &self,
+        _waker: std::task::Waker,
+        path: &std::path::Path,
+    ) -> rasi_syscall::CancelablePoll<io::Result<Handle>> {
+        ready(|| {
+            let mut socket = mio::net::UnixStream::connect(path)?;
+
+            let token = Token::next();
+
+            global_reactor().register(
+                &mut socket,
+                token,
+                Interest::READABLE.add(Interest::WRITABLE),
+            )?;
+
+            Ok(Handle::new(MioSocket::from((token, socket))))
+        })
+    }
+
+    #[cfg(unix)]
+    fn unix_stream_local_addr(
+        &self,
+        handle: &Handle,
+    ) -> io::Result<std::os::unix::net::SocketAddr> {
+        use mio::net::UnixStream;
+
+        let socket = handle
+            .downcast::<MioSocket<UnixStream>>()
+            .expect("Expect UnixStream.");
+
+        mio_unix_address_to_std_unix_addr(socket.local_addr()?)
+    }
+
+    #[cfg(unix)]
+    fn unix_stream_peer_addr(&self, handle: &Handle) -> io::Result<std::os::unix::net::SocketAddr> {
+        use mio::net::UnixStream;
+
+        let socket = handle
+            .downcast::<MioSocket<UnixStream>>()
+            .expect("Expect UnixStream.");
+
+        mio_unix_address_to_std_unix_addr(socket.peer_addr()?)
+    }
+
+    #[cfg(unix)]
+    fn unix_stream_shutdown(&self, handle: &Handle, how: std::net::Shutdown) -> io::Result<()> {
+        use mio::net::UnixStream;
+
+        let socket = handle
+            .downcast::<MioSocket<UnixStream>>()
+            .expect("Expect UnixStream.");
+
+        socket.shutdown(how)
+    }
+
+    #[cfg(unix)]
+    fn unix_stream_write(
+        &self,
+        waker: std::task::Waker,
+        socket: &Handle,
+        buf: &[u8],
+    ) -> rasi_syscall::CancelablePoll<io::Result<usize>> {
+        use mio::net::UnixStream;
+
+        let socket = socket
+            .downcast::<MioSocket<UnixStream>>()
+            .expect("Expect UnixStream.");
+
+        would_block(socket.token, waker, Interest::WRITABLE, || {
+            socket.deref().write(buf)
+        })
+    }
+
+    #[cfg(unix)]
+    fn unix_stream_read(
+        &self,
+        waker: std::task::Waker,
+        socket: &Handle,
+        buf: &mut [u8],
+    ) -> rasi_syscall::CancelablePoll<io::Result<usize>> {
+        use mio::net::UnixStream;
+
+        let socket = socket
+            .downcast::<MioSocket<UnixStream>>()
+            .expect("Expect UnixStream.");
+
+        would_block(socket.token, waker, Interest::WRITABLE, || {
+            socket.deref().read(buf)
+        })
+    }
+}
+
+fn mio_unix_address_to_std_unix_addr(
+    addr: mio::net::SocketAddr,
+) -> io::Result<std::os::unix::net::SocketAddr> {
+    if let Some(path) = addr.as_abstract_namespace() {
+        std::os::unix::net::SocketAddr::from_pathname(format!("{}", path.escape_ascii()))
+    } else if let Some(path) = addr.as_pathname() {
+        std::os::unix::net::SocketAddr::from_pathname(path)
+    } else {
+        std::os::unix::net::SocketAddr::from_pathname("")
+    }
 }
 
 /// This function using [`register_global_network`] to register the [`MioNetwork`] to global registry.

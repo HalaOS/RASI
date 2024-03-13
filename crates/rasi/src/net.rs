@@ -849,3 +849,289 @@ impl UdpSocket {
             .udp_leave_multicast_v6(&self.sys_socket, multiaddr, interface)
     }
 }
+
+#[cfg(unix)]
+mod unix {
+    use std::{fmt::Debug, io, os::unix::net::SocketAddr, path::Path, task::Poll};
+
+    use futures::{AsyncRead, AsyncWrite};
+    use rasi_syscall::{global_network, Handle, Network};
+
+    use crate::utils::cancelable_would_block;
+
+    /// A Unix socket server, listening for connections.
+    /// After creating a UnixListener by binding it to a socket address,
+    /// it listens for incoming Unix connections. These can be accepted
+    /// by awaiting elements from the async stream of incoming connections.
+    ///
+    /// The socket will be closed when the value is dropped.
+    /// The Transmission Control Protocol is specified in IETF RFC 793.
+    /// This type is an async version of [`std::os::unix::net::UnixListener`].
+    pub struct UnixListener {
+        /// syscall socket handle.
+        sys_socket: rasi_syscall::Handle,
+
+        /// a reference to syscall interface .
+        syscall: &'static dyn Network,
+    }
+
+    impl UnixListener {
+        /// Creates a new UnixListener with custom [syscall](rasi_syscall::Network) which will be bound to the specified address.
+        ///
+        /// See [`bind`](UnixListener::bind) for more information.
+        pub async fn bind_with<P: AsRef<Path>>(
+            path: P,
+            syscall: &'static dyn Network,
+        ) -> io::Result<Self> {
+            let path = path.as_ref();
+
+            let sys_socket = cancelable_would_block(move |cx| {
+                syscall.unix_listener_bind(cx.waker().clone(), path)
+            })
+            .await?;
+
+            Ok(UnixListener {
+                sys_socket,
+                syscall,
+            })
+        }
+
+        /// Creates a new TcpListener with global [syscall](rasi_syscall::Network) which will be bound to the specified address.
+        ///
+        /// Use function [`bind`](UnixListener::bind_with) to specified custom [syscall](rasi_syscall::Network)
+        ///
+        /// # Examples
+        /// Create a unix socket listener
+        ///
+        /// ```no_run
+        /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+        /// #
+        /// use rasi::net::UnixListener;
+        ///
+        /// let listener = UnixListener::bind("/tmp/sock").await?;
+        /// #
+        /// # Ok(()) }) }
+        /// ```
+        pub async fn bind<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+            Self::bind_with(path, global_network()).await
+        }
+
+        /// Accepts a new incoming connection to this listener.
+        ///
+        /// When a connection is established, the corresponding stream and address will be returned.
+        ///
+        /// ## Examples
+        ///
+        /// ```no_run
+        /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+        /// #
+        /// use rasi::net::UnixListener;
+        ///
+        /// let listener = UnixListener::bind("/tmp/sock").await?;
+        /// let (stream, addr) = listener.accept().await?;
+        /// #
+        /// # Ok(()) }) }
+        pub async fn accept(&self) -> io::Result<(UnixStream, SocketAddr)> {
+            let (sys_socket, raddr) = cancelable_would_block(|cx| {
+                self.syscall
+                    .unix_listener_accept(cx.waker().clone(), &self.sys_socket)
+            })
+            .await?;
+
+            Ok((UnixStream::new(sys_socket, self.syscall), raddr))
+        }
+
+        /// Returns the local address that this listener is bound to.
+        ///
+        /// This can be useful, for example, to identify when binding to port 0 which port was assigned
+        /// by the OS.
+        ///
+        /// # Examples
+        ///
+        /// ```no_run
+        /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+        /// #
+        /// use rasi::net::TcpListener;
+        ///
+        /// let listener = TcpListener::bind("127.0.0.1:8080").await?;
+        /// let addr = listener.local_addr()?;
+        /// #
+        /// # Ok(()) }) }
+        /// ```
+        pub fn local_addr(&self) -> io::Result<SocketAddr> {
+            self.syscall.unix_listener_local_addr(&self.sys_socket)
+        }
+    }
+
+    pub struct UnixStream {
+        /// syscall socket handle.
+        sys_socket: rasi_syscall::Handle,
+
+        /// a reference to syscall interface .
+        syscall: &'static dyn Network,
+
+        /// The cancel handle reference to latest pending write ops.
+        write_cancel_handle: Option<Handle>,
+
+        /// The cancel handle reference to latest pending read ops.
+        read_cancel_handle: Option<Handle>,
+    }
+
+    impl Debug for UnixStream {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("UnixStream")
+                .field("socket", &self.sys_socket)
+                .field(
+                    "syscall",
+                    &format!("{:?}", self.syscall as *const dyn Network),
+                )
+                .finish()
+        }
+    }
+
+    impl UnixStream {
+        fn new(sys_socket: rasi_syscall::Handle, syscall: &'static dyn Network) -> Self {
+            Self {
+                sys_socket,
+                syscall,
+                write_cancel_handle: None,
+                read_cancel_handle: None,
+            }
+        }
+
+        /// Using custom [`syscall`](rasi_syscall::Network) interface to create a new TCP
+        /// stream connected to the specified address.
+        ///
+        /// see [`connect`](UnixStream::connect) for more information.
+        pub async fn connect_with<P: AsRef<Path>>(
+            path: P,
+            syscall: &'static dyn Network,
+        ) -> io::Result<Self> {
+            let path = path.as_ref();
+
+            let sys_socket =
+                cancelable_would_block(|cx| syscall.unix_stream_connect(cx.waker().clone(), path))
+                    .await?;
+
+            Ok(Self::new(sys_socket, syscall))
+        }
+
+        /// Using global [`syscall`](rasi_syscall::Network) interface to create a new TCP
+        /// stream connected to the specified address.
+        ///
+        /// This method will create a new Unix socket and attempt to connect it to the `path`
+        /// provided. The [returned future] will be resolved once the stream has successfully
+        /// connected, or it will return an error if one occurs.
+        ///
+        /// [returned future]: struct.Connect.html
+        ///
+        /// # Examples
+        ///
+        /// ```no_run
+        /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+        /// #
+        /// use rasi::net::UnixStream;
+        ///
+        /// let stream = UnixStream::connect("/tmp/socket").await?;
+        /// #
+        /// # Ok(()) }) }
+        /// ```
+        pub async fn connect<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+            Self::connect_with(path, global_network()).await
+        }
+
+        /// Returns the local address that this stream is connected to.
+        ///
+        /// ## Examples
+        ///
+        /// ```no_run
+        /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+        /// #
+        /// use rasi::net::UnixStream;
+        ///
+        /// let stream = UnixStream::connect("/tmp/socket").await?;
+        /// let addr = stream.local_addr()?;
+        /// #
+        /// # Ok(()) }) }
+        /// ```
+        pub fn local_addr(&self) -> io::Result<SocketAddr> {
+            self.syscall.unix_stream_local_addr(&self.sys_socket)
+        }
+
+        /// Returns the remote address that this stream is connected to.
+        ///
+        /// ## Examples
+        ///
+        /// ```no_run
+        /// # fn main() -> std::io::Result<()> { futures::executor::block_on(async {
+        /// #
+        /// use rasi::net::TcpStream;
+        ///
+        /// let stream = TcpStream::connect("127.0.0.1:8080").await?;
+        /// let peer = stream.peer_addr()?;
+        /// #
+        /// # Ok(()) }) }
+        /// ```
+        pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+            self.syscall.unix_stream_peer_addr(&self.sys_socket)
+        }
+    }
+
+    impl AsyncRead for UnixStream {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &mut [u8],
+        ) -> std::task::Poll<io::Result<usize>> {
+            match self
+                .syscall
+                .unix_stream_read(cx.waker().clone(), &self.sys_socket, buf)
+            {
+                rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
+                rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
+                    self.read_cancel_handle = Some(read_cancel_handle);
+                    Poll::Pending
+                }
+            }
+        }
+    }
+
+    impl AsyncWrite for UnixStream {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            match self
+                .syscall
+                .unix_stream_write(cx.waker().clone(), &self.sys_socket, buf)
+            {
+                rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
+                rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
+                    self.write_cancel_handle = Some(write_cancel_handle);
+                    Poll::Pending
+                }
+            }
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<io::Result<()>> {
+            self.syscall
+                .unix_stream_shutdown(&self.sys_socket, std::net::Shutdown::Both)?;
+
+            Poll::Ready(Ok(()))
+        }
+    }
+}
+
+#[cfg(unix)]
+pub use unix::*;
