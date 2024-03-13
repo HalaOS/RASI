@@ -27,7 +27,7 @@ boring = "^4.4.0"
 
 futures = { version = "^0.3", default-features = false }
 futures-test = "0.3.30"
-mio = { version = "^0.8.9", features = ["os-poll", "net"] }
+mio = { version = "^0.8.9", features = ["os-poll", "net", "os-ext"] }
 
 
 rasi-syscall = { path = "./crates/syscall", default-features = false, version = "^0.1" }
