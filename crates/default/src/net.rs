@@ -370,7 +370,7 @@ impl Network for MioNetwork {
         socket.shutdown(how)
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_listener_bind(
         &self,
         _waker: std::task::Waker,
@@ -391,7 +391,7 @@ impl Network for MioNetwork {
         })
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_listener_accept(
         &self,
         waker: std::task::Waker,
@@ -423,7 +423,7 @@ impl Network for MioNetwork {
         })
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_listener_local_addr(
         &self,
         handle: &Handle,
@@ -437,7 +437,7 @@ impl Network for MioNetwork {
         mio_unix_address_to_std_unix_addr(socket.local_addr()?)
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_connect(
         &self,
         _waker: std::task::Waker,
@@ -458,7 +458,7 @@ impl Network for MioNetwork {
         })
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_local_addr(
         &self,
         handle: &Handle,
@@ -472,7 +472,7 @@ impl Network for MioNetwork {
         mio_unix_address_to_std_unix_addr(socket.local_addr()?)
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_peer_addr(&self, handle: &Handle) -> io::Result<std::os::unix::net::SocketAddr> {
         use mio::net::UnixStream;
 
@@ -483,7 +483,7 @@ impl Network for MioNetwork {
         mio_unix_address_to_std_unix_addr(socket.peer_addr()?)
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_shutdown(&self, handle: &Handle, how: std::net::Shutdown) -> io::Result<()> {
         use mio::net::UnixStream;
 
@@ -494,7 +494,7 @@ impl Network for MioNetwork {
         socket.shutdown(how)
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_write(
         &self,
         waker: std::task::Waker,
@@ -512,7 +512,7 @@ impl Network for MioNetwork {
         })
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_read(
         &self,
         waker: std::task::Waker,

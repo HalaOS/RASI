@@ -259,24 +259,24 @@ pub trait Network: Sync + Send {
     ) -> CancelablePoll<io::Result<Handle>>;
 
     /// Returns the socket address of the local half of this connection.
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_local_addr(&self, handle: &Handle)
         -> io::Result<std::os::unix::net::SocketAddr>;
 
     /// Returns the socket address of the remote half of this connection.
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_peer_addr(&self, handle: &Handle) -> io::Result<std::os::unix::net::SocketAddr>;
 
     /// huts down the read, write, or both halves of this connection.
     /// This function will cause all pending and future I/O calls on the specified portions
     /// to immediately return with an appropriate value (see the documentation of [`Shutdown`]).
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_shutdown(&self, handle: &Handle, how: Shutdown) -> io::Result<()>;
 
     /// Sends data on the socket to the remote address
     ///
     /// On success, returns the number of bytes written.
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_write(
         &self,
         waker: Waker,
@@ -287,7 +287,7 @@ pub trait Network: Sync + Send {
     /// Receives data from the socket.
     ///
     /// On success, returns the number of bytes read.
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "unix_socket"))]
     fn unix_stream_read(
         &self,
         waker: Waker,

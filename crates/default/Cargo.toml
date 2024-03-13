@@ -32,6 +32,7 @@ fs = ["rasi-syscall/fs"]
 net = ["rasi-syscall/net"]
 time = ["rasi-syscall/time"]
 executor = ["rasi-syscall/executor", "futures/executor", "futures/thread-pool"]
+unix_socket = ["rasi-syscall/unix_socket"]
 
 alloc = ["futures/alloc", "futures/executor"]
 

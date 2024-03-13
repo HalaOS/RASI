@@ -15,6 +15,7 @@ rasi-syscall = { workspace = true, features = [
     "time",
     "fs",
     "executor",
+    "unix_socket",
 ] }
 
 rasi = { workspace = true }
