@@ -26,7 +26,7 @@ rasi-spec = { workspace = true }
 
 [features]
 
-default = ["std", "fs", "net", "time", "executor"]
+default = ["std", "fs", "net", "time", "executor", "unix_socket"]
 
 fs = ["rasi-syscall/fs"]
 net = ["rasi-syscall/net"]
