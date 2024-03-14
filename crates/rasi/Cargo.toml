@@ -14,7 +14,7 @@ rasi-syscall = { workspace = true }
 log = { workspace = true }
 
 [features]
-default = ["net", "fs", "time", "executor", "std","windows_named_pipe","unix_socket"]
+default = ["net", "fs", "time", "executor", "std","inter_process"]
 
 net = ["rasi-syscall/net"]
 fs = ["rasi-syscall/fs"]
@@ -23,6 +23,8 @@ executor = ["rasi-syscall/executor"]
 
 unix_socket = ["rasi-syscall/unix_socket"]
 windows_named_pipe = ["rasi-syscall/windows_named_pipe"]
+
+inter_process = ["unix_socket","windows_named_pipe"]
 
 std = ["rasi-syscall/std", "futures/std"]
 alloc = ["rasi-syscall/alloc", "futures/alloc"]

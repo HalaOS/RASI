@@ -15,6 +15,10 @@ pub mod net;
 #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 pub mod time;
 
+#[cfg(feature = "inter_process")]
+#[cfg_attr(docsrs, doc(cfg(feature = "inter_process")))]
+pub mod inter_process;
+
 pub mod utils;
 
 pub mod prelude;

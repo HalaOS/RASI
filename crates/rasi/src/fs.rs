@@ -1603,6 +1603,11 @@ mod windows {
 
             Ok(Self::new(socket, syscall))
         }
+
+        /// Create new client named pipe stream and connect to `addr`
+        pub async fn connect<A: AsRef<OsStr>>(addr: A) -> io::Result<Self> {
+            Self::connect_with(addr, global_named_pipe()).await
+        }
     }
 
     impl AsyncRead for NamedPipeStream {
