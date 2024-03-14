@@ -20,6 +20,10 @@ bytes = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 ring = { workspace = true, optional = true }
 boring = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+thiserror = {workspace = true, optional = true}
+serde = {workspace = true, optional = true}
+serde_json = {workspace = true, optional = true}
 
 log = { workspace = true }
 futures = { workspace = true }
@@ -40,7 +44,7 @@ udp_group = ["bytes", "rand"]
 quic = ["udp_group", "quiche", "ring", "event_map"]
 sync_parking_lot = ["parking_lot"]
 tls = ["boring"]
-http = []
+http_support = ["http","thiserror","serde_json","serde"]
 
 [[bench]]
 harness = false

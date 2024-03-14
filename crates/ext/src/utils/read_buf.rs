@@ -91,4 +91,15 @@ impl ReadBuf {
     pub fn remaining(&self) -> usize {
         self.inner.remaining()
     }
+
+    /// Splits the buffer into two at the given index.
+    ///
+    /// Afterwards `self` contains elements `[at, len)`, and the returned `BytesMut`
+    /// contains elements `[0, at)`.
+    ///
+    /// This is an `O(1)` operation that just increases the reference count and
+    /// sets a few indices.
+    pub fn split_to(&mut self, at: usize) -> BytesMut {
+        self.inner.split_to(at)
+    }
 }

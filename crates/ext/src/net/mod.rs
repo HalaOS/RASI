@@ -15,6 +15,6 @@ pub mod udp_group;
 #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
 pub mod tls;
 
-#[cfg(feature = "http")]
-#[cfg_attr(docsrs, doc(cfg(feature = "http")))]
+#[cfg(feature = "http_support")]
+#[cfg_attr(docsrs, doc(cfg(feature = "http_support")))]
 pub mod http;
