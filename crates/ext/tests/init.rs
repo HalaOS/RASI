@@ -9,6 +9,8 @@ pub(crate) fn init() {
     static INIT: Once = Once::new();
 
     INIT.call_once(|| {
+        #[cfg(windows)]
+        rasi_default::fs::register_mio_named_pipe();
         register_mio_network();
         register_mio_timer();
         register_futures_executor().unwrap();

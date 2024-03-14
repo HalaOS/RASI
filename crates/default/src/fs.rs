@@ -342,6 +342,13 @@ mod windows {
         },
     };
 
+    /// This function using [`register_global_filesystem`] to register the [`StdFileSystem`] to global registry.
+    ///
+    /// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_filesystem`)
+    pub fn register_mio_named_pipe() {
+        register_global_named_pipe(MioNamedPipe::default())
+    }
+
     pub struct MioNamedPipe {
         buffer_size: u32,
     }
@@ -513,6 +520,8 @@ mod tests {
     use std::sync::OnceLock;
 
     use rasi_spec::fs::run_fs_spec;
+
+    #[cfg(all(windows, feature = "windows_named_pipe"))]
     use rasi_syscall::NamedPipe;
 
     use super::*;
@@ -529,8 +538,10 @@ mod tests {
         run_fs_spec(get_syscall()).await;
     }
 
+    #[cfg(all(windows, feature = "windows_named_pipe"))]
     static INIT_NAMED_PIPE: OnceLock<Box<dyn NamedPipe>> = OnceLock::new();
 
+    #[cfg(all(windows, feature = "windows_named_pipe"))]
     fn get_named_pipe_syscall() -> &'static dyn NamedPipe {
         INIT_NAMED_PIPE
             .get_or_init(|| Box::new(MioNamedPipe::default()))
