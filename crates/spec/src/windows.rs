@@ -1,5 +1,3 @@
-use std::{thread::sleep, time::Duration};
-
 use futures::{executor::ThreadPool, task::SpawnExt, AsyncReadExt, AsyncWriteExt};
 use rasi::fs::{NamedPipeListener, NamedPipeStream};
 
@@ -10,7 +8,7 @@ pub async fn test_named_pipe(syscall: &'static dyn rasi_syscall::NamedPipe) {
 
     let bind_path = r"\\.\pipe\rasi-named-pipe-create";
 
-    let server = NamedPipeListener::bind_with(bind_path, syscall)
+    let mut server = NamedPipeListener::bind_with(bind_path, syscall)
         .await
         .unwrap();
 
@@ -29,8 +27,6 @@ pub async fn test_named_pipe(syscall: &'static dyn rasi_syscall::NamedPipe) {
             stream.write(&buf[..read_size]).await.unwrap();
         })
         .unwrap();
-
-    sleep(Duration::from_secs(1));
 
     let mut client = NamedPipeStream::connect_with(bind_path, syscall)
         .await

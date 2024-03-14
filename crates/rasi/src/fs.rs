@@ -1528,6 +1528,8 @@ mod windows {
         addr: OsString,
         /// a reference to syscall interface .
         syscall: &'static dyn NamedPipe,
+        /// next server side socket handle.
+        next_handle: Option<Handle>,
     }
 
     impl NamedPipeListener {
@@ -1536,9 +1538,15 @@ mod windows {
             addr: A,
             syscall: &'static dyn NamedPipe,
         ) -> io::Result<Self> {
+            let socket = cancelable_would_block(|cx| {
+                syscall.server_create(cx.waker().clone(), addr.as_ref())
+            })
+            .await?;
+
             Ok(Self {
                 addr: addr.as_ref().to_os_string(),
                 syscall,
+                next_handle: Some(socket),
             })
         }
 
@@ -1550,11 +1558,8 @@ mod windows {
         /// Accepts a new incoming connection to this listener.
         ///
         /// When a connection is established, the corresponding stream and address will be returned.
-        pub async fn accept(&self) -> io::Result<NamedPipeStream> {
-            let socket = cancelable_would_block(|cx| {
-                self.syscall.server_create(cx.waker().clone(), &self.addr)
-            })
-            .await?;
+        pub async fn accept(&mut self) -> io::Result<NamedPipeStream> {
+            let socket = self.next_handle.take().expect("");
 
             let stream = NamedPipeStream::new(socket, self.syscall);
 
@@ -1563,6 +1568,13 @@ mod windows {
                     .server_accept(cx.waker().clone(), &stream.socket)
             })
             .await?;
+
+            let next_socket = cancelable_would_block(|cx| {
+                self.syscall.server_create(cx.waker().clone(), &self.addr)
+            })
+            .await?;
+
+            self.next_handle = Some(next_socket);
 
             Ok(stream)
         }

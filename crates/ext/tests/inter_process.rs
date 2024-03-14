@@ -10,7 +10,7 @@ mod init;
 async fn test_echo() {
     init::init();
 
-    let server = IpcListener::bind("echo").await.unwrap();
+    let mut server = IpcListener::bind("echo").await.unwrap();
 
     let message = b"hello world";
 

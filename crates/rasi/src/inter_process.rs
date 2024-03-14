@@ -1,6 +1,9 @@
 #[cfg(all(windows, feature = "windows_named_pipe"))]
 mod windows {
-    use std::io;
+    use std::{
+        io,
+        ops::{Deref, DerefMut},
+    };
 
     use rasi_syscall::{global_named_pipe, NamedPipe};
 
@@ -34,7 +37,7 @@ mod windows {
         /// Accepts a new incoming connection to this listener.
         ///
         /// When a connection is established, the corresponding stream and address will be returned.
-        pub async fn accept(&self) -> io::Result<IpcStream> {
+        pub async fn accept(&mut self) -> io::Result<IpcStream> {
             self.named_pipe_listener
                 .accept()
                 .await
@@ -60,6 +63,20 @@ mod windows {
         /// Create new client named pipe stream and connect to `addr`
         pub async fn connect<A: AsRef<str>>(name: A) -> io::Result<Self> {
             Self::connect_with(name, global_named_pipe()).await
+        }
+    }
+
+    impl Deref for IpcStream {
+        type Target = NamedPipeStream;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl DerefMut for IpcStream {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
         }
     }
 }
@@ -118,7 +135,7 @@ mod unix {
         /// Accepts a new incoming connection to this listener.
         ///
         /// When a connection is established, the corresponding stream and address will be returned.
-        pub async fn accept(&self) -> io::Result<IpcStream> {
+        pub async fn accept(&mut self) -> io::Result<IpcStream> {
             self.named_pipe_listener
                 .accept()
                 .await
