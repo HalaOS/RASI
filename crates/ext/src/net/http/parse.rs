@@ -332,12 +332,20 @@ where
     #[inline]
     fn parse_header(&mut self, read_buf: &mut ReadBuf) -> ParseResult<bool> {
         match skip_newlines(read_buf) {
-            SkipNewLine::Break(_) => {
+            SkipNewLine::Break(len) => {
+                read_buf.split_to(len);
                 self.state.next();
                 return Ok(false);
             }
             SkipNewLine::Incomplete => return Ok(false),
-            SkipNewLine::One(_) | SkipNewLine::None => {}
+            SkipNewLine::One(len) => {
+                if read_buf.remaining() == len {
+                    return Ok(false);
+                }
+
+                read_buf.split_to(len);
+            }
+            SkipNewLine::None => {}
         }
 
         match parse_header(read_buf)? {
@@ -559,12 +567,20 @@ where
     #[inline]
     fn parse_header(&mut self, read_buf: &mut ReadBuf) -> ParseResult<bool> {
         match skip_newlines(read_buf) {
-            SkipNewLine::Break(_) => {
+            SkipNewLine::Break(len) => {
+                read_buf.split_to(len);
                 self.state.next();
                 return Ok(false);
             }
             SkipNewLine::Incomplete => return Ok(false),
-            SkipNewLine::One(_) | SkipNewLine::None => {}
+            SkipNewLine::One(len) => {
+                if read_buf.remaining() == len {
+                    return Ok(false);
+                }
+
+                read_buf.split_to(len);
+            }
+            SkipNewLine::None => {}
         }
 
         match parse_header(read_buf)? {
@@ -800,13 +816,6 @@ fn _skip_newlines(buf: &[u8]) -> SkipNewLine {
 #[inline]
 fn skip_newlines(read_buf: &mut ReadBuf) -> SkipNewLine {
     let skip_new_line = _skip_newlines(read_buf.chunk());
-
-    match skip_new_line {
-        SkipNewLine::One(len) | SkipNewLine::Break(len) => {
-            read_buf.split_to(len);
-        }
-        _ => {}
-    }
 
     skip_new_line
 }
