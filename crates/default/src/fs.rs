@@ -313,11 +313,207 @@ pub fn register_std_filesystem() {
     register_global_filesystem(StdFileSystem)
 }
 
+#[cfg(all(windows, feature = "windows_named_pipe"))]
+mod windows {
+    use crate::{
+        reactor::{global_reactor, would_block, MioSocket},
+        TokenSequence,
+    };
+
+    use super::ready;
+
+    use std::{
+        ffi::OsStr,
+        io::{self, Read, Write},
+        ops::Deref,
+        os::windows::{ffi::OsStrExt, io::FromRawHandle},
+        ptr::null,
+    };
+
+    use mio::{Interest, Token};
+    use rasi_syscall::{register_global_named_pipe, Handle, NamedPipe};
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{
+            CreateFileW, FILE_FLAG_OVERLAPPED, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
+        },
+        System::Pipes::{
+            CreateNamedPipeW, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
+        },
+    };
+
+    pub struct MioNamedPipe {
+        buffer_size: u32,
+    }
+
+    impl Default for MioNamedPipe {
+        fn default() -> Self {
+            Self { buffer_size: 512 }
+        }
+    }
+
+    impl MioNamedPipe {
+        /// Create default `MioNamedPipe` configuration.
+        pub fn new() -> Self {
+            Default::default()
+        }
+
+        pub fn register(self) {
+            register_global_named_pipe(self);
+        }
+    }
+
+    fn encode_addr(addr: &OsStr) -> Box<[u16]> {
+        let len = addr.encode_wide().count();
+        let mut vec = Vec::with_capacity(len + 1);
+        vec.extend(addr.encode_wide());
+        vec.push(0);
+        vec.into_boxed_slice()
+    }
+
+    impl NamedPipe for MioNamedPipe {
+        fn client_open(
+            &self,
+            _waker: std::task::Waker,
+            addr: &std::ffi::OsStr,
+        ) -> rasi_syscall::CancelablePoll<std::io::Result<rasi_syscall::Handle>> {
+            let addr = encode_addr(addr);
+
+            let desired_access = GENERIC_READ | GENERIC_WRITE;
+
+            let flag = FILE_FLAG_OVERLAPPED;
+
+            ready(|| unsafe {
+                let handle = CreateFileW(
+                    addr.as_ptr(),
+                    desired_access,
+                    0,
+                    null(),
+                    OPEN_EXISTING,
+                    flag,
+                    0,
+                );
+
+                if handle == INVALID_HANDLE_VALUE {
+                    return Err(io::Error::last_os_error());
+                }
+
+                let mut socket = mio::windows::NamedPipe::from_raw_handle(handle as _);
+
+                let token = Token::next();
+
+                global_reactor().register(
+                    &mut socket,
+                    token,
+                    Interest::READABLE.add(Interest::WRITABLE),
+                )?;
+
+                Ok(Handle::new(MioSocket::from((token, socket))))
+            })
+        }
+
+        fn server_create(
+            &self,
+            _waker: std::task::Waker,
+            addr: &std::ffi::OsStr,
+        ) -> rasi_syscall::CancelablePoll<std::io::Result<rasi_syscall::Handle>> {
+            let addr = encode_addr(addr);
+
+            let pipe_mode = PIPE_TYPE_BYTE | PIPE_REJECT_REMOTE_CLIENTS;
+
+            let open_mode = FILE_FLAG_OVERLAPPED | PIPE_ACCESS_DUPLEX;
+
+            ready(|| unsafe {
+                let handle = CreateNamedPipeW(
+                    addr.as_ptr(),
+                    open_mode,
+                    pipe_mode,
+                    PIPE_UNLIMITED_INSTANCES,
+                    self.buffer_size,
+                    self.buffer_size,
+                    0,
+                    null(),
+                );
+
+                if handle == INVALID_HANDLE_VALUE {
+                    return Err(io::Error::last_os_error());
+                }
+
+                let mut socket = mio::windows::NamedPipe::from_raw_handle(handle as _);
+
+                let token = Token::next();
+
+                global_reactor().register(
+                    &mut socket,
+                    token,
+                    Interest::READABLE.add(Interest::WRITABLE),
+                )?;
+
+                Ok(Handle::new(MioSocket::from((token, socket))))
+            })
+        }
+
+        fn server_accept(
+            &self,
+            waker: std::task::Waker,
+            socket: &rasi_syscall::Handle,
+        ) -> rasi_syscall::CancelablePoll<std::io::Result<()>> {
+            let socket = socket
+                .downcast::<MioSocket<mio::windows::NamedPipe>>()
+                .expect("Expect NamedPipe.");
+
+            would_block(socket.token, waker, Interest::WRITABLE, || socket.connect())
+        }
+
+        fn server_disconnect(&self, socket: &rasi_syscall::Handle) -> std::io::Result<()> {
+            let socket = socket
+                .downcast::<MioSocket<mio::windows::NamedPipe>>()
+                .expect("Expect NamedPipe.");
+
+            socket.disconnect()
+        }
+
+        fn write(
+            &self,
+            waker: std::task::Waker,
+            socket: &rasi_syscall::Handle,
+            buf: &[u8],
+        ) -> rasi_syscall::CancelablePoll<std::io::Result<usize>> {
+            let socket = socket
+                .downcast::<MioSocket<mio::windows::NamedPipe>>()
+                .expect("Expect NamedPipe.");
+
+            would_block(socket.token, waker, Interest::WRITABLE, || {
+                socket.deref().write(buf)
+            })
+        }
+
+        fn read(
+            &self,
+            waker: std::task::Waker,
+            socket: &rasi_syscall::Handle,
+            buf: &mut [u8],
+        ) -> rasi_syscall::CancelablePoll<std::io::Result<usize>> {
+            let socket = socket
+                .downcast::<MioSocket<mio::windows::NamedPipe>>()
+                .expect("Expect NamedPipe.");
+
+            would_block(socket.token, waker, Interest::READABLE, || {
+                socket.deref().read(buf)
+            })
+        }
+    }
+}
+
+#[cfg(windows)]
+pub use windows::*;
+
 #[cfg(test)]
 mod tests {
     use std::sync::OnceLock;
 
     use rasi_spec::fs::run_fs_spec;
+    use rasi_syscall::NamedPipe;
 
     use super::*;
 
@@ -331,5 +527,21 @@ mod tests {
     #[futures_test::test]
     async fn test_std_fs() {
         run_fs_spec(get_syscall()).await;
+    }
+
+    static INIT_NAMED_PIPE: OnceLock<Box<dyn NamedPipe>> = OnceLock::new();
+
+    fn get_named_pipe_syscall() -> &'static dyn NamedPipe {
+        INIT_NAMED_PIPE
+            .get_or_init(|| Box::new(MioNamedPipe::default()))
+            .as_ref()
+    }
+
+    #[cfg(all(windows, feature = "windows_named_pipe"))]
+    #[futures_test::test]
+    async fn test_named_pipe() {
+        use rasi_spec::windows::run_windows_spec;
+
+        run_windows_spec(get_named_pipe_syscall()).await;
     }
 }

@@ -23,7 +23,7 @@ bytes = "^1.5"
 rand = { version = "^0.8", features = ["getrandom"] }
 ring = "^0.17"
 boring = "^4.4.0"
-
+windows-sys = "^0.52"
 
 futures = { version = "^0.3", default-features = false }
 futures-test = "0.3.30"

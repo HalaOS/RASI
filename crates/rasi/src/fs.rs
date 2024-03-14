@@ -1508,3 +1508,149 @@ impl Default for OpenOptions {
         Self::new()
     }
 }
+
+#[cfg(all(windows, feature = "windows_named_pipe"))]
+mod windows {
+    use std::{
+        ffi::{OsStr, OsString},
+        io,
+        task::Poll,
+    };
+
+    use futures::{AsyncRead, AsyncWrite};
+    use rasi_syscall::{global_named_pipe, Handle, NamedPipe};
+
+    use crate::utils::cancelable_would_block;
+
+    /// The named pipe server side socket.
+    pub struct NamedPipeListener {
+        /// named pipe bind address.
+        addr: OsString,
+        /// a reference to syscall interface .
+        syscall: &'static dyn NamedPipe,
+    }
+
+    impl NamedPipeListener {
+        /// Create new named pipe server with custom [`syscall`](NamedPipe) and bind to `addr`
+        pub async fn bind_with<A: AsRef<OsStr>>(
+            addr: A,
+            syscall: &'static dyn NamedPipe,
+        ) -> io::Result<Self> {
+            Ok(Self {
+                addr: addr.as_ref().to_os_string(),
+                syscall,
+            })
+        }
+
+        /// Create new named pipe server with global [`syscall`](NamedPipe) and bind to `addr`.
+        pub async fn bind<A: AsRef<OsStr>>(addr: A) -> io::Result<Self> {
+            Self::bind_with(addr, global_named_pipe()).await
+        }
+
+        /// Accepts a new incoming connection to this listener.
+        ///
+        /// When a connection is established, the corresponding stream and address will be returned.
+        pub async fn accept(&self) -> io::Result<NamedPipeStream> {
+            let socket = cancelable_would_block(|cx| {
+                self.syscall.server_create(cx.waker().clone(), &self.addr)
+            })
+            .await?;
+
+            let stream = NamedPipeStream::new(socket, self.syscall);
+
+            cancelable_would_block(|cx| {
+                self.syscall
+                    .server_accept(cx.waker().clone(), &stream.socket)
+            })
+            .await?;
+
+            Ok(stream)
+        }
+    }
+
+    /// The stream object of named pipe.
+    pub struct NamedPipeStream {
+        /// Named pipe stream handle.
+        socket: Handle,
+        /// a reference to syscall interface .
+        syscall: &'static dyn NamedPipe,
+
+        /// The cancel handle reference to latest pending write ops.
+        write_cancel_handle: Option<Handle>,
+
+        /// The cancel handle reference to latest pending read ops.
+        read_cancel_handle: Option<Handle>,
+    }
+
+    impl NamedPipeStream {
+        fn new(socket: Handle, syscall: &'static dyn NamedPipe) -> Self {
+            Self {
+                socket,
+                syscall,
+                write_cancel_handle: None,
+                read_cancel_handle: None,
+            }
+        }
+
+        /// Create new client named pipe stream and connect to `addr`
+        pub async fn connect_with<A: AsRef<OsStr>>(
+            addr: A,
+            syscall: &'static dyn NamedPipe,
+        ) -> io::Result<Self> {
+            let socket =
+                cancelable_would_block(|cx| syscall.client_open(cx.waker().clone(), addr.as_ref()))
+                    .await?;
+
+            Ok(Self::new(socket, syscall))
+        }
+    }
+
+    impl AsyncRead for NamedPipeStream {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &mut [u8],
+        ) -> std::task::Poll<io::Result<usize>> {
+            match self.syscall.read(cx.waker().clone(), &self.socket, buf) {
+                rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
+                rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
+                    self.read_cancel_handle = Some(read_cancel_handle);
+                    Poll::Pending
+                }
+            }
+        }
+    }
+
+    impl AsyncWrite for NamedPipeStream {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            match self.syscall.write(cx.waker().clone(), &self.socket, buf) {
+                rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
+                rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
+                    self.write_cancel_handle = Some(write_cancel_handle);
+                    Poll::Pending
+                }
+            }
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+}
+
+#[cfg(all(windows, feature = "windows_named_pipe"))]
+pub use windows::*;

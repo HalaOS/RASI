@@ -531,6 +531,7 @@ impl Network for MioNetwork {
     }
 }
 
+#[cfg(unix)]
 fn mio_unix_address_to_std_unix_addr(
     addr: mio::net::SocketAddr,
 ) -> io::Result<std::os::unix::net::SocketAddr> {

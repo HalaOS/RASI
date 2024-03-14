@@ -277,3 +277,81 @@ pub fn global_filesystem() -> &'static dyn FileSystem {
         .expect("Call register_global_filesystem first")
         .as_ref()
 }
+
+#[cfg(all(windows, feature = "windows_named_pipe"))]
+
+mod windows {
+    use super::*;
+
+    pub trait NamedPipe: Send + Sync {
+        /// Opens the named pipe identified by `addr`.
+        fn client_open(
+            &self,
+            waker: Waker,
+            addr: &std::ffi::OsStr,
+        ) -> CancelablePoll<io::Result<Handle>>;
+
+        /// Creates the named pipe identified by `addr` for use as a server.
+        ///
+        /// This uses the [`CreateNamedPipe`] function.
+        fn server_create(
+            &self,
+            waker: Waker,
+            addr: &std::ffi::OsStr,
+        ) -> CancelablePoll<io::Result<Handle>>;
+
+        /// Enables a named pipe server process to wait for a client process to
+        /// connect to an instance of a named pipe. A client process connects by
+        /// creating a named pipe with the same name.
+        fn server_accept(&self, waker: Waker, file: &Handle) -> CancelablePoll<io::Result<()>>;
+
+        /// Disconnects the server end of a named pipe instance from a client
+        /// process.
+        fn server_disconnect(&self, file: &Handle) -> io::Result<()>;
+
+        /// Write a buffer into this writer, returning how many bytes were written
+        fn write(
+            &self,
+            waker: Waker,
+            file: &Handle,
+            buf: &[u8],
+        ) -> CancelablePoll<io::Result<usize>>;
+
+        /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
+        fn read(
+            &self,
+            waker: Waker,
+            file: &Handle,
+            buf: &mut [u8],
+        ) -> CancelablePoll<io::Result<usize>>;
+    }
+
+    static GLOBAL_NAMED_PIPE: OnceLock<Box<dyn NamedPipe>> = OnceLock::new();
+
+    /// Register provided [`NamedPipe`] as global named pipe implementation.
+    ///
+    /// # Panic
+    ///
+    /// Multiple calls to this function are not permitted!!!
+    pub fn register_global_named_pipe<N: NamedPipe + 'static>(fs: N) {
+        if GLOBAL_NAMED_PIPE.set(Box::new(fs)).is_err() {
+            panic!("Multiple calls to register_global_filesystem are not permitted!!!");
+        }
+    }
+
+    /// Get the globally registered instance of [`NamedPipe`].
+    ///
+    /// # Panic
+    ///
+    /// You should call [`register_global_named_pipe`] first to register implementation,
+    /// otherwise this function will cause a panic with `Call register_global_filesystem first`
+    pub fn global_named_pipe() -> &'static dyn NamedPipe {
+        GLOBAL_NAMED_PIPE
+            .get()
+            .expect("Call register_global_named_pipe first")
+            .as_ref()
+    }
+}
+
+#[cfg(all(windows, feature = "windows_named_pipe"))]
+pub use windows::*;

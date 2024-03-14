@@ -19,5 +19,7 @@ fs = []
 time = []
 executor = []
 unix_socket = []
+windows_named_pipe = []
+
 alloc = ["futures/alloc", "futures/executor"]
 std = ["futures/std", "futures/executor"]

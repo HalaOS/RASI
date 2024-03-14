@@ -850,7 +850,7 @@ impl UdpSocket {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "unix_socket"))]
 mod unix {
     use std::{fmt::Debug, io, os::unix::net::SocketAddr, path::Path, task::Poll};
 
@@ -1133,5 +1133,5 @@ mod unix {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "unix_socket"))]
 pub use unix::*;
