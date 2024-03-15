@@ -36,8 +36,8 @@ async fn test_http() {
 
     let response = Request::get(format!("http://{:?}/hello", raddr))
         .body("")
+        .sender()
         .send()
-        .response()
         .await
         .unwrap();
 
@@ -95,10 +95,10 @@ async fn test_https() {
 
     let response = Request::get(format!("https://rasi.quic/hello"))
         .body("")
-        .send()
+        .sender()
         .redirect(raddr)
         .with_ca_file(ca_file)
-        .response()
+        .send ()
         .await
         .unwrap();
 

@@ -89,7 +89,7 @@ impl AsyncRead for HttpClientRead {
 pub trait HttpRequestSend {
     type Body;
 
-    fn send(self) -> HttpRequestSender<Self::Body>;
+    fn sender(self) -> HttpRequestSender<Self::Body>;
 }
 
 /// A builder to create a task to send http request.
@@ -210,7 +210,7 @@ impl<T> HttpRequestSender<T> {
     }
 
     /// Start a new
-    pub async fn response(self) -> io::Result<Response<BodyReader<HttpClientRead>>>
+    pub async fn send(self) -> io::Result<Response<BodyReader<HttpClientRead>>>
     where
         T: AsRef<[u8]>,
     {
@@ -243,7 +243,7 @@ impl<T> HttpRequestSender<T> {
         }
     }
 
-    pub async fn stream_response(self) -> io::Result<Response<BodyReader<HttpClientRead>>>
+    pub async fn send_with_stream_body(self) -> io::Result<Response<BodyReader<HttpClientRead>>>
     where
         T: AsyncRead + Unpin,
     {
@@ -287,7 +287,7 @@ where
 {
     type Body = T;
 
-    fn send(self) -> HttpRequestSender<Self::Body> {
+    fn sender(self) -> HttpRequestSender<Self::Body> {
         HttpRequestSender::new(self)
     }
 }
