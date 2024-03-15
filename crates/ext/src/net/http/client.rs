@@ -95,7 +95,7 @@ pub trait HttpRequestSend {
 /// A builder to create a task to send http request.
 #[must_use = "Must call response function to invoke real sending action."]
 pub struct HttpRequestSender<T> {
-    request: Request<T>,
+    request: http::Result<Request<T>>,
     timeout: Duration,
     raddrs: Option<io::Result<Vec<SocketAddr>>>,
     server_name: Option<String>,
@@ -104,7 +104,7 @@ pub struct HttpRequestSender<T> {
 
 impl<T> HttpRequestSender<T> {
     /// Create `HttpRequestSender` with the default configuration other than provided [`Request`].
-    pub fn new(request: Request<T>) -> Self {
+    pub fn new(request: http::Result<Request<T>>) -> Self {
         Self {
             request,
             timeout: Duration::from_secs(30),
@@ -121,7 +121,7 @@ impl<T> HttpRequestSender<T> {
     }
 
     /// Rewrite http request's host:port fields and send request to the specified `raddrs`.
-    pub fn send_to<R: ToSocketAddrs>(mut self, raddrs: R) -> Self {
+    pub fn redirect<R: ToSocketAddrs>(mut self, raddrs: R) -> Self {
         self.raddrs = Some(
             raddrs
                 .to_socket_addrs()
@@ -148,23 +148,30 @@ impl<T> HttpRequestSender<T> {
     ///
     /// On success, The response wait `timeout` and the original [`Request`] are returned together.
     pub async fn create(self) -> io::Result<(Request<T>, HttpClientWrite, Duration)> {
-        let scheme = self.request.uri().scheme().ok_or(io::Error::new(
+        let request = self
+            .request
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+
+        let scheme = request.uri().scheme().ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Unspecified request scheme",
         ))?;
 
-        let host = self.request.uri().host().ok_or(io::Error::new(
+        let host = request.uri().host().ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Unspecified request uri",
         ))?;
 
-        let port = self.request.uri().port_u16().unwrap_or_else(|| {
-            if scheme == &Scheme::HTTP {
-                80
-            } else {
-                440
-            }
-        });
+        let port =
+            request.uri().port_u16().unwrap_or_else(
+                || {
+                    if scheme == &Scheme::HTTP {
+                        80
+                    } else {
+                        440
+                    }
+                },
+            );
 
         let raddr = if let Some(raddr) = self.raddrs {
             raddr?
@@ -199,7 +206,7 @@ impl<T> HttpRequestSender<T> {
             HttpClientWrite::TlsStream(stream)
         };
 
-        Ok((self.request, stream, self.timeout))
+        Ok((request, stream, self.timeout))
     }
 
     /// Start a new
@@ -274,7 +281,7 @@ impl<T> HttpRequestSender<T> {
     }
 }
 
-impl<T> HttpRequestSend for Request<T>
+impl<T> HttpRequestSend for http::Result<Request<T>>
 where
     T: AsRef<[u8]>,
 {
