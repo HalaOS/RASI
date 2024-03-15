@@ -103,7 +103,7 @@ mod unix {
     }
 
     impl IpcListener {
-        /// Create new ipc server lsitener with custom [`syscall`](NamedPipe) and bind to `addr`
+        /// Create new ipc server lsitener with custom [`syscall`](Network) and bind to `addr`
         pub async fn bind_with<A: AsRef<str>>(
             name: A,
             syscall: &'static dyn Network,
@@ -127,7 +127,7 @@ mod unix {
             })
         }
 
-        /// Create new ipc server lsitener with global registered [`syscall`](NamedPipe) and bind to `addr`
+        /// Create new ipc server lsitener with global registered [`syscall`](Network) and bind to `addr`
         pub async fn bind<A: AsRef<str>>(name: A) -> io::Result<Self> {
             Self::bind_with(name, global_network()).await
         }
