@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, time::Duration};
 
 use bytes::{Bytes, BytesMut};
 use futures::{AsyncRead, AsyncReadExt};
@@ -9,7 +9,7 @@ use http::{
     uri::InvalidUri,
     HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version,
 };
-use rasi::io::Cursor;
+use rasi::{io::Cursor, time::TimeoutExt};
 
 use crate::utils::ReadBuf;
 
@@ -111,7 +111,11 @@ where
     /// Consume `BodyReader` into [`BytesMut`].
     ///
     /// Use `max_body_len` to limit memory buf usage, which may be useful for server-side code.
-    pub async fn into_bytes(self, max_body_len: usize) -> ParseResult<BytesMut> {
+    pub async fn into_bytes(
+        self,
+        max_body_len: usize,
+        timeout: Option<Duration>,
+    ) -> ParseResult<BytesMut> {
         let mut stream = self.into_read();
 
         let mut read_buf = ReadBuf::with_capacity(max_body_len);
@@ -124,7 +128,20 @@ where
                 return Err(ParseError::ParseBufOverflow(max_body_len));
             }
 
-            let read_size = stream.read(chunk_mut).await?;
+            let read_size = if let Some(timeout) = timeout {
+                match stream.read(chunk_mut).timeout(timeout).await {
+                    Some(r) => r?,
+                    None => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "read body content timeout",
+                        )
+                        .into())
+                    }
+                }
+            } else {
+                stream.read(chunk_mut).await?
+            };
 
             if read_size == 0 {
                 break;
@@ -140,21 +157,25 @@ where
     ///
     /// The maximum body length is limited to `4096` bytes,
     /// use [`from_json_with`](Self::from_json_with) instead if you want to use other values.
-    pub async fn from_json<T>(self) -> ParseResult<T>
+    pub async fn from_json<T>(self, timeout: Option<Duration>) -> ParseResult<T>
     where
         for<'a> T: serde::de::Deserialize<'a>,
     {
-        self.from_json_with(4096).await
+        self.from_json_with(4096, timeout).await
     }
 
     /// Deserialize an instance of type `T` from http json format body.
     ///
     /// Use `max_body_len` to limit memory buf usage, which may be useful for server-side code.
-    pub async fn from_json_with<T>(self, max_body_len: usize) -> ParseResult<T>
+    pub async fn from_json_with<T>(
+        self,
+        max_body_len: usize,
+        timeout: Option<Duration>,
+    ) -> ParseResult<T>
     where
         for<'a> T: serde::de::Deserialize<'a>,
     {
-        let buf = self.into_bytes(max_body_len).await?;
+        let buf = self.into_bytes(max_body_len, timeout).await?;
 
         Ok(serde_json::from_slice(&buf)?)
     }
@@ -1252,7 +1273,7 @@ mod tests {
             Cursor::new(json_data),
         );
 
-        let mock2 = body_reader.from_json::<Mock>().await.unwrap();
+        let mock2 = body_reader.from_json::<Mock>(None).await.unwrap();
 
         assert_eq!(mock, mock2);
     }

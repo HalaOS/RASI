@@ -3,11 +3,7 @@ use std::path::Path;
 use boring::ssl::{SslAcceptor, SslFiletype, SslMethod};
 use http::{Response, StatusCode};
 use rasi::{executor::spawn, net::TcpListener};
-use rasi_ext::net::http::{
-    client::{req, RequestOps},
-    server::{http_serve_with, https_serve_with},
-    types::Request,
-};
+use rasi_ext::net::http::{client::HttpRequestSend, server::HttpServer, types::Request};
 
 mod init;
 
@@ -20,37 +16,37 @@ async fn test_http() {
     let raddr = listener.local_addr().unwrap();
 
     spawn(async move {
-        http_serve_with(listener, |req, resp| async move {
-            assert_eq!(req.uri().path(), "/hello");
+        HttpServer::on(listener)
+            .serve(|req, resp| async move {
+                assert_eq!(req.uri().path(), "/hello");
 
-            resp.write(
-                Response::builder()
-                    .status(StatusCode::OK)
-                    .body("hello world")
-                    .unwrap(),
-            )
-            .await?;
+                resp.write(
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .body("hello world")
+                        .unwrap(),
+                )
+                .await?;
 
-            Ok(())
-        })
-        .await
-        .unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
     });
 
-    let response = req(
-        Request::get(format!("http://{:?}/hello", raddr))
-            .body("")
-            .unwrap(),
-        Default::default(),
-    )
-    .await
-    .unwrap();
+    let response = Request::get(format!("http://{:?}/hello", raddr))
+        .body("")
+        .unwrap()
+        .send()
+        .response()
+        .await
+        .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
 
     let (_, body) = response.into_parts();
 
-    assert_eq!(body.into_bytes(1024).await.unwrap(), "hello world");
+    assert_eq!(body.into_bytes(1024, None).await.unwrap(), "hello world");
 }
 
 #[futures_test::test]
@@ -75,42 +71,42 @@ async fn test_https() {
 
         acceptor.check_private_key().unwrap();
 
-        https_serve_with(listener, acceptor.build(), |req, resp| async move {
-            assert_eq!(req.uri().path(), "/hello");
+        HttpServer::on(listener)
+            .with_ssl(acceptor.build())
+            .serve(|req, resp| async move {
+                assert_eq!(req.uri().path(), "/hello");
 
-            resp.write(
-                Response::builder()
-                    .status(StatusCode::OK)
-                    .body("hello world")
-                    .unwrap(),
-            )
-            .await?;
+                resp.write(
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .body("hello world")
+                        .unwrap(),
+                )
+                .await?;
 
-            Ok(())
-        })
-        .await
-        .unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
     });
 
     let root_path = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     let ca_file = root_path.join("cert/rasi_ca.pem");
 
-    let response = req(
-        Request::get(format!("https://rasi.quic/hello"))
-            .body("")
-            .unwrap(),
-        RequestOps {
-            raddr: Some(format!("{:?}", raddr)),
-            ca_file: Some(&ca_file),
-        },
-    )
-    .await
-    .unwrap();
+    let response = Request::get(format!("https://rasi.quic/hello"))
+        .body("")
+        .unwrap()
+        .send()
+        .send_to(raddr)
+        .with_ca_file(ca_file)
+        .response()
+        .await
+        .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
 
     let (_, body) = response.into_parts();
 
-    assert_eq!(body.into_bytes(1024).await.unwrap(), "hello world");
+    assert_eq!(body.into_bytes(1024, None).await.unwrap(), "hello world");
 }
