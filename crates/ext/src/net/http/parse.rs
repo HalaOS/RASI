@@ -82,7 +82,7 @@ impl Default for Config {
     }
 }
 
-/// Http body reader created by http parsers, see mod [`parse`](crate::parse)  for more information.
+/// Http body reader created by http parsers, see mod [`parse`](super::parse)  for more information.
 #[derive(Debug)]
 pub struct BodyReader<S> {
     /// Unparsed data cached by the parser when parsing http headers
