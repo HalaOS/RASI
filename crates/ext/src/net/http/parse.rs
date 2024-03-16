@@ -646,7 +646,7 @@ where
 
 /// Helper function to help parsing stream into [`Response`] instance.
 ///
-/// See [`new_with`](Response::new_with) for more information.
+/// See [`new_with`](Responser::new_with) for more information.
 pub async fn parse_response_with<S>(
     stream: S,
     config: Config,
