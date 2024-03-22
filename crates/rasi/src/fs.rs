@@ -677,6 +677,8 @@ pub struct File {
     write_cancel_handle: Option<Handle>,
     /// The cancel handle reference to latest pending read ops.
     read_cancel_handle: Option<Handle>,
+    /// The cancel handle reference to latest pending read ops.
+    flush_cancel_handle: Option<Handle>,
 }
 
 impl File {
@@ -686,6 +688,7 @@ impl File {
             syscall,
             write_cancel_handle: None,
             read_cancel_handle: None,
+            flush_cancel_handle: None,
         }
     }
 
@@ -798,8 +801,8 @@ impl AsyncWrite for File {
     ) -> Poll<io::Result<()>> {
         match self.syscall.file_flush(cx.waker().clone(), &self.handle) {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
-            rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                self.write_cancel_handle = write_cancel_handle;
+            rasi_syscall::CancelablePoll::Pending(flush_cancel_handle) => {
+                self.flush_cancel_handle = flush_cancel_handle;
                 Poll::Pending
             }
         }
@@ -1631,7 +1634,7 @@ mod windows {
             match self.syscall.read(cx.waker().clone(), &self.socket, buf) {
                 rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
                 rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
-                    self.read_cancel_handle = Some(read_cancel_handle);
+                    self.read_cancel_handle = read_cancel_handle;
                     Poll::Pending
                 }
             }
@@ -1646,8 +1649,8 @@ mod windows {
         ) -> Poll<io::Result<usize>> {
             match self.syscall.write(cx.waker().clone(), &self.socket, buf) {
                 rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
-                rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                    self.write_cancel_handle = Some(write_cancel_handle);
+                rasi_syscall::CancelablePoll::Pending() => {
+                    self.write_cancel_handle = write_cancel_handle;
                     Poll::Pending
                 }
             }
