@@ -3,7 +3,7 @@
 use std::any::TypeId;
 
 /// A transparent type pointer that represents any implementation-related asynchronous system type.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Handle {
     data: *const (),
     drop: fn(*const ()),

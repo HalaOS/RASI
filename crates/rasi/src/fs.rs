@@ -1649,7 +1649,7 @@ mod windows {
         ) -> Poll<io::Result<usize>> {
             match self.syscall.write(cx.waker().clone(), &self.socket, buf) {
                 rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
-                rasi_syscall::CancelablePoll::Pending() => {
+                rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
                     self.write_cancel_handle = write_cancel_handle;
                     Poll::Pending
                 }
