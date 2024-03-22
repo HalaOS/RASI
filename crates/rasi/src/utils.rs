@@ -24,7 +24,7 @@ where
         match (self.f)(cx) {
             CancelablePoll::Ready(v) => Poll::Ready(v),
             CancelablePoll::Pending(cancel_handle) => {
-                self.cancel_handle = Some(cancel_handle);
+                self.cancel_handle = cancel_handle;
 
                 Poll::Pending
             }

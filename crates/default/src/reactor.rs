@@ -32,7 +32,7 @@ use mio::{
     event::{self, Source},
     Interest, Token,
 };
-use rasi_syscall::{CancelablePoll, Handle};
+use rasi_syscall::CancelablePoll;
 
 /// A wrapper of mio event source.
 pub(crate) struct MioSocket<S: Source> {
@@ -89,7 +89,7 @@ where
                 }
             }
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
-                return CancelablePoll::Pending(Handle::new(()));
+                return CancelablePoll::Pending(None);
             }
             Err(err) if err.kind() == io::ErrorKind::Interrupted => {
                 continue;

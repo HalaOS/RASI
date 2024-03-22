@@ -786,7 +786,7 @@ impl AsyncWrite for File {
         {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                self.write_cancel_handle = Some(write_cancel_handle);
+                self.write_cancel_handle = write_cancel_handle;
                 Poll::Pending
             }
         }
@@ -799,7 +799,7 @@ impl AsyncWrite for File {
         match self.syscall.file_flush(cx.waker().clone(), &self.handle) {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                self.write_cancel_handle = Some(write_cancel_handle);
+                self.write_cancel_handle = write_cancel_handle;
                 Poll::Pending
             }
         }
@@ -825,7 +825,7 @@ impl AsyncRead for File {
         {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                self.write_cancel_handle = Some(write_cancel_handle);
+                self.write_cancel_handle = write_cancel_handle;
                 Poll::Pending
             }
         }
@@ -844,7 +844,7 @@ impl AsyncSeek for File {
         {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
-                self.read_cancel_handle = Some(read_cancel_handle);
+                self.read_cancel_handle = read_cancel_handle;
                 Poll::Pending
             }
         }
@@ -885,7 +885,7 @@ impl Stream for ReadDir {
             })),
             rasi_syscall::CancelablePoll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
             rasi_syscall::CancelablePoll::Pending(cancel_handle) => {
-                self.cancel_handle = Some(cancel_handle);
+                self.cancel_handle = cancel_handle;
                 Poll::Pending
             }
         }

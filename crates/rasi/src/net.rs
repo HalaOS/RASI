@@ -441,7 +441,7 @@ impl AsyncRead for TcpStream {
         {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
-                self.read_cancel_handle = Some(read_cancel_handle);
+                self.read_cancel_handle = read_cancel_handle;
                 Poll::Pending
             }
         }
@@ -460,7 +460,7 @@ impl AsyncWrite for TcpStream {
         {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                self.write_cancel_handle = Some(write_cancel_handle);
+                self.write_cancel_handle = write_cancel_handle;
                 Poll::Pending
             }
         }
@@ -519,7 +519,7 @@ impl AsyncRead for TcpStreamRead {
         {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
-                self.read_cancel_handle = Some(read_cancel_handle);
+                self.read_cancel_handle = read_cancel_handle;
                 Poll::Pending
             }
         }
@@ -563,7 +563,7 @@ impl AsyncWrite for TcpStreamWrite {
         {
             rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                self.write_cancel_handle = Some(write_cancel_handle);
+                self.write_cancel_handle = write_cancel_handle;
                 Poll::Pending
             }
         }
@@ -1089,7 +1089,7 @@ mod unix {
             {
                 rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
                 rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
-                    self.read_cancel_handle = Some(read_cancel_handle);
+                    self.read_cancel_handle = read_cancel_handle;
                     Poll::Pending
                 }
             }
@@ -1108,7 +1108,7 @@ mod unix {
             {
                 rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
                 rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
-                    self.write_cancel_handle = Some(write_cancel_handle);
+                    self.write_cancel_handle = write_cancel_handle;
                     Poll::Pending
                 }
             }
