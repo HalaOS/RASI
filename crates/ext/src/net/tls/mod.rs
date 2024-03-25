@@ -1,5 +1,5 @@
-use boring::ssl;
-pub use boring::ssl::*;
+use boring::ssl::*;
+pub use boring::*;
 
 mod bridge;
 mod callbacks;

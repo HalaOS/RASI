@@ -6,7 +6,8 @@ use rasi::{
     net::{TcpListener, TcpStream},
 };
 use rasi_ext::net::tls::{
-    accept, connect, SslAcceptor, SslConnector, SslFiletype, SslMethod, SslStream,
+    accept, connect, ssl::SslAcceptor, ssl::SslConnector, ssl::SslFiletype, ssl::SslMethod,
+    SslStream,
 };
 
 mod init;

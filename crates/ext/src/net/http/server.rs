@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use crate::net::tls::{SslAcceptor, SslStream};
+use crate::net::tls::{ssl::SslAcceptor, SslStream};
 use futures::{AsyncReadExt, Future};
 use http::{Request, Response, StatusCode};
 use rasi::{
