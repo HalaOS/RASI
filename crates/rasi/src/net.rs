@@ -438,8 +438,12 @@ impl AsyncRead for TcpStream {
             .syscall
             .tcp_stream_read(cx.waker().clone(), &self.sys_socket, buf)
         {
-            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => {
+                log::trace!("{:?} read {:?}", self, r);
+                Poll::Ready(r)
+            }
             rasi_syscall::CancelablePoll::Pending(read_cancel_handle) => {
+                log::trace!("{:?} read pending", self);
                 self.read_cancel_handle = read_cancel_handle;
                 Poll::Pending
             }
@@ -457,8 +461,12 @@ impl AsyncWrite for TcpStream {
             .syscall
             .tcp_stream_write(cx.waker().clone(), &self.sys_socket, buf)
         {
-            rasi_syscall::CancelablePoll::Ready(r) => Poll::Ready(r),
+            rasi_syscall::CancelablePoll::Ready(r) => {
+                log::trace!("{:?} write {:?}", self, r);
+                Poll::Ready(r)
+            }
             rasi_syscall::CancelablePoll::Pending(write_cancel_handle) => {
+                log::trace!("{:?} write pending", self,);
                 self.write_cancel_handle = write_cancel_handle;
                 Poll::Pending
             }
