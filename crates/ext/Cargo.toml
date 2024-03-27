@@ -10,24 +10,20 @@ repository.workspace = true
 version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 rasi = { workspace = true }
-
 parking_lot = { workspace = true, optional = true }
 quiche = { workspace = true, optional = true }
-bytes = { workspace = true, optional = true }
+bytes = { workspace = true }
 rand = { workspace = true, optional = true }
 ring = { workspace = true, optional = true }
 boring = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
-thiserror = {workspace = true, optional = true}
-serde = {workspace = true, optional = true}
-serde_json = {workspace = true, optional = true}
-
+thiserror = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 log = { workspace = true }
 futures = { workspace = true }
-
 
 [dev-dependencies]
 futures-test = { workspace = true }
@@ -38,18 +34,16 @@ dashmap = { workspace = true }
 
 [features]
 default = ["quic", "sync_parking_lot", "tls", "http_support"]
-
 event_map = []
-udp_group = ["bytes", "rand"]
+udp_group = ["rand"]
 quic = ["udp_group", "quiche", "ring", "event_map"]
 sync_parking_lot = ["parking_lot"]
 tls = ["boring"]
-http_support = ["http","thiserror","serde_json","serde"]
+http_support = ["http", "thiserror", "serde_json", "serde"]
 
 [[bench]]
 harness = false
 name = "map_bench"
-
 
 [[bench]]
 harness = false
