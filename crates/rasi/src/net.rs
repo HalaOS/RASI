@@ -193,8 +193,8 @@ impl Debug for TcpStream {
         write!(
             f,
             "TcpStream {:?} => {:?}",
-            self.local_addr(),
-            self.peer_addr()
+            self.local_addr().ok(),
+            self.peer_addr().ok()
         )
     }
 }
