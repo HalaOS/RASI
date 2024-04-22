@@ -47,7 +47,7 @@ impl Drop for QuicConnFinalizer {
 
 /// A builder for client side [`QuicConn`].
 pub struct QuicConnector {
-    udp_group: UdpGroup,
+    pub udp_group: UdpGroup,
     conn_state: QuicConnState,
     max_send_udp_payload_size: usize,
 }
@@ -198,6 +198,21 @@ impl QuicConn {
         Self {
             inner: Arc::new(QuicConnFinalizer(state)),
         }
+    }
+
+    /// Closes the connection with the given error and reason.
+    ///
+    /// The `app` parameter specifies whether an application close should be
+    /// sent to the peer. Otherwise a normal connection close is sent.
+    ///
+    /// If `app` is true but the connection is not in a state that is safe to
+    /// send an application error (not established nor in early data), in
+    /// accordance with [RFC
+    /// 9000](https://www.rfc-editor.org/rfc/rfc9000.html#section-10.2.3-3), the
+    /// error code is changed to APPLICATION_ERROR and the reason phrase is
+    /// cleared.
+    pub async fn close(&self) -> io::Result<()> {
+        self.inner.0.close(false, 0, b"").await
     }
 
     /// Accepts a new incoming stream via this connection.

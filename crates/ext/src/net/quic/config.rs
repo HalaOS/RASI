@@ -1,5 +1,7 @@
 use std::{ops, time::Duration};
 
+use boring::ssl::SslContextBuilder;
+
 /// An wrapper for quiche [`Config`](quiche::Config).
 pub struct Config {
     quiche_config: quiche::Config,
@@ -26,21 +28,33 @@ impl ops::DerefMut for Config {
 }
 
 impl Config {
-    /// Create new quic config instance with default config.
-    pub fn new() -> Self {
+    pub fn new_with_ssl_cx_builder(ssl_cx_builder: SslContextBuilder) -> Self {
+        Config::with_quiche_config(
+            quiche::Config::with_boring_ssl_ctx_builder(quiche::PROTOCOL_VERSION, ssl_cx_builder)
+                .unwrap(),
+        )
+    }
+
+    pub fn with_quiche_config(quiche_config: quiche::Config) -> Self {
         let mut config = Config {
-            quiche_config: quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap(),
+            quiche_config,
             ping_packet_send_interval: None,
             max_recv_udp_payload_size: 65527,
             max_send_udp_payload_size: 1200,
         };
 
+        config.set_initial_max_data(10_000_000);
         config.set_initial_max_stream_data_bidi_local(1024 * 1024);
         config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
         config.set_initial_max_streams_bidi(100);
         config.set_initial_max_streams_uni(100);
 
         config
+    }
+
+    /// Create new quic config instance with default config.
+    pub fn new() -> Self {
+        Config::with_quiche_config(quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap())
     }
 
     /// Sets the `max_idle_timeout` transport parameter, in milliseconds.
