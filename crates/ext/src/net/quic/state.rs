@@ -193,7 +193,7 @@ impl QuicConnState {
     /// - ***quiche_conn*** The underlying quiche [`connection`](quiche::Connection) instance.
     /// - ***ping_send_intervals*** The time interval for sending ping packets.
     pub fn new(quiche_conn: quiche::Connection, ping_send_intervals: Option<Duration>) -> Self {
-        let next_outbound_stream_id = if quiche_conn.is_server() { 5 } else { 4 };
+        let next_outbound_stream_id = if quiche_conn.is_server() { 1 } else { 0 };
 
         Self {
             is_server: quiche_conn.is_server(),
