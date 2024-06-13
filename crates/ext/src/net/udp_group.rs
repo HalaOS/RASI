@@ -314,7 +314,7 @@ mod tests {
 
     fn get_syscall() -> &'static dyn rasi::syscall::Network {
         INIT.get_or_init(|| {
-            register_futures_executor_with_pool_size(10).unwrap();
+            register_futures_executor_with_pool_size(10);
             Box::new(MioNetwork::default())
         })
         .as_ref()
