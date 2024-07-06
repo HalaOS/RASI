@@ -414,7 +414,7 @@ impl Network for MioNetwork {
                         Interest::READABLE.add(Interest::WRITABLE),
                     )?;
 
-                    let raddr = mio_unix_address_to_std_unix_addr(raddr)?;
+                    // let raddr = mio_unix_address_to_std_unix_addr(raddr)?;
 
                     Ok((Handle::new(MioSocket::from((token, stream))), raddr))
                 }
@@ -434,7 +434,9 @@ impl Network for MioNetwork {
             .downcast::<MioSocket<UnixListener>>()
             .expect("Expect UnixListener.");
 
-        mio_unix_address_to_std_unix_addr(socket.local_addr()?)
+        // mio_unix_address_to_std_unix_addr(socket.local_addr()?)
+
+        Ok(socket.local_addr()?)
     }
 
     #[cfg(all(unix, feature = "unix_socket"))]
@@ -469,7 +471,9 @@ impl Network for MioNetwork {
             .downcast::<MioSocket<UnixStream>>()
             .expect("Expect UnixStream.");
 
-        mio_unix_address_to_std_unix_addr(socket.local_addr()?)
+        // mio_unix_address_to_std_unix_addr(socket.local_addr()?)
+
+        Ok(socket.local_addr()?)
     }
 
     #[cfg(all(unix, feature = "unix_socket"))]
@@ -480,7 +484,9 @@ impl Network for MioNetwork {
             .downcast::<MioSocket<UnixStream>>()
             .expect("Expect UnixStream.");
 
-        mio_unix_address_to_std_unix_addr(socket.peer_addr()?)
+        // mio_unix_address_to_std_unix_addr(socket.peer_addr()?)
+
+        Ok(socket.local_addr()?)
     }
 
     #[cfg(all(unix, feature = "unix_socket"))]
@@ -531,18 +537,18 @@ impl Network for MioNetwork {
     }
 }
 
-#[cfg(unix)]
-fn mio_unix_address_to_std_unix_addr(
-    addr: mio::net::SocketAddr,
-) -> io::Result<std::os::unix::net::SocketAddr> {
-    if let Some(path) = addr.as_abstract_namespace() {
-        std::os::unix::net::SocketAddr::from_pathname(format!("{}", path.escape_ascii()))
-    } else if let Some(path) = addr.as_pathname() {
-        std::os::unix::net::SocketAddr::from_pathname(path)
-    } else {
-        std::os::unix::net::SocketAddr::from_pathname("")
-    }
-}
+// #[cfg(unix)]
+// fn mio_unix_address_to_std_unix_addr(
+//     addr: mio::net::SocketAddr,
+// ) -> io::Result<std::os::unix::net::SocketAddr> {
+//     if let Some(path) = addr.as_abstract_namespace() {
+//         std::os::unix::net::SocketAddr::from_pathname(format!("{}", path.escape_ascii()))
+//     } else if let Some(path) = addr.as_pathname() {
+//         std::os::unix::net::SocketAddr::from_pathname(path)
+//     } else {
+//         std::os::unix::net::SocketAddr::from_pathname("")
+//     }
+// }
 
 /// This function using [`register_global_network`] to register the [`MioNetwork`] to global registry.
 ///
