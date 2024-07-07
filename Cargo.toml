@@ -15,10 +15,10 @@ bitmask-enum = "^2.2"
 parking_lot = "^0.12"
 num_cpus = "^1.16"
 boxcar = "^0.2.4"
-dashmap = "5.5.3"
+dashmap = "^6.0"
 cooked-waker = "^5"
 divan = "^0.1"
-quiche = { version = "^0.20.0", features = ["boringssl-boring-crate"] }
+quiche = { version = "^0.22", features = ["boringssl-boring-crate"] }
 bytes = "^1.5"
 rand = { version = "^0.8", features = ["getrandom"] }
 ring = "^0.17"
@@ -26,14 +26,11 @@ boring = "^4.4.0"
 windows-sys = "^0.52"
 http = "^1.0"
 httparse = "^1.8"
-serde = {version = "^1.0", features = ["derive"]}
-serde_json = {version = "^1.0"}
-
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = { version = "^1.0" }
 futures = { version = "^0.3", default-features = false }
 futures-test = "0.3.30"
-mio = { version = "^0.8.9", features = ["os-poll", "net", "os-ext"] }
-
-
+mio = { version = "^1", features = ["os-poll", "net", "os-ext"] }
 rasi-syscall = { path = "./crates/syscall", default-features = false, version = "^0.1" }
 rasi = { path = "./crates/rasi", version = "^0.1" }
 rasi-ext = { path = "./crates/ext", default-features = false, version = "^0.1" }
