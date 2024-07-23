@@ -8,7 +8,7 @@ This project adheres to [Semantic Versioning](https://semver.org).
 Note: In this file, do not use the hard wrap in the middle of a sentence for compatibility with GitHub comment style markdown rendering.
 -->
 
-## [0.2.0] - 2024-07-24
+## [0.2.2] - 2024-07-24
 
 - First release of the rasi rewrite.
 
