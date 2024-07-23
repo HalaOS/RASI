@@ -1,24 +1,22 @@
 [package]
-description = "An implementation of http frameworks base on futures stream."
-documentation = "https://docs.rs/futures-http"
+description = "Futures-based jsonrpc v2.0 crate"
+documentation = "https://docs.rs/futures-jsonrpcv2"
 edition.workspace = true
 license = "MIT"
-name = "futures-http"
+name = "futures-jsonrpcv2"
 repository.workspace = true
 version.workspace = true
 readme = "README.md"
 
 [dependencies]
 log = { workspace = true }
-http = { workspace = true }
-httparse = { workspace = true }
 futures = { workspace = true }
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
+futures-waitmap = { workspace = true }
 rasi = { workspace = true, optional = true }
-futures-boring = { workspace = true }
+futures-http = { workspace = true, optional = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }
@@ -27,6 +25,4 @@ rasi-mio = { workspace = true }
 futures = { workspace = true, features = ["executor", "thread-pool"] }
 
 [features]
-default = ["json", "with_rasi"]
-json = ["serde", "serde_json"]
-with_rasi = ["rasi"]
+with_rasi = ["rasi", "futures-http/json", "futures-http/with_rasi"]

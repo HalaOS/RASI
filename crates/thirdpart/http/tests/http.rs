@@ -37,6 +37,7 @@ fn init() {
     })
 }
 
+#[cfg_attr(docsrs, doc(feature = "with_rasi"))]
 #[futures_test::test]
 async fn test_http() {
     init();
@@ -78,6 +79,7 @@ async fn test_http() {
     assert_eq!(body.into_bytes(1024).await.unwrap(), "hello world");
 }
 
+#[cfg_attr(docsrs, doc(feature = "with_rasi"))]
 #[futures_test::test]
 async fn test_https() {
     init();

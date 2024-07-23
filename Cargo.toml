@@ -1,5 +1,11 @@
 [workspace]
-members = ["crates/rasi", "crates/mio", "crates/spec", "crates/futures/*"]
+members = [
+    "crates/rasi",
+    "crates/mio",
+    "crates/spec",
+    "crates/sqlite3",
+    "crates/thirdpart/*"
+]
 resolver = "2"
 
 [workspace.package]
@@ -27,12 +33,13 @@ serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 bytes = "^1.5"
 num_cpus = "^1.16"
-waitmap = "^1.1"
+bigdecimal = "^0.4"
+sqlite3-sys = "^0.17"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }
 rasi-mio = { path = "crates/mio", version = "^0.2" }
-futures-boring = { path = "crates/futures/ssl", version = "^0.2" }
-futures-waitmap = { path = "crates/futures/waitmap", version = "^0.2" }
-futures-http = { path = "crates/futures/http", version = "^0.2", no-defaults = true }
-futures-jsonrpcv2 = { path = "crates/futures/jsonrpc", version = "^0.2", no-defaults = true }
+futures-boring = { path = "crates/thirdpart/boring", version = "^0.2" }
+futures-waitmap = { path = "crates/thirdpart/waitmap", version = "^0.2" }
+futures-http = { path = "crates/thirdpart/http", version = "^0.2" }
+futures-jsonrpcv2 = { path = "crates/thirdpart/jsonrpc", version = "^0.2" }

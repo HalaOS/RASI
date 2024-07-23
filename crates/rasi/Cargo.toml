@@ -13,6 +13,7 @@ log = { workspace = true }
 futures = { workspace = true }
 bitmask-enum = { workspace = true }
 num_cpus = { workspace = true }
+bigdecimal = { workspace = true }
 
 [features]
 default = ["futures-spawn"]
