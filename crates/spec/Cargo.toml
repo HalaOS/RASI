@@ -8,20 +8,8 @@ repository.workspace = true
 version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-rasi-syscall = { workspace = true, features = [
-    "net",
-    "time",
-    "fs",
-    "executor",
-    "unix_socket",
-] }
-
 rasi = { workspace = true }
-
 futures-test = { workspace = true }
-
 futures = { workspace = true, features = ["std", "executor", "thread-pool"] }
-
 rand = { workspace = true, optional = true }

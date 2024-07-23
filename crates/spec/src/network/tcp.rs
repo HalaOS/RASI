@@ -1,11 +1,11 @@
 use futures::{executor::ThreadPool, task::SpawnExt, AsyncReadExt};
-use rasi::net::{TcpListener, TcpStream};
+use rasi::net::{NetworkDriver, TcpListener, TcpStream};
 
 use futures::AsyncWriteExt;
 
 use crate::async_spec;
 
-pub async fn test_tcp_ttl(syscall: &'static dyn rasi_syscall::Network) {
+pub async fn test_tcp_ttl(syscall: &dyn NetworkDriver) {
     let server = TcpListener::bind_with("127.0.0.1:0", syscall)
         .await
         .unwrap();
@@ -39,7 +39,7 @@ pub async fn test_tcp_ttl(syscall: &'static dyn rasi_syscall::Network) {
     assert!(client.nodelay().unwrap());
 }
 
-pub async fn test_tcp_echo(syscall: &'static dyn rasi_syscall::Network) {
+pub async fn test_tcp_echo(syscall: &dyn NetworkDriver) {
     let thread_pool = ThreadPool::new().unwrap();
 
     let server = TcpListener::bind_with("127.0.0.1:0", syscall)
@@ -75,7 +75,7 @@ pub async fn test_tcp_echo(syscall: &'static dyn rasi_syscall::Network) {
     assert_eq!(&buf[..read_size], message);
 }
 
-pub async fn run_tcp_spec(syscall: &'static dyn rasi_syscall::Network) {
+pub async fn run_tcp_spec(syscall: &dyn NetworkDriver) {
     async_spec!(test_tcp_echo, syscall);
     async_spec!(test_tcp_ttl, syscall);
 }

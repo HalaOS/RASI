@@ -1,0 +1,18 @@
+[package]
+description = "future-based concurrent event waiting hashmap"
+documentation = "https://docs.rs/futures-waitmap"
+edition.workspace = true
+license = "MIT"
+name = "futures-waitmap"
+repository.workspace = true
+version.workspace = true
+readme = "README.md"
+
+[dependencies]
+log = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+futures-test = { workspace = true }
+
+[features]

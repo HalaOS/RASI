@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use futures::future::pending;
-use rasi::time::sleep_with;
+use rasi::timer::{sleep_with, TimeoutExt, TimerDriver};
 
 use crate::async_spec;
 
-pub async fn test_sleep(syscall: &'static dyn rasi_syscall::Timer) {
+pub async fn test_sleep(syscall: &dyn TimerDriver) {
     sleep_with(Duration::from_micros(10), syscall).await;
 
     sleep_with(Duration::from_millis(20), syscall).await;
@@ -13,16 +13,14 @@ pub async fn test_sleep(syscall: &'static dyn rasi_syscall::Timer) {
     sleep_with(Duration::from_secs(1), syscall).await;
 }
 
-pub async fn test_timeout(syscall: &'static dyn rasi_syscall::Timer) {
-    use rasi::prelude::*;
-
+pub async fn test_timeout(syscall: &dyn TimerDriver) {
     let never = pending::<()>();
     let dur = Duration::from_millis(5);
 
     assert!(never.timeout_with(dur, syscall).await.is_none());
 }
 
-pub async fn run_timer_spec(syscall: &'static dyn rasi_syscall::Timer) {
+pub async fn run_timer_spec(syscall: &'static dyn TimerDriver) {
     println!("Run timer spec testsuite");
     println!("");
 

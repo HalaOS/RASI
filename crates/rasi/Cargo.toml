@@ -1,5 +1,5 @@
 [package]
-description = "An implementation of Rust Asynchronous System Interface(RASI)"
+description = "The Rust Asynchronous IO System Interface"
 documentation = "https://docs.rs/rasi"
 edition.workspace = true
 license = "MIT"
@@ -9,22 +9,11 @@ version.workspace = true
 readme = "../../README.md"
 
 [dependencies]
-futures = { workspace = true }
-rasi-syscall = { workspace = true }
 log = { workspace = true }
+futures = { workspace = true }
+bitmask-enum = { workspace = true }
+num_cpus = { workspace = true }
 
 [features]
-default = ["net", "fs", "time", "executor", "std","inter_process"]
-
-net = ["rasi-syscall/net"]
-fs = ["rasi-syscall/fs"]
-time = ["rasi-syscall/time", "futures/async-await"]
-executor = ["rasi-syscall/executor"]
-
-unix_socket = ["rasi-syscall/unix_socket"]
-windows_named_pipe = ["rasi-syscall/windows_named_pipe"]
-
-inter_process = ["unix_socket","windows_named_pipe"]
-
-std = ["rasi-syscall/std", "futures/std"]
-alloc = ["rasi-syscall/alloc", "futures/alloc"]
+default = ["futures-spawn"]
+futures-spawn = ["futures/thread-pool", "futures/executor"]

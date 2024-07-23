@@ -1,38 +1,38 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/rasi", "crates/mio", "crates/spec", "crates/futures/*"]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
-repository = "https://github.com/HalaOS/RASI.git"
-version = "0.1.11"
+repository = "https://github.com/HalaOS/rasi.git"
+version = "0.2.0"
 
 [workspace.dependencies]
 log = { version = "^0.4" }
 pretty_env_logger = "^0.5"
-thiserror = "1.0.57"
+clap = "^4.5"
+thiserror = "^1.0"
+futures-test = "^0.3"
+futures = "^0.3"
 bitmask-enum = "^2.2"
-parking_lot = "^0.12"
-num_cpus = "^1.16"
-boxcar = "^0.2.4"
-dashmap = "^6.0"
-cooked-waker = "^5"
-divan = "^0.1"
-quiche = { version = "^0.22", features = ["boringssl-boring-crate"] }
-bytes = "^1.5"
 rand = { version = "^0.8", features = ["getrandom"] }
-ring = "^0.17"
-boring = "^4.4.0"
+mio = { version = "^1", features = ["os-poll", "net", "os-ext"] }
+dashmap = "^6.0"
+boxcar = "^0.2.4"
 windows-sys = "^0.52"
+boring = "^4.4.0"
 http = "^1.0"
 httparse = "^1.8"
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
-futures = { version = "^0.3", default-features = false }
-futures-test = "0.3.30"
-mio = { version = "^1", features = ["os-poll", "net", "os-ext"] }
-rasi-syscall = { path = "./crates/syscall", default-features = false, version = "^0.1" }
-rasi = { path = "./crates/rasi", version = "^0.1" }
-rasi-ext = { path = "./crates/ext", default-features = false, version = "^0.1" }
-rasi-spec = { path = "./crates/spec", version = "^0.1" }
-rasi-default = { path = "./crates/default", version = "^0.1" }
+bytes = "^1.5"
+num_cpus = "^1.16"
+waitmap = "^1.1"
+# rasi
+rasi = { path = "crates/rasi", version = "^0.2" }
+rasi-spec = { path = "crates/spec", version = "^0.2" }
+rasi-mio = { path = "crates/mio", version = "^0.2" }
+futures-boring = { path = "crates/futures/ssl", version = "^0.2" }
+futures-waitmap = { path = "crates/futures/waitmap", version = "^0.2" }
+futures-http = { path = "crates/futures/http", version = "^0.2", no-defaults = true }
+futures-jsonrpcv2 = { path = "crates/futures/jsonrpc", version = "^0.2", no-defaults = true }

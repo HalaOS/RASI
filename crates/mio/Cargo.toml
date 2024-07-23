@@ -1,0 +1,35 @@
+[package]
+description = "a rasi drivers implementation base on mio"
+documentation = "https://docs.rs/rasi-mio"
+edition.workspace = true
+license = "MIT"
+name = "rasi-mio"
+repository.workspace = true
+version.workspace = true
+readme = "../../README.md"
+
+[dependencies]
+log = { workspace = true }
+futures = { workspace = true }
+rasi = { workspace = true }
+dashmap = { workspace = true }
+boxcar = { workspace = true }
+mio = { workspace = true }
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+workspace = true
+optional = true
+
+[dev-dependencies]
+rasi-spec = { workspace = true }
+futures-test = { workspace = true }
+
+[features]
+default = ["windows_named_pipe"]
+windows_named_pipe = [
+    "windows-sys/Win32_Foundation",
+    "windows-sys/Win32_Security",
+    "windows-sys/Win32_Storage_FileSystem",
+    "windows-sys/Win32_System_Pipes",
+    "windows-sys/Win32_System_SystemServices"
+]
