@@ -71,6 +71,8 @@ async fn crud(conn: Connection) {
 
     conn.exec("UPDATE t1 SET y=1;", &[]).await.unwrap();
 
+    let query = conn.query("SELECT * from t1", &[]).await.unwrap();
+
     let mut idx = 0;
 
     while let Some(row) = query.next().await.unwrap() {
