@@ -6,7 +6,6 @@ license = "MIT"
 name = "rasi-mio"
 repository.workspace = true
 version.workspace = true
-readme = "../../README.md"
 
 [dependencies]
 log = { workspace = true }
