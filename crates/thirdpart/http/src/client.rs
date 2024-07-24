@@ -1,3 +1,5 @@
+//! Utilities for http client-side application.
+
 use std::{future::Future, io::Result};
 
 use futures::{AsyncRead, AsyncWrite};

@@ -1,3 +1,5 @@
+//! Utilities to serialize http packets into a stream of bytes.
+//!
 use std::{future::Future, io};
 
 use futures::io::{copy, AsyncRead, AsyncWrite, AsyncWriteExt, Cursor};

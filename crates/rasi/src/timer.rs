@@ -1,3 +1,6 @@
+//! Future-based utilities for tracking time.
+//!
+
 use std::{
     io::Result,
     sync::OnceLock,
@@ -7,8 +10,11 @@ use std::{
 
 use futures::{Future, FutureExt};
 
+/// A timer driver must implement the Driver-* traits in this module.
 pub mod syscall {
     use super::*;
+
+    /// The main entry of tracking time.
     pub trait Driver: Sync + Send {
         /// Create new `deadline` timer, returns [`None`] if the `deadline` instant is reached.
         fn deadline(&self, deadline: Instant) -> Result<Option<DeadLine>>;

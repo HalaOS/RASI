@@ -1,4 +1,4 @@
-//! Utilities for http server-side program.
+//! Utilities for http server-side application.
 //!
 //!
 

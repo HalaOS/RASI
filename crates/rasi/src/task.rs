@@ -1,7 +1,10 @@
+//! Utilities for spawning new task.
+
 use std::{future::Future, sync::OnceLock};
 
 use futures::{future::BoxFuture, task::SpawnError};
 
+/// A task driver must implement the Driver-* traits in this module.
 pub mod syscall {
     use super::*;
     /// A driver trait for spawn io task.

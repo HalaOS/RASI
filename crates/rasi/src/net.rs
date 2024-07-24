@@ -1,3 +1,5 @@
+//! Future-based TCP/IP manipulation operations.
+
 use std::{
     fmt::Debug,
     io::{ErrorKind, Result},

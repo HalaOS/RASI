@@ -1,3 +1,6 @@
+//! RDBC(Rust DataBase Connectivity): future-based database manipulation operations.
+//!
+
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -43,6 +46,7 @@ pub enum SqlParameter<'a> {
     Offset(SqlValue<'a>),
 }
 
+/// A rdbc driver must implement the Driver-* traits in this module.
 pub mod syscall {
     use super::*;
     ///  Represents database driver that can be shared between threads, and can therefore implement a connection pool
@@ -90,6 +94,89 @@ pub mod syscall {
             driver_name: &str,
             driver_conn: Box<dyn DriverConn>,
         ) -> Result<()>;
+    }
+
+    /// Represents the query row result.
+    pub trait DriverRow: Send + Sync {
+        /// Returns a single field value of this row with suggest sql value type.
+        fn get(&self, index: usize, sql_type: &SqlType) -> Result<SqlValue<'static>>;
+    }
+
+    /// Represents a prepare statement, created by `prepare` functions.
+    pub trait DriverPrepare: Send + Sync {
+        /// poll and wait prepare statement compiled.
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+        /// Execute a query that is expected to update some rows.
+        fn exec(&self, params: &[SqlParameter<'_>]) -> Result<Update>;
+
+        /// Execute a query that is expected to return a result set, such as a SELECT statement
+        fn query(&self, params: &[SqlParameter<'_>]) -> Result<Query>;
+    }
+
+    /// Represents a update statement, created by `exec` functions.
+    pub trait DriverUpdate: Send {
+        /// Poll query statement result.
+        ///
+        /// On success, returns the `last insert id` and `rows affected`.
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(i64, i64)>>;
+    }
+
+    /// Represents query result table's metadata.
+    pub trait DriverTableMetadata: Send + Sync {
+        /// Returns the number of columns (fields) in each row of the query result.
+        fn cols(&self) -> Result<usize>;
+
+        /// Returns the column name associated with the given column number. Column numbers start at 0.
+        fn col_name(&self, offset: usize) -> Result<&str>;
+
+        /// Returns the column number associated with the given column name.
+        fn col_offset(&self, col_name: &str) -> Result<usize> {
+            for i in 0..self.cols()? {
+                if self.col_name(i)? == col_name {
+                    return Ok(i);
+                }
+            }
+
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Column with name '{}', not found", col_name),
+            ))
+        }
+
+        /// Returns the `SqlType` of the table from which the given column was fetched. Column numbers start at 0.
+        fn col_type(&self, offset: usize) -> Result<Option<SqlType>>;
+
+        /// Returns the size in bytes of the column associated with the given column number. Column numbers start at 0.
+        fn col_size(&self, offset: usize) -> Result<Option<usize>>;
+    }
+
+    /// Represents a query statement, created by `query` functions.
+    pub trait DriverQuery: DriverTableMetadata {
+        /// Fetch next row of the query result.
+        fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Result<Option<Row>>>;
+    }
+
+    /// Represents a driver-specific `Transaction` object.
+    ///
+    /// The driver should automatically commit this transaction when object is dropping.
+    pub trait DriverTx: Send + Sync {
+        /// Poll and check if the transaction is ready.
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+
+        /// Rollback this transaction.
+        ///
+        /// If this function encounters an error, the tx should be considered
+        /// to have failed permanently, and no more `DriverTx` methods should be called.
+        fn poll_rollback(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+
+        /// Create a prepared statement for execution via the connection.
+        fn prepare(&self, query: &str) -> Result<Prepare>;
+
+        /// Execute a query that is expected to update some rows.
+        fn exec(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Update>;
+
+        /// Execute a query that is expected to return a result set, such as a SELECT statement
+        fn query(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Query>;
     }
 }
 
@@ -162,21 +249,10 @@ impl Connection {
     }
 }
 
-/// Represents a prepare statement, created by `prepare` functions.
-pub trait DriverPrepare: Send + Sync {
-    /// poll and wait prepare statement compiled.
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-    /// Execute a query that is expected to update some rows.
-    fn exec(&self, params: &[SqlParameter<'_>]) -> Result<Update>;
-
-    /// Execute a query that is expected to return a result set, such as a SELECT statement
-    fn query(&self, params: &[SqlParameter<'_>]) -> Result<Query>;
-}
-
 /// The query object that represents a `exec` statement.
-pub struct Prepare(Box<dyn DriverPrepare>);
+pub struct Prepare(Box<dyn syscall::DriverPrepare>);
 
-impl<T: DriverPrepare + 'static> From<T> for Prepare {
+impl<T: syscall::DriverPrepare + 'static> From<T> for Prepare {
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
@@ -184,7 +260,7 @@ impl<T: DriverPrepare + 'static> From<T> for Prepare {
 
 impl Prepare {
     /// Get inner [`DriverPrepare`] reference.
-    pub fn as_driver_query(&self) -> &dyn DriverPrepare {
+    pub fn as_driver_query(&self) -> &dyn syscall::DriverPrepare {
         &*self.0
     }
 
@@ -199,18 +275,10 @@ impl Prepare {
     }
 }
 
-/// Represents a update statement, created by `exec` functions.
-pub trait DriverUpdate: Send {
-    /// Poll query statement result.
-    ///
-    /// On success, returns the `last insert id` and `rows affected`.
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(i64, i64)>>;
-}
-
 /// The update future that represents a `exec` statement.
-pub struct Update(Box<dyn DriverUpdate>);
+pub struct Update(Box<dyn syscall::DriverUpdate>);
 
-impl<T: DriverUpdate + 'static> From<T> for Update {
+impl<T: syscall::DriverUpdate + 'static> From<T> for Update {
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
@@ -224,45 +292,10 @@ impl Future for Update {
     }
 }
 
-/// Represents query result table's metadata.
-pub trait DriverTableMetadata: Send + Sync {
-    /// Returns the number of columns (fields) in each row of the query result.
-    fn cols(&self) -> Result<usize>;
-
-    /// Returns the column name associated with the given column number. Column numbers start at 0.
-    fn col_name(&self, offset: usize) -> Result<&str>;
-
-    /// Returns the column number associated with the given column name.
-    fn col_offset(&self, col_name: &str) -> Result<usize> {
-        for i in 0..self.cols()? {
-            if self.col_name(i)? == col_name {
-                return Ok(i);
-            }
-        }
-
-        Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("Column with name '{}', not found", col_name),
-        ))
-    }
-
-    /// Returns the `SqlType` of the table from which the given column was fetched. Column numbers start at 0.
-    fn col_type(&self, offset: usize) -> Result<Option<SqlType>>;
-
-    /// Returns the size in bytes of the column associated with the given column number. Column numbers start at 0.
-    fn col_size(&self, offset: usize) -> Result<Option<usize>>;
-}
-
-/// Represents a query statement, created by `query` functions.
-pub trait DriverQuery: DriverTableMetadata {
-    /// Fetch next row of the query result.
-    fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Result<Option<Row>>>;
-}
-
 /// The query object that represents a `exec` statement.
-pub struct Query(Box<dyn DriverQuery>);
+pub struct Query(Box<dyn syscall::DriverQuery>);
 
-impl<T: DriverQuery + 'static> From<T> for Query {
+impl<T: syscall::DriverQuery + 'static> From<T> for Query {
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
@@ -270,7 +303,7 @@ impl<T: DriverQuery + 'static> From<T> for Query {
 
 impl Query {
     /// Get inner [`DriverQuery`] reference.
-    pub fn as_driver_query(&self) -> &dyn DriverQuery {
+    pub fn as_driver_query(&self) -> &dyn syscall::DriverQuery {
         &*self.0
     }
 
@@ -305,15 +338,10 @@ impl Query {
     }
 }
 
-pub trait DriverRow: Send + Sync {
-    /// Returns a single field value of this row with suggest sql value type.
-    fn get(&self, index: usize, sql_type: &SqlType) -> Result<SqlValue<'static>>;
-}
-
 /// The structure that represents the query row result.
-pub struct Row(Box<dyn DriverRow>);
+pub struct Row(Box<dyn syscall::DriverRow>);
 
-impl<T: DriverRow + 'static> From<T> for Row {
+impl<T: syscall::DriverRow + 'static> From<T> for Row {
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
@@ -321,7 +349,7 @@ impl<T: DriverRow + 'static> From<T> for Row {
 
 impl Row {
     /// Get inner [`DriverRow`] reference.
-    pub fn as_driver_row(&self) -> &dyn DriverRow {
+    pub fn as_driver_row(&self) -> &dyn syscall::DriverRow {
         &*self.0
     }
 
@@ -485,33 +513,10 @@ impl Row {
     }
 }
 
-/// Represents a driver-specific `Transaction` object.
-///
-/// The driver should automatically commit this transaction when object is dropping.
-pub trait DriverTx: Send + Sync {
-    /// Poll and check if the transaction is ready.
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-
-    /// Rollback this transaction.
-    ///
-    /// If this function encounters an error, the tx should be considered
-    /// to have failed permanently, and no more `DriverTx` methods should be called.
-    fn poll_rollback(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-
-    /// Create a prepared statement for execution via the connection.
-    fn prepare(&self, query: &str) -> Result<Prepare>;
-
-    /// Execute a query that is expected to update some rows.
-    fn exec(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Update>;
-
-    /// Execute a query that is expected to return a result set, such as a SELECT statement
-    fn query(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Query>;
-}
-
 /// The connection object that represents a rdbc database transaction object.
-pub struct Transaction(Box<dyn DriverTx>);
+pub struct Transaction(Box<dyn syscall::DriverTx>);
 
-impl<T: DriverTx + 'static> From<T> for Transaction {
+impl<T: syscall::DriverTx + 'static> From<T> for Transaction {
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
@@ -519,7 +524,7 @@ impl<T: DriverTx + 'static> From<T> for Transaction {
 
 impl Transaction {
     /// Get inner [`DriverConn`] reference.
-    pub fn as_driver_tx(&self) -> &dyn DriverTx {
+    pub fn as_driver_tx(&self) -> &dyn syscall::DriverTx {
         &*self.0
     }
 
@@ -561,15 +566,19 @@ fn get_register() -> &'static GlobalRegister {
     REGISTER.get_or_init(|| Default::default())
 }
 
-/// Register a database connection  pool implemention.
+/// Register a connection reused strategy to the global context of this application.
 pub fn register_pool_strategy<P: syscall::ConnectionPool + 'static>(conn_pool: P) {
     if CONN_POOL.set(Box::new(conn_pool)).is_err() {
         panic!("Call register_pool_strategy more than once.")
     }
 }
 
-/// Open opens a database specified by its database driver name and a driver-specific
+/// Opens a database connection specified by the database driver name and a driver-specific
 /// data source name, usually consisting of at least a database name and connection information.
+///
+/// # Panics
+///
+/// this function will panic, if the driver with the supplied `driver_name` is not registered.
 pub async fn open<D: AsRef<str>, S: AsRef<str>>(
     driver_name: D,
     source_name: S,
@@ -617,9 +626,16 @@ pub async fn open<D: AsRef<str>, S: AsRef<str>>(
     }
 }
 
-/// Register new database driver.
+/// Register a new database driver to the global context of this application.
 ///
-/// Cause a panic, if register same driver name twice.
+/// # Multiple drivers.
+///
+/// Register multiple drivers to the same global context of this application,
+/// allowed only if these drivers have different names.
+///
+/// # Panics
+///
+/// If register two driver with the same `name`, this function will panics.
 pub fn register_rdbc_driver<N: AsRef<str>, D: syscall::Driver + 'static>(
     driver_name: N,
     database: D,

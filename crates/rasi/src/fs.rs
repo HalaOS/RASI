@@ -4,6 +4,31 @@
 //! All methods in this module represent cross-platform filesystem operations.
 //! Extra platform-specific functionality can be found in the extension traits of
 //! rasi::fs::$platform.
+//!
+//! # Driver configuration
+//! Before using these filesystem api, we need to use function [`register_fs_driver`] to
+//! inject one filesystem driver. here is an example of how to inject the filesystem
+//! [`driver`](syscall::Driver) with the [`rasi-mio`] library.
+//!
+//! ```no_run
+//! # futures::executor::block_on(async {
+//! use rasi::fs;
+//!
+//! /// Here, we use `rasi_mio` crate as the filesystem implementation,
+//! /// injected into the context of the current application.
+//!
+//! /// rasi_mio::fs::register_mio_filesystem();
+//!
+//! let current_path = fs::canonicalize("./").await;
+//!
+//! # });
+//! ```
+//!
+//! # Custom filesystem
+//!
+//! Check out the [`rasi-mio`] to learn how to implement a Filesystem driver  from the ground up!
+//!
+//! [`rasi-mio`]: https://github.com/HalaOS/RASI/tree/main/crates/mio
 
 use bitmask_enum::bitmask;
 use futures::{future::poll_fn, AsyncRead, AsyncSeek, AsyncWrite, Stream};
@@ -159,6 +184,7 @@ pub mod windows {
     }
 }
 
+/// A filesystem driver must implement the `Driver-*` traits in this module.
 pub mod syscall {
     use super::*;
 
@@ -382,6 +408,7 @@ pub mod syscall {
     }
 }
 
+/// Entries returned by the [`ReadDir`] iterator.
 pub struct DirEntry(Box<dyn syscall::DriverDirEntry>);
 
 impl Deref for DirEntry {
@@ -404,6 +431,7 @@ impl DirEntry {
     }
 }
 
+/// Iterator over the entries in a directory.
 pub struct ReadDir(Box<dyn syscall::DriverReadDir>);
 
 impl Deref for ReadDir {
@@ -835,7 +863,12 @@ impl<'a> FileSystem<'a> {
 
 static FIFLE_SYSTEM_DRIVER: OnceLock<Box<dyn syscall::Driver>> = OnceLock::new();
 
-/// Get global register `FileSystemDriver` instance.
+/// Get the filesystem driver(Implementation) from the global context of this application.
+///
+/// # Panic
+///
+/// Before calling this function, [`get_fs_driver`] should be called to register an implementation.
+/// otherwise panics the current thread with message `Call register_network_driver first.`.
 pub fn get_fs_driver() -> &'static dyn syscall::Driver {
     FIFLE_SYSTEM_DRIVER
         .get()
@@ -843,7 +876,17 @@ pub fn get_fs_driver() -> &'static dyn syscall::Driver {
         .as_ref()
 }
 
-/// Register provided [`FileSystemDriver`] as global network implementation.
+/// Inject a filesystem driver(Implementation) into the global context of this application.
+///
+/// # Examples
+/// ```no_run
+///
+/// fn main() {
+///   // The `register_mio_filesystem` function indirectly calls the `register_fs_driver` function.
+///   // rasi_mio::fs::register_mio_filesystem();
+/// }
+///
+/// ```
 ///
 /// # Panic
 ///

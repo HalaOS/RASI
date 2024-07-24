@@ -1,3 +1,5 @@
+//! Utilities to parse http packets from a stream of bytes.
+//!
 use std::io;
 
 use crate::read_buf::ReadBuf;
@@ -11,6 +13,7 @@ use http::{
     HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version,
 };
 
+/// Variants of parse http packets.
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error(transparent)]

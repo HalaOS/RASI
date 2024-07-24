@@ -1,3 +1,5 @@
+//! Future-based IPC manipulation operations.
+//!
 #[cfg(windows)]
 mod windows {
     use std::{
@@ -119,7 +121,11 @@ mod unix {
     }
 
     impl IpcListener {
-        /// Create new ipc server lsitener with custom [`syscall`](Network) and bind to `addr`
+        /// Create new ipc listener bound to `addr`.
+        ///
+        /// Unlike the [`bind`](Self::bind) function, this function
+        /// use a custom [`Driver`](crate::net::syscall::Driver) as
+        /// the second argument.
         pub async fn bind_with<A: AsRef<str>>(name: A, syscall: &dyn Driver) -> io::Result<Self> {
             let dir = temp_dir().join("inter_process");
 
@@ -140,7 +146,13 @@ mod unix {
             })
         }
 
-        /// Create new ipc server lsitener with global registered [`syscall`](Network) and bind to `addr`
+        /// Create a new ipc listener bound to `name`.
+        ///
+        /// # Panic
+        ///
+        /// This function get the driver(implementation) from global context of this application,
+        /// so [`register_network_driver`](crate::net::register_network_driver)(unix) or
+        /// [`register_fs_driver`](crate::fs::register_fs_driver)(windows) should be call first.
         pub async fn bind<A: AsRef<str>>(name: A) -> io::Result<Self> {
             Self::bind_with(name, get_network_driver()).await
         }
@@ -169,11 +181,16 @@ mod unix {
         }
     }
 
+    ///  A IPC stream between a local and a remote socket.
     #[derive(Clone)]
     pub struct IpcStream(UnixStream);
 
     impl IpcStream {
-        /// Create new client named pipe stream and connect to `addr`
+        /// Create a new client side IPC stream and connect to `name`.
+        ///
+        /// Unlike the [`connect`](Self::connect) function, this function
+        /// use a custom [`Driver`](crate::net::syscall::Driver) as
+        /// the second argument.
         pub async fn connect_with<A: AsRef<str>>(
             name: A,
             syscall: &dyn Driver,
@@ -186,7 +203,13 @@ mod unix {
                 .map(|stream| IpcStream(stream))
         }
 
-        /// Create new client named pipe stream and connect to `addr`
+        /// Create a new client side IPC stream and connect to `name`.
+        ///
+        /// # Panic
+        ///
+        /// This function get the driver(implementation) from global context of this application,
+        /// so [`register_network_driver`](crate::net::register_network_driver)(unix) or
+        /// [`register_fs_driver`](crate::fs::register_fs_driver)(windows) should be call first.
         pub async fn connect<A: AsRef<str>>(name: A) -> io::Result<Self> {
             Self::connect_with(name, get_network_driver()).await
         }

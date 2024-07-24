@@ -156,7 +156,7 @@ impl Drop for Sqlite3Tx {
     }
 }
 
-impl DriverTx for Sqlite3Tx {
+impl syscall::DriverTx for Sqlite3Tx {
     fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> Poll<Result<()>> {
         Poll::Ready(Ok(()))
     }
@@ -193,7 +193,7 @@ struct Sqlite3Prepare {
     stmt: Arc<RawStmt>,
 }
 
-impl DriverPrepare for Sqlite3Prepare {
+impl syscall::DriverPrepare for Sqlite3Prepare {
     fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> Poll<Result<()>> {
         Poll::Ready(Ok(()))
     }
@@ -330,7 +330,7 @@ impl Sqlite3Prepare {
 
 struct Sqlite3Update(i64, i64);
 
-impl DriverUpdate for Sqlite3Update {
+impl syscall::DriverUpdate for Sqlite3Update {
     fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> Poll<Result<(i64, i64)>> {
         Poll::Ready(Ok((self.0, self.1)))
     }
@@ -341,7 +341,7 @@ struct Sqlite3Query {
     stmt: Arc<RawStmt>,
 }
 
-impl DriverQuery for Sqlite3Query {
+impl syscall::DriverQuery for Sqlite3Query {
     fn poll_next(&self, _cx: &mut std::task::Context<'_>) -> Poll<Result<Option<Row>>> {
         unsafe {
             match ffi::sqlite3_step(self.stmt.0) {
@@ -361,7 +361,7 @@ impl DriverQuery for Sqlite3Query {
     }
 }
 
-impl DriverTableMetadata for Sqlite3Query {
+impl syscall::DriverTableMetadata for Sqlite3Query {
     fn cols(&self) -> Result<usize> {
         let count = unsafe { ffi::sqlite3_column_count(self.stmt.0) };
 
@@ -391,7 +391,7 @@ struct Sqlite3Row {
     stmt: Arc<RawStmt>,
 }
 
-impl DriverRow for Sqlite3Row {
+impl syscall::DriverRow for Sqlite3Row {
     fn get(&self, index: usize, sql_type: &SqlType) -> Result<SqlValue<'static>> {
         let col = index as i32;
 
