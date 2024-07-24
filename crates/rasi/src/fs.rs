@@ -165,10 +165,14 @@ pub mod syscall {
     #[cfg(windows)]
     pub mod windows {
 
+        use super::*;
         pub trait FSDNamedPipeListener: Sync + Send {
             fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
-            fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Result<NamedPipeStream>>;
+            fn poll_next(
+                &self,
+                cx: &mut Context<'_>,
+            ) -> Poll<Result<crate::fs::windows::NamedPipeStream>>;
         }
 
         pub trait FSDNamedPipeStream: Sync + Send {
@@ -285,7 +289,7 @@ pub mod syscall {
         fn named_pipe_client_open(
             &self,
             addr: &std::ffi::OsStr,
-        ) -> Result<windows::NamedPipeStream>;
+        ) -> Result<crate::fs::windows::NamedPipeStream>;
 
         #[cfg(any(windows))]
         /// Creates the named pipe identified by `addr` for use as a server.
@@ -294,7 +298,7 @@ pub mod syscall {
         fn named_pipe_server_create(
             &self,
             addr: &std::ffi::OsStr,
-        ) -> Result<windows::NamedPipeListener>;
+        ) -> Result<crate::fs::windows::NamedPipeListener>;
     }
 
     pub trait DriverDirEntry: Sync + Send {

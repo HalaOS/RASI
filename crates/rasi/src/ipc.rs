@@ -11,8 +11,8 @@ mod windows {
 
     use crate::fs::{
         get_fs_driver,
+        syscall::Driver,
         windows::{NamedPipeListener, NamedPipeStream},
-        FileSystemDriver,
     };
 
     /// Interprocess communication server socket.
@@ -22,10 +22,7 @@ mod windows {
 
     impl IpcListener {
         /// Create new ipc server lsitener with custom [`syscall`](NamedPipe) and bind to `addr`
-        pub async fn bind_with<A: AsRef<str>>(
-            name: A,
-            driver: &dyn FileSystemDriver,
-        ) -> io::Result<Self> {
+        pub async fn bind_with<A: AsRef<str>>(name: A, driver: &dyn Driver) -> io::Result<Self> {
             let addr = format!(r"\\.\pipe\{}", name.as_ref());
 
             let listener = driver.named_pipe_server_create(OsString::from(&addr).as_ref())?;
@@ -63,10 +60,7 @@ mod windows {
 
     impl IpcStream {
         /// Create new client named pipe stream and connect to `addr`
-        pub async fn connect_with<A: AsRef<str>>(
-            name: A,
-            driver: &dyn FileSystemDriver,
-        ) -> io::Result<Self> {
+        pub async fn connect_with<A: AsRef<str>>(name: A, driver: &dyn Driver) -> io::Result<Self> {
             let addr = format!(r"\\.\pipe\{}", name.as_ref());
 
             let stream =
