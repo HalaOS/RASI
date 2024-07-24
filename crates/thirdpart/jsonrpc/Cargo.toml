@@ -25,4 +25,5 @@ rasi-mio = { workspace = true }
 futures = { workspace = true, features = ["executor", "thread-pool"] }
 
 [features]
+default = ["with_rasi"]
 with_rasi = ["rasi", "futures-http/json", "futures-http/with_rasi"]
