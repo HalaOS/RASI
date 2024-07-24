@@ -457,7 +457,7 @@ impl rasi::fs::syscall::DriverFile for MioFile {
 
 struct MioReadDir(Mutex<std::fs::ReadDir>);
 
-impl rasi::fs::FSDReadDir for MioReadDir {
+impl rasi::fs::syscall::DriverReadDir for MioReadDir {
     fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> Poll<std::io::Result<()>> {
         Poll::Ready(Ok(()))
     }

@@ -28,7 +28,7 @@ unsafe fn db_error(db: *mut ffi::sqlite3) -> Error {
     )
 }
 
-impl Driver for Sqlite3Driver {
+impl syscall::Driver for Sqlite3Driver {
     fn create_connection(
         &self,
         driver_name: &str,
@@ -116,7 +116,7 @@ fn prepare(conn: Arc<RawConn>, sql: &CStr) -> Result<Prepare> {
     .into())
 }
 
-impl DriverConn for Sqlite3Conn {
+impl syscall::DriverConn for Sqlite3Conn {
     fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
         Poll::Ready(Ok(()))
     }

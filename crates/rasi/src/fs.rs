@@ -1,9 +1,9 @@
 //! Future-based filesystem manipulation operations.
 //!
-//! This module provides traits and structues to abstract syscall that manipulate the file system.
-//! Extra windows-specific named-pipe functionality can be found in the submodule `rasi::fs::windows`.
-//!
-//!
+//! This module contains basic methods to manipulate the contents of the local filesystem.
+//! All methods in this module represent cross-platform filesystem operations.
+//! Extra platform-specific functionality can be found in the extension traits of
+//! rasi::fs::$platform.
 
 use bitmask_enum::bitmask;
 use futures::{future::poll_fn, AsyncRead, AsyncSeek, AsyncWrite, Stream};
@@ -369,6 +369,13 @@ pub mod syscall {
         ///
         fn poll_set_len(&self, cx: &mut Context<'_>, size: u64) -> Poll<Result<()>>;
     }
+
+    pub trait DriverReadDir: Sync + Send {
+        /// Get asynchronously opened event.
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+
+        fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Option<Result<DirEntry>>>;
+    }
 }
 
 pub struct DirEntry(Box<dyn syscall::DriverDirEntry>);
@@ -393,23 +400,16 @@ impl DirEntry {
     }
 }
 
-pub trait FSDReadDir: Sync + Send {
-    /// Get asynchronously opened event.
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-
-    fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Option<Result<DirEntry>>>;
-}
-
-pub struct ReadDir(Box<dyn FSDReadDir>);
+pub struct ReadDir(Box<dyn syscall::DriverReadDir>);
 
 impl Deref for ReadDir {
-    type Target = dyn FSDReadDir;
+    type Target = dyn syscall::DriverReadDir;
     fn deref(&self) -> &Self::Target {
         &*self.0
     }
 }
 
-impl<F: FSDReadDir + 'static> From<F> for ReadDir {
+impl<F: syscall::DriverReadDir + 'static> From<F> for ReadDir {
     fn from(value: F) -> Self {
         Self(Box::new(value))
     }
@@ -417,7 +417,7 @@ impl<F: FSDReadDir + 'static> From<F> for ReadDir {
 
 impl ReadDir {
     /// Returns internal `FSDReadDir` object.
-    pub fn as_raw_ptr(&self) -> &dyn FSDReadDir {
+    pub fn as_raw_ptr(&self) -> &dyn syscall::DriverReadDir {
         &*self.0
     }
 

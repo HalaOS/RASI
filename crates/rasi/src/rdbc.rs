@@ -43,49 +43,60 @@ pub enum SqlParameter<'a> {
     Offset(SqlValue<'a>),
 }
 
-///  Represents database driver that can be shared between threads, and can therefore implement a connection pool
-pub trait Driver: Send + Sync {
-    /// Create a new database connection instance with `source_name`.
-    ///
-    /// When the object returns, the database connection may not actually be established.
-    /// The user needs to manually call the [`is_ready`](Connection::is_ready) method to check the status of the connection
-    fn create_connection(&self, driver_name: &str, source_name: &str) -> Result<Connection>;
-}
+pub mod syscall {
+    use super::*;
+    ///  Represents database driver that can be shared between threads, and can therefore implement a connection pool
+    pub trait Driver: Send + Sync {
+        /// Create a new database connection instance with `source_name`.
+        ///
+        /// When the object returns, the database connection may not actually be established.
+        /// The user needs to manually call the [`is_ready`](Connection::is_ready) method to check the status of the connection
+        fn create_connection(&self, driver_name: &str, source_name: &str) -> Result<Connection>;
+    }
 
-/// Represents a database connection created by [`create_connection`](Driver::create_connection) function.
-pub trait DriverConn: Send + Sync {
-    /// Try establish a real connection to the database.
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+    /// Represents a database connection created by [`create_connection`](Driver::create_connection) function.
+    pub trait DriverConn: Send + Sync {
+        /// Try establish a real connection to the database.
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
-    /// Starts a transaction via one connection. The default isolation level is dependent on the driver.
-    ///
-    /// When the transaction object is returned, the database transaction may not actually be ready.
-    /// The user needs to manually call the [`is_ready`](DriverTx::is_ready) method to check the status of the transaction.
-    fn begin(&self) -> Result<Transaction>;
+        /// Starts a transaction via one connection. The default isolation level is dependent on the driver.
+        ///
+        /// When the transaction object is returned, the database transaction may not actually be ready.
+        /// The user needs to manually call the [`is_ready`](DriverTx::is_ready) method to check the status of the transaction.
+        fn begin(&self) -> Result<Transaction>;
 
-    /// Create a prepared statement for execution via the connection.
-    fn prepare(&self, query: &str) -> Result<Prepare>;
+        /// Create a prepared statement for execution via the connection.
+        fn prepare(&self, query: &str) -> Result<Prepare>;
 
-    /// Execute a query that is expected to update some rows.
-    fn exec(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Update>;
+        /// Execute a query that is expected to update some rows.
+        fn exec(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Update>;
 
-    /// Execute a query that is expected to return a result set, such as a SELECT statement
-    fn query(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Query>;
-}
+        /// Execute a query that is expected to return a result set, such as a SELECT statement
+        fn query(&self, query: &str, params: &[SqlParameter<'_>]) -> Result<Query>;
+    }
 
-/// Trait for implementing database connection pooling strategy.
-pub trait ConnectionPool: Send + Sync {
-    /// Get an idle connection by `source_name` from this pool.
-    fn get_connection(&self, driver_name: &str, source_name: &str) -> Result<Option<Connection>>;
+    /// Trait for implementing database connection pooling strategy.
+    pub trait ConnectionPool: Send + Sync {
+        /// Get an idle connection by `source_name` from this pool.
+        fn get_connection(
+            &self,
+            driver_name: &str,
+            source_name: &str,
+        ) -> Result<Option<Connection>>;
 
-    /// Put one idle connection into this pool
-    fn idle_connection(&self, driver_name: &str, driver_conn: Box<dyn DriverConn>) -> Result<()>;
+        /// Put one idle connection into this pool
+        fn idle_connection(
+            &self,
+            driver_name: &str,
+            driver_conn: Box<dyn DriverConn>,
+        ) -> Result<()>;
+    }
 }
 
 /// The connection object that represents a rdbc database connection object.
-pub struct Connection(String, Option<Box<dyn DriverConn>>);
+pub struct Connection(String, Option<Box<dyn syscall::DriverConn>>);
 
-impl<T: DriverConn + 'static> From<(String, T)> for Connection {
+impl<T: syscall::DriverConn + 'static> From<(String, T)> for Connection {
     fn from(value: (String, T)) -> Self {
         Self(value.0, Some(Box::new(value.1)))
     }
@@ -107,7 +118,7 @@ impl Drop for Connection {
 
 impl Connection {
     /// Get inner [`DriverConn`] reference.
-    pub fn as_driver_conn(&self) -> &dyn DriverConn {
+    pub fn as_driver_conn(&self) -> &dyn syscall::DriverConn {
         &*self.1.as_deref().unwrap()
     }
 
@@ -540,18 +551,18 @@ impl Transaction {
 
 #[derive(Default)]
 struct GlobalRegister {
-    drivers: RwLock<HashMap<String, Arc<Box<dyn Driver>>>>,
+    drivers: RwLock<HashMap<String, Arc<Box<dyn syscall::Driver>>>>,
 }
 
 static REGISTER: OnceLock<GlobalRegister> = OnceLock::new();
-static CONN_POOL: OnceLock<Box<dyn ConnectionPool>> = OnceLock::new();
+static CONN_POOL: OnceLock<Box<dyn syscall::ConnectionPool>> = OnceLock::new();
 
 fn get_register() -> &'static GlobalRegister {
     REGISTER.get_or_init(|| Default::default())
 }
 
 /// Register a database connection  pool implemention.
-pub fn register_pool_strategy<P: ConnectionPool + 'static>(conn_pool: P) {
+pub fn register_pool_strategy<P: syscall::ConnectionPool + 'static>(conn_pool: P) {
     if CONN_POOL.set(Box::new(conn_pool)).is_err() {
         panic!("Call register_pool_strategy more than once.")
     }
@@ -609,7 +620,7 @@ pub async fn open<D: AsRef<str>, S: AsRef<str>>(
 /// Register new database driver.
 ///
 /// Cause a panic, if register same driver name twice.
-pub fn register_rdbc_driver<N: AsRef<str>, D: Driver + 'static>(
+pub fn register_rdbc_driver<N: AsRef<str>, D: syscall::Driver + 'static>(
     driver_name: N,
     database: D,
 ) -> Result<()> {
