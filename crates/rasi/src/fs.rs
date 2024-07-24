@@ -1,3 +1,10 @@
+//! Future-based filesystem manipulation operations.
+//!
+//! This module provides traits and structues to abstract syscall that manipulate the file system.
+//! Extra windows-specific named-pipe functionality can be found in the submodule `rasi::fs::windows`.
+//!
+//!
+
 use bitmask_enum::bitmask;
 use futures::{future::poll_fn, AsyncRead, AsyncSeek, AsyncWrite, Stream};
 use std::{
@@ -47,29 +54,23 @@ pub enum FileOpenMode {
     Truncate,
 }
 
-#[cfg(any(windows, docrs))]
+#[cfg(windows)]
 pub mod windows {
 
     use std::io::ErrorKind;
 
     use super::*;
 
-    pub trait FSDNamedPipeListener: Sync + Send {
-        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-
-        fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Result<NamedPipeStream>>;
-    }
-
-    pub struct NamedPipeListener(Box<dyn FSDNamedPipeListener>);
+    pub struct NamedPipeListener(Box<dyn syscall::windows::FSDNamedPipeListener>);
 
     impl Deref for NamedPipeListener {
-        type Target = dyn FSDNamedPipeListener;
+        type Target = dyn syscall::windows::FSDNamedPipeListener;
         fn deref(&self) -> &Self::Target {
             &*self.0
         }
     }
 
-    impl<F: FSDNamedPipeListener + 'static> From<F> for NamedPipeListener {
+    impl<F: syscall::windows::FSDNamedPipeListener + 'static> From<F> for NamedPipeListener {
         fn from(value: F) -> Self {
             Self(Box::new(value))
         }
@@ -77,7 +78,7 @@ pub mod windows {
 
     impl NamedPipeListener {
         /// Returns internal `FSDNamedPipeListener` object.
-        pub fn as_raw_ptr(&self) -> &dyn FSDNamedPipeListener {
+        pub fn as_raw_ptr(&self) -> &dyn syscall::windows::FSDNamedPipeListener {
             &*self.0
         }
 
@@ -107,28 +108,16 @@ pub mod windows {
         }
     }
 
-    pub trait FSDNamedPipeStream: Sync + Send {
-        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-
-        /// Write a buffer into this writer, returning how many bytes were written
-        fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
-
-        /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
-        fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
-
-        fn poll_close(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-    }
-
-    pub struct NamedPipeStream(Arc<Box<dyn FSDNamedPipeStream>>);
+    pub struct NamedPipeStream(Arc<Box<dyn syscall::windows::FSDNamedPipeStream>>);
 
     impl Deref for NamedPipeStream {
-        type Target = dyn FSDNamedPipeStream;
+        type Target = dyn syscall::windows::FSDNamedPipeStream;
         fn deref(&self) -> &Self::Target {
             &**self.0
         }
     }
 
-    impl<F: FSDNamedPipeStream + 'static> From<F> for NamedPipeStream {
+    impl<F: syscall::windows::FSDNamedPipeStream + 'static> From<F> for NamedPipeStream {
         fn from(value: F) -> Self {
             Self(Arc::new(Box::new(value)))
         }
@@ -136,7 +125,7 @@ pub mod windows {
 
     impl NamedPipeStream {
         /// Returns internal `FSDNamedPipeStream` object.
-        pub fn as_raw_ptr(&self) -> &dyn FSDNamedPipeStream {
+        pub fn as_raw_ptr(&self) -> &dyn syscall::windows::FSDNamedPipeStream {
             &**self.0
         }
     }
@@ -170,141 +159,228 @@ pub mod windows {
     }
 }
 
-/// A driver is the main entry to access asynchronously filesystem functions
-pub trait FileSystemDriver: Sync + Send {
-    /// Open new file with provided `mode`.
-    fn open_file(&self, path: &Path, mode: FileOpenMode) -> Result<File>;
+pub mod syscall {
+    use super::*;
 
-    /// Returns the canonical form of a path.
-    /// The returned path is in absolute form with all intermediate components
-    /// normalized and symbolic links resolved.
-    /// This function is an async version of [`std::fs::canonicalize`].
-    fn canonicalize(&self, path: &Path) -> Result<PathBuf>;
+    #[cfg(windows)]
+    pub mod windows {
 
-    /// Copies the contents and permissions of a file to a new location.
-    /// On success, the total number of bytes copied is returned and equals
-    /// the length of the to file after this operation.
-    /// The old contents of to will be overwritten. If from and to both point
-    /// to the same file, then the file will likely get truncated as a result of this operation.
-    fn poll_copy(&self, cx: &mut Context<'_>, from: &Path, to: &Path) -> Poll<Result<u64>>;
+        pub trait FSDNamedPipeListener: Sync + Send {
+            fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
-    /// Creates a new directory.
-    /// Note that this function will only create the final directory in path.
-    /// If you want to create all of its missing parent directories too, use
-    /// the [`create_dir_all`](FileSystem::create_dir_all) function instead.
-    ///
-    /// This function is an async version of [`std::fs::create_dir`].
-    fn poll_create_dir(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+            fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Result<NamedPipeStream>>;
+        }
 
-    /// Creates a new directory and all of its parents if they are missing.
-    /// This function is an async version of [`std::fs::create_dir_all`].
-    fn poll_create_dir_all(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+        pub trait FSDNamedPipeStream: Sync + Send {
+            fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
-    /// Creates a hard link on the filesystem.
-    /// The dst path will be a link pointing to the src path. Note that operating
-    /// systems often require these two paths to be located on the same filesystem.
-    ///
-    /// This function is an async version of [`std::fs::hard_link`].
-    fn poll_hard_link(&self, cx: &mut Context<'_>, from: &Path, to: &Path) -> Poll<Result<()>>;
+            /// Write a buffer into this writer, returning how many bytes were written
+            fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
 
-    /// Reads metadata for a path.
-    /// This function will traverse symbolic links to read metadata for the target
-    /// file or directory. If you want to read metadata without following symbolic
-    /// links, use symlink_metadata instead.
-    ///
-    /// This function is an async version of [`std::fs::metadata`].
-    fn poll_metadata(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<Metadata>>;
+            /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
+            fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
 
-    /// Reads a symbolic link and returns the path it points to.
-    ///
-    /// This function is an async version of [`std::fs::read_link`].
-    fn poll_read_link(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<PathBuf>>;
+            fn poll_close(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+        }
+    }
 
-    /// Removes an empty directory,
-    /// if the `path` is not an empty directory, use the function
-    /// [`remove_dir_all`](FileSystem::remove_dir_all) instead.
-    ///
-    /// This function is an async version of std::fs::remove_dir.
-    fn poll_remove_dir(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+    /// A driver is the main entry to access asynchronously filesystem functions
+    pub trait Driver: Sync + Send {
+        /// Open new file with provided `mode`.
+        fn open_file(&self, path: &Path, mode: FileOpenMode) -> Result<File>;
 
-    /// Removes a directory and all of its contents.
-    ///
-    /// This function is an async version of [`std::fs::remove_dir_all`].
-    fn poll_remove_dir_all(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+        /// Returns the canonical form of a path.
+        /// The returned path is in absolute form with all intermediate components
+        /// normalized and symbolic links resolved.
+        /// This function is an async version of [`std::fs::canonicalize`].
+        fn canonicalize(&self, path: &Path) -> Result<PathBuf>;
 
-    /// Removes a file.
-    /// This function is an async version of [`std::fs::remove_file`].
-    fn poll_remove_file(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+        /// Copies the contents and permissions of a file to a new location.
+        /// On success, the total number of bytes copied is returned and equals
+        /// the length of the to file after this operation.
+        /// The old contents of to will be overwritten. If from and to both point
+        /// to the same file, then the file will likely get truncated as a result of this operation.
+        fn poll_copy(&self, cx: &mut Context<'_>, from: &Path, to: &Path) -> Poll<Result<u64>>;
 
-    /// Renames a file or directory to a new location.
-    /// If a file or directory already exists at the target location, it will be overwritten by this operation.
-    /// This function is an async version of std::fs::rename.
-    fn poll_rename(&self, cx: &mut Context<'_>, from: &Path, to: &Path) -> Poll<Result<()>>;
+        /// Creates a new directory.
+        /// Note that this function will only create the final directory in path.
+        /// If you want to create all of its missing parent directories too, use
+        /// the [`create_dir_all`](FileSystem::create_dir_all) function instead.
+        ///
+        /// This function is an async version of [`std::fs::create_dir`].
+        fn poll_create_dir(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
 
-    /// Changes the permissions of a file or directory.
-    /// This function is an async version of [`std::fs::set_permissions`].
-    fn poll_set_permissions(
-        &self,
-        cx: &mut Context<'_>,
-        path: &Path,
-        perm: &Permissions,
-    ) -> Poll<Result<()>>;
+        /// Creates a new directory and all of its parents if they are missing.
+        /// This function is an async version of [`std::fs::create_dir_all`].
+        fn poll_create_dir_all(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
 
-    /// Reads metadata for a path without following symbolic links.
-    /// If you want to follow symbolic links before reading metadata of the target file or directory,
-    /// use [`metadata`](FileSystem::metadata) instead.
-    ///
-    /// This function is an async version of [`std::fs::symlink_metadata`].
-    fn poll_symlink_metadata(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<Metadata>>;
+        /// Creates a hard link on the filesystem.
+        /// The dst path will be a link pointing to the src path. Note that operating
+        /// systems often require these two paths to be located on the same filesystem.
+        ///
+        /// This function is an async version of [`std::fs::hard_link`].
+        fn poll_hard_link(&self, cx: &mut Context<'_>, from: &Path, to: &Path) -> Poll<Result<()>>;
 
-    /// Returns a iterator handle of entries in a directory.
-    ///
-    /// See [`dir_entry_next`](FileSystem::dir_entry_next) for more information about iteration.
-    fn read_dir(&self, path: &Path) -> Result<ReadDir>;
+        /// Reads metadata for a path.
+        /// This function will traverse symbolic links to read metadata for the target
+        /// file or directory. If you want to read metadata without following symbolic
+        /// links, use symlink_metadata instead.
+        ///
+        /// This function is an async version of [`std::fs::metadata`].
+        fn poll_metadata(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<Metadata>>;
 
-    #[cfg(any(windows))]
-    /// Opens the named pipe identified by `addr`.
-    fn named_pipe_client_open(&self, addr: &std::ffi::OsStr) -> Result<windows::NamedPipeStream>;
+        /// Reads a symbolic link and returns the path it points to.
+        ///
+        /// This function is an async version of [`std::fs::read_link`].
+        fn poll_read_link(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<PathBuf>>;
 
-    #[cfg(any(windows))]
-    /// Creates the named pipe identified by `addr` for use as a server.
-    ///
-    /// This uses the [`CreateNamedPipe`] function.
-    fn named_pipe_server_create(
-        &self,
-        addr: &std::ffi::OsStr,
-    ) -> Result<windows::NamedPipeListener>;
+        /// Removes an empty directory,
+        /// if the `path` is not an empty directory, use the function
+        /// [`remove_dir_all`](FileSystem::remove_dir_all) instead.
+        ///
+        /// This function is an async version of std::fs::remove_dir.
+        fn poll_remove_dir(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+
+        /// Removes a directory and all of its contents.
+        ///
+        /// This function is an async version of [`std::fs::remove_dir_all`].
+        fn poll_remove_dir_all(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+
+        /// Removes a file.
+        /// This function is an async version of [`std::fs::remove_file`].
+        fn poll_remove_file(&self, cx: &mut Context<'_>, path: &Path) -> Poll<Result<()>>;
+
+        /// Renames a file or directory to a new location.
+        /// If a file or directory already exists at the target location, it will be overwritten by this operation.
+        /// This function is an async version of std::fs::rename.
+        fn poll_rename(&self, cx: &mut Context<'_>, from: &Path, to: &Path) -> Poll<Result<()>>;
+
+        /// Changes the permissions of a file or directory.
+        /// This function is an async version of [`std::fs::set_permissions`].
+        fn poll_set_permissions(
+            &self,
+            cx: &mut Context<'_>,
+            path: &Path,
+            perm: &Permissions,
+        ) -> Poll<Result<()>>;
+
+        /// Reads metadata for a path without following symbolic links.
+        /// If you want to follow symbolic links before reading metadata of the target file or directory,
+        /// use [`metadata`](FileSystem::metadata) instead.
+        ///
+        /// This function is an async version of [`std::fs::symlink_metadata`].
+        fn poll_symlink_metadata(
+            &self,
+            cx: &mut Context<'_>,
+            path: &Path,
+        ) -> Poll<Result<Metadata>>;
+
+        /// Returns a iterator handle of entries in a directory.
+        ///
+        /// See [`dir_entry_next`](FileSystem::dir_entry_next) for more information about iteration.
+        fn read_dir(&self, path: &Path) -> Result<ReadDir>;
+
+        #[cfg(any(windows))]
+        /// Opens the named pipe identified by `addr`.
+        fn named_pipe_client_open(
+            &self,
+            addr: &std::ffi::OsStr,
+        ) -> Result<windows::NamedPipeStream>;
+
+        #[cfg(any(windows))]
+        /// Creates the named pipe identified by `addr` for use as a server.
+        ///
+        /// This uses the [`CreateNamedPipe`] function.
+        fn named_pipe_server_create(
+            &self,
+            addr: &std::ffi::OsStr,
+        ) -> Result<windows::NamedPipeListener>;
+    }
+
+    pub trait DriverDirEntry: Sync + Send {
+        /// Returns the bare name of this entry without the leading path.
+        fn name(&self) -> String;
+
+        /// Returns the full path to this entry.
+        /// The full path is created by joining the original path passed to [`read_dir`](FileSystemDriver::read_dir) with the name of this entry.
+        fn path(&self) -> PathBuf;
+
+        /// Reads the metadata for this entry.
+        ///
+        /// This function will traverse symbolic links to read the metadata.
+        fn meta(&self) -> Result<Metadata>;
+
+        /// eads the file type for this entry.
+        /// This function will not traverse symbolic links if this entry points at one.
+        /// If you want to read metadata with following symbolic links, use [`meta`](FSDDirEntry::meta) instead.
+        fn file_type(&self) -> Result<FileType>;
+    }
+
+    /// Driver-specific `File` object.
+    pub trait DriverFile: Sync + Send {
+        /// Poll if the file object is actually opened.
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+
+        /// Write a buffer into this writer, returning how many bytes were written
+        fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
+
+        /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
+        fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
+
+        /// Attempts to sync all OS-internal metadata to disk.
+        ///
+        /// This function will attempt to ensure that all in-memory data reaches the filesystem before returning.
+        ///
+        /// This can be used to handle errors that would otherwise only be caught when the File is closed.
+        /// Dropping a file will ignore errors in synchronizing this in-memory data.
+        fn poll_flush(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+
+        /// Seek to an offset, in bytes, in a stream.
+        ///
+        /// A seek beyond the end of a stream is allowed, but behavior is defined by the implementation.
+        ///
+        /// If the seek operation completed successfully, this method returns the new position from the
+        /// start of the stream. That position can be used later with [`SeekFrom::Start`].
+        ///
+        /// # Errors
+        /// Seeking can fail, for example because it might involve flushing a buffer.
+        ///
+        /// Seeking to a negative offset is considered an error.
+        fn poll_seek(&self, cx: &mut Context<'_>, pos: SeekFrom) -> Poll<Result<u64>>;
+
+        ///  Reads the file's metadata.
+        fn poll_meta(&self, cx: &mut Context<'_>) -> Poll<Result<Metadata>>;
+
+        /// Changes the permissions on the file.
+        fn poll_set_permissions(
+            &self,
+            cx: &mut Context<'_>,
+            perm: &Permissions,
+        ) -> Poll<Result<()>>;
+
+        /// Truncates or extends the file.
+        ///
+        /// If `size` is less than the current file size, then the file will be truncated. If it is
+        /// greater than the current file size, then the file will be extended to `size` and have all
+        /// intermediate data filled with zeros.
+        ///
+        /// The file's cursor stays at the same position, even if the cursor ends up being past the end
+        /// of the file after this operation.
+        ///
+        fn poll_set_len(&self, cx: &mut Context<'_>, size: u64) -> Poll<Result<()>>;
+    }
 }
 
-pub trait FSDDirEntry: Sync + Send {
-    /// Returns the bare name of this entry without the leading path.
-    fn name(&self) -> String;
-
-    /// Returns the full path to this entry.
-    /// The full path is created by joining the original path passed to [`read_dir`](FileSystemDriver::read_dir) with the name of this entry.
-    fn path(&self) -> PathBuf;
-
-    /// Reads the metadata for this entry.
-    ///
-    /// This function will traverse symbolic links to read the metadata.
-    fn meta(&self) -> Result<Metadata>;
-
-    /// eads the file type for this entry.
-    /// This function will not traverse symbolic links if this entry points at one.
-    /// If you want to read metadata with following symbolic links, use [`meta`](FSDDirEntry::meta) instead.
-    fn file_type(&self) -> Result<FileType>;
-}
-
-pub struct DirEntry(Box<dyn FSDDirEntry>);
+pub struct DirEntry(Box<dyn syscall::DriverDirEntry>);
 
 impl Deref for DirEntry {
-    type Target = dyn FSDDirEntry;
+    type Target = dyn syscall::DriverDirEntry;
     fn deref(&self) -> &Self::Target {
         &*self.0
     }
 }
 
-impl<F: FSDDirEntry + 'static> From<F> for DirEntry {
+impl<F: syscall::DriverDirEntry + 'static> From<F> for DirEntry {
     fn from(value: F) -> Self {
         Self(Box::new(value))
     }
@@ -312,7 +388,7 @@ impl<F: FSDDirEntry + 'static> From<F> for DirEntry {
 
 impl DirEntry {
     /// Returns internal `FSDDirEntry` object.
-    pub fn as_raw_ptr(&self) -> &dyn FSDDirEntry {
+    pub fn as_raw_ptr(&self) -> &dyn syscall::DriverDirEntry {
         &*self.0
     }
 }
@@ -349,7 +425,7 @@ impl ReadDir {
         Self::new_with(path, get_fs_driver()).await
     }
 
-    pub async fn new_with<P: AsRef<Path>>(path: P, driver: &dyn FileSystemDriver) -> Result<Self> {
+    pub async fn new_with<P: AsRef<Path>>(path: P, driver: &dyn syscall::Driver) -> Result<Self> {
         let readdir = driver.read_dir(path.as_ref())?;
 
         poll_fn(|cx| readdir.as_raw_ptr().poll_ready(cx))
@@ -365,56 +441,6 @@ impl Stream for ReadDir {
     }
 }
 
-/// Driver-specific `File` object.
-pub trait FSDFile: Sync + Send {
-    /// Poll if the file object is actually opened.
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-
-    /// Write a buffer into this writer, returning how many bytes were written
-    fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
-
-    /// Pull some bytes from this source into the specified buffer, returning how many bytes were read.
-    fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
-
-    /// Attempts to sync all OS-internal metadata to disk.
-    ///
-    /// This function will attempt to ensure that all in-memory data reaches the filesystem before returning.
-    ///
-    /// This can be used to handle errors that would otherwise only be caught when the File is closed.
-    /// Dropping a file will ignore errors in synchronizing this in-memory data.
-    fn poll_flush(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-
-    /// Seek to an offset, in bytes, in a stream.
-    ///
-    /// A seek beyond the end of a stream is allowed, but behavior is defined by the implementation.
-    ///
-    /// If the seek operation completed successfully, this method returns the new position from the
-    /// start of the stream. That position can be used later with [`SeekFrom::Start`].
-    ///
-    /// # Errors
-    /// Seeking can fail, for example because it might involve flushing a buffer.
-    ///
-    /// Seeking to a negative offset is considered an error.
-    fn poll_seek(&self, cx: &mut Context<'_>, pos: SeekFrom) -> Poll<Result<u64>>;
-
-    ///  Reads the file's metadata.
-    fn poll_meta(&self, cx: &mut Context<'_>) -> Poll<Result<Metadata>>;
-
-    /// Changes the permissions on the file.
-    fn poll_set_permissions(&self, cx: &mut Context<'_>, perm: &Permissions) -> Poll<Result<()>>;
-
-    /// Truncates or extends the file.
-    ///
-    /// If `size` is less than the current file size, then the file will be truncated. If it is
-    /// greater than the current file size, then the file will be extended to `size` and have all
-    /// intermediate data filled with zeros.
-    ///
-    /// The file's cursor stays at the same position, even if the cursor ends up being past the end
-    /// of the file after this operation.
-    ///
-    fn poll_set_len(&self, cx: &mut Context<'_>, size: u64) -> Poll<Result<()>>;
-}
-
 /// An open file on the filesystem.
 ///
 /// Depending on what options the file was opened with, this type can be used for reading and/or writing.
@@ -422,16 +448,16 @@ pub trait FSDFile: Sync + Send {
 /// Use the sync_all method before dropping a file if such errors need to be handled.
 ///
 /// This type is an async version of std::fs::File.
-pub struct File(Arc<Box<dyn FSDFile>>);
+pub struct File(Arc<Box<dyn syscall::DriverFile>>);
 
 impl Deref for File {
-    type Target = dyn FSDFile;
+    type Target = dyn syscall::DriverFile;
     fn deref(&self) -> &Self::Target {
         &**self.0
     }
 }
 
-impl<F: FSDFile + 'static> From<F> for File {
+impl<F: syscall::DriverFile + 'static> From<F> for File {
     fn from(value: F) -> Self {
         Self(Arc::new(Box::new(value)))
     }
@@ -439,7 +465,7 @@ impl<F: FSDFile + 'static> From<F> for File {
 
 impl File {
     /// Returns internal `FSDFile` object.
-    pub fn as_raw_ptr(&self) -> &dyn FSDFile {
+    pub fn as_raw_ptr(&self) -> &dyn syscall::DriverFile {
         &**self.0
     }
 
@@ -452,7 +478,7 @@ impl File {
     pub async fn open_with<P: AsRef<Path>>(
         path: P,
         mode: FileOpenMode,
-        driver: &dyn FileSystemDriver,
+        driver: &dyn syscall::Driver,
     ) -> Result<Self> {
         let file = driver.open_file(path.as_ref(), mode)?;
 
@@ -637,11 +663,11 @@ pub async fn is_dir<P: AsRef<Path>>(path: P) -> bool {
 }
 
 pub struct FileSystem<'a> {
-    driver: &'a dyn FileSystemDriver,
+    driver: &'a dyn syscall::Driver,
 }
 
-impl<'a> From<&'a dyn FileSystemDriver> for FileSystem<'a> {
-    fn from(value: &'a dyn FileSystemDriver) -> Self {
+impl<'a> From<&'a dyn syscall::Driver> for FileSystem<'a> {
+    fn from(value: &'a dyn syscall::Driver) -> Self {
         Self { driver: value }
     }
 }
@@ -803,10 +829,10 @@ impl<'a> FileSystem<'a> {
     }
 }
 
-static FIFLE_SYSTEM_DRIVER: OnceLock<Box<dyn FileSystemDriver>> = OnceLock::new();
+static FIFLE_SYSTEM_DRIVER: OnceLock<Box<dyn syscall::Driver>> = OnceLock::new();
 
 /// Get global register `FileSystemDriver` instance.
-pub fn get_fs_driver() -> &'static dyn FileSystemDriver {
+pub fn get_fs_driver() -> &'static dyn syscall::Driver {
     FIFLE_SYSTEM_DRIVER
         .get()
         .expect("Call register_network_driver first.")
@@ -818,7 +844,7 @@ pub fn get_fs_driver() -> &'static dyn FileSystemDriver {
 /// # Panic
 ///
 /// Multiple calls to this function are not permitted!!!
-pub fn register_fs_driver<E: FileSystemDriver + 'static>(driver: E) {
+pub fn register_fs_driver<E: syscall::Driver + 'static>(driver: E) {
     if FIFLE_SYSTEM_DRIVER.set(Box::new(driver)).is_err() {
         panic!("Multiple calls to register_network_driver are not permitted!!!");
     }

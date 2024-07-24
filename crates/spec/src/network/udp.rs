@@ -1,9 +1,9 @@
-use rasi::net::NetworkDriver;
+use rasi::net::syscall::Driver;
 use rasi::net::UdpSocket;
 
 use crate::async_spec;
 
-pub async fn test_udp_echo(syscall: &dyn NetworkDriver) {
+pub async fn test_udp_echo(syscall: &dyn Driver) {
     let client = UdpSocket::bind_with("127.0.0.1:0", syscall).await.unwrap();
     let server = UdpSocket::bind_with("127.0.0.1:0", syscall).await.unwrap();
 
@@ -29,6 +29,6 @@ pub async fn test_udp_echo(syscall: &dyn NetworkDriver) {
     assert_eq!(raddr, server.local_addr().unwrap());
 }
 
-pub async fn run_udp_spec(syscall: &dyn NetworkDriver) {
+pub async fn run_udp_spec(syscall: &dyn Driver) {
     async_spec!(test_udp_echo, syscall);
 }

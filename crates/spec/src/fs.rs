@@ -1,11 +1,11 @@
 use std::{env::temp_dir, io::SeekFrom};
 
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use rasi::fs::{self, FileOpenMode, FileSystemDriver};
+use rasi::fs::{self, syscall, FileOpenMode};
 
 use crate::async_spec;
 
-async fn test_fs(syscall: &dyn FileSystemDriver) {
+async fn test_fs(syscall: &dyn syscall::Driver) {
     let fs: fs::FileSystem = syscall.into();
 
     fs.canonicalize("./").await.unwrap();
@@ -99,7 +99,7 @@ async fn test_fs(syscall: &dyn FileSystemDriver) {
     fs.remove_dir_all(test_dir).await.unwrap();
 }
 
-pub async fn run_fs_spec(syscall: &dyn FileSystemDriver) {
+pub async fn run_fs_spec(syscall: &dyn syscall::Driver) {
     println!("Run filesystem spec testsuite");
     println!("");
 

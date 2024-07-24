@@ -7,20 +7,23 @@ use std::{
 
 use futures::{Future, FutureExt};
 
-pub trait TimerDriver: Sync + Send {
-    /// Create new `deadline` timer, returns [`None`] if the `deadline` instant is reached.
-    fn deadline(&self, deadline: Instant) -> Result<Option<DeadLine>>;
-}
+pub mod syscall {
+    use super::*;
+    pub trait Driver: Sync + Send {
+        /// Create new `deadline` timer, returns [`None`] if the `deadline` instant is reached.
+        fn deadline(&self, deadline: Instant) -> Result<Option<DeadLine>>;
+    }
 
-/// Driver-specific `DeadLine` object.
-pub trait TDDeadLine: Sync + Send {
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<()>;
+    /// Driver-specific `DeadLine` object.
+    pub trait DriverDeadLine: Sync + Send {
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<()>;
+    }
 }
 
 /// Future for deadline event.
-pub struct DeadLine(Box<dyn TDDeadLine>);
+pub struct DeadLine(Box<dyn syscall::DriverDeadLine>);
 
-impl<D: TDDeadLine + 'static> From<D> for DeadLine {
+impl<D: syscall::DriverDeadLine + 'static> From<D> for DeadLine {
     fn from(value: D) -> Self {
         Self(Box::new(value))
     }
@@ -28,7 +31,7 @@ impl<D: TDDeadLine + 'static> From<D> for DeadLine {
 
 impl DeadLine {
     /// Returns inner driver-specific implementation.
-    pub fn as_raw_ptr(&self) -> &dyn TDDeadLine {
+    pub fn as_raw_ptr(&self) -> &dyn syscall::DriverDeadLine {
         &*self.0
     }
 }
@@ -60,7 +63,7 @@ pub async fn sleep(duration: Duration) {
 ///
 /// You should call [`register_global_timer`](rasi_syscall::register_global_timer) first to register implementation,
 /// otherwise this function will cause a panic with `Call register_global_timer first`
-pub async fn sleep_with(duration: Duration, driver: &dyn TimerDriver) {
+pub async fn sleep_with(duration: Duration, driver: &dyn syscall::Driver) {
     if let Some(dead_line) = driver
         .deadline(Instant::now() + duration)
         .expect("Call register_global_timer first")
@@ -85,7 +88,7 @@ pub trait TimeoutExt: Future {
     fn timeout_with(
         self,
         duration: Duration,
-        driver: &dyn TimerDriver,
+        driver: &dyn syscall::Driver,
     ) -> impl Future<Output = Option<Self::Output>>
     where
         Self: Sized,
@@ -106,14 +109,14 @@ pub trait TimeoutExt: Future {
 
 impl<T> TimeoutExt for T where T: Future {}
 
-static GLOBAL_TIMER: OnceLock<Box<dyn TimerDriver>> = OnceLock::new();
+static GLOBAL_TIMER: OnceLock<Box<dyn syscall::Driver>> = OnceLock::new();
 
 /// Register provided [`Timer`] as global timer implementation.
 ///
 /// # Panic
 ///
 /// Multiple calls to this function are not permitted!!!
-pub fn register_timer_driver<T: TimerDriver + 'static>(timer: T) {
+pub fn register_timer_driver<T: syscall::Driver + 'static>(timer: T) {
     if GLOBAL_TIMER.set(Box::new(timer)).is_err() {
         panic!("Multiple calls to register_timer_driver are not permitted!!!");
     }
@@ -125,7 +128,7 @@ pub fn register_timer_driver<T: TimerDriver + 'static>(timer: T) {
 ///
 /// You should call [`register_timer_driver`] first to register implementation,
 /// otherwise this function will cause a panic with `Call register_timer_driver first`
-pub fn get_timer_driver() -> &'static dyn TimerDriver {
+pub fn get_timer_driver() -> &'static dyn syscall::Driver {
     GLOBAL_TIMER
         .get()
         .expect("Call register_global_timer first")

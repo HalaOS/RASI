@@ -11,7 +11,7 @@ use crate::utils::ready;
 
 pub struct MioFileSystemDriver;
 
-impl rasi::fs::FileSystemDriver for MioFileSystemDriver {
+impl rasi::fs::syscall::Driver for MioFileSystemDriver {
     fn open_file(
         &self,
         path: &std::path::Path,
@@ -398,7 +398,7 @@ mod windows {
 
 struct MioFile(std::fs::File);
 
-impl rasi::fs::FSDFile for MioFile {
+impl rasi::fs::syscall::DriverFile for MioFile {
     fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
         Poll::Ready(Ok(()))
     }
@@ -478,7 +478,7 @@ impl rasi::fs::FSDReadDir for MioReadDir {
 
 struct MioDirEntry(std::fs::DirEntry);
 
-impl rasi::fs::FSDDirEntry for MioDirEntry {
+impl rasi::fs::syscall::DriverDirEntry for MioDirEntry {
     fn name(&self) -> String {
         self.0.file_name().to_string_lossy().into_owned()
     }

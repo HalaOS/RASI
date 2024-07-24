@@ -21,7 +21,7 @@ impl MioDeadLine {
     }
 }
 
-impl rasi::timer::TDDeadLine for MioDeadLine {
+impl rasi::timer::syscall::DriverDeadLine for MioDeadLine {
     fn poll_ready(&self, cx: &mut std::task::Context<'_>) -> Poll<()> {
         match global_reactor().deadline(self.token, cx.waker().clone(), self.deadline) {
             Some(_) => Poll::Pending,
@@ -32,7 +32,7 @@ impl rasi::timer::TDDeadLine for MioDeadLine {
 
 struct MioTimerDriver;
 
-impl rasi::timer::TimerDriver for MioTimerDriver {
+impl rasi::timer::syscall::Driver for MioTimerDriver {
     fn deadline(&self, deadline: Instant) -> std::io::Result<Option<rasi::timer::DeadLine>> {
         Ok(Some(MioDeadLine::new(Token::next(), deadline)))
     }

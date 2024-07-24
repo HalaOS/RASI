@@ -9,50 +9,111 @@ use std::{
 
 use futures::{future::poll_fn, AsyncRead, AsyncWrite, Stream};
 
-/// A driver is the main entry to access asynchronously network functions.
-pub trait NetworkDriver: Send + Sync {
-    /// Create a new tcp listener socket with provided `laddrs`.
-    fn tcp_listen(&self, laddrs: &[SocketAddr]) -> Result<TcpListener>;
+pub mod syscall {
+    use super::*;
 
-    /// Create a new `TcpStream` and connect to `raddrs`.
-    ///  
-    /// When this function returns a [`TcpStream`] object the underlying
-    /// tcp connection may not be actually established, and the user
-    /// needs to manually call the poll_ready method to wait for the
-    /// connection to be established.
-    fn tcp_connect(&self, raddrs: &[SocketAddr]) -> Result<TcpStream>;
+    /// A driver is the main entry to access asynchronously network functions.
+    pub trait Driver: Send + Sync {
+        /// Create a new tcp listener socket with provided `laddrs`.
+        fn tcp_listen(&self, laddrs: &[SocketAddr]) -> Result<TcpListener>;
 
-    /// Create new `UdpSocket` which will be bound to the specified `laddrs`
-    fn udp_bind(&self, laddrs: &[SocketAddr]) -> Result<UdpSocket>;
+        /// Create a new `TcpStream` and connect to `raddrs`.
+        ///  
+        /// When this function returns a [`TcpStream`] object the underlying
+        /// tcp connection may not be actually established, and the user
+        /// needs to manually call the poll_ready method to wait for the
+        /// connection to be established.
+        fn tcp_connect(&self, raddrs: &[SocketAddr]) -> Result<TcpStream>;
 
-    #[cfg(unix)]
-    #[cfg_attr(docsrs, doc(cfg(unix)))]
-    fn unix_listen(&self, path: &std::path::Path) -> Result<unix::UnixListener>;
+        /// Create new `UdpSocket` which will be bound to the specified `laddrs`
+        fn udp_bind(&self, laddrs: &[SocketAddr]) -> Result<UdpSocket>;
 
-    #[cfg(unix)]
-    #[cfg_attr(docsrs, doc(cfg(unix)))]
-    fn unix_connect(&self, path: &std::path::Path) -> Result<unix::UnixStream>;
-}
+        #[cfg(unix)]
+        #[cfg_attr(docsrs, doc(cfg(unix)))]
+        fn unix_listen(&self, path: &std::path::Path) -> Result<unix::UnixListener>;
 
-/// Driver-specific `TcpListener` implementation must implement this trait.
-///
-/// When this trait object is dropping, the implementition must close the internal tcp listener socket.
-pub trait NDTcpListener: Sync + Send {
-    /// Returns the local socket address of this listener.
-    fn local_addr(&self) -> Result<SocketAddr>;
+        #[cfg(unix)]
+        #[cfg_attr(docsrs, doc(cfg(unix)))]
+        fn unix_connect(&self, path: &std::path::Path) -> Result<unix::UnixStream>;
+    }
 
-    /// Gets the value of the IP_TTL option for this socket.
-    /// For more information about this option, see [`set_ttl`](NDTcpListener::set_ttl).
-    fn ttl(&self) -> Result<u32>;
-
-    /// Sets the value for the IP_TTL option on this socket.
-    /// This value sets the time-to-live field that is used in every packet sent from this socket.
-    fn set_ttl(&self, ttl: u32) -> Result<()>;
-
-    /// Polls and accepts a new incoming connection to this listener.
+    /// Driver-specific `TcpListener` implementation must implement this trait.
     ///
-    /// When a connection is established, the corresponding stream and address will be returned.
-    fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Result<(TcpStream, SocketAddr)>>;
+    /// When this trait object is dropping, the implementition must close the internal tcp listener socket.
+    pub trait DriverTcpListener: Sync + Send {
+        /// Returns the local socket address of this listener.
+        fn local_addr(&self) -> Result<SocketAddr>;
+
+        /// Gets the value of the IP_TTL option for this socket.
+        /// For more information about this option, see [`set_ttl`](NDTcpListener::set_ttl).
+        fn ttl(&self) -> Result<u32>;
+
+        /// Sets the value for the IP_TTL option on this socket.
+        /// This value sets the time-to-live field that is used in every packet sent from this socket.
+        fn set_ttl(&self, ttl: u32) -> Result<()>;
+
+        /// Polls and accepts a new incoming connection to this listener.
+        ///
+        /// When a connection is established, the corresponding stream and address will be returned.
+        fn poll_next(&self, cx: &mut Context<'_>) -> Poll<Result<(TcpStream, SocketAddr)>>;
+    }
+
+    /// Driver-specific `TcpStream` implementation must implement this trait.
+    ///
+    /// When this trait object is dropping, the implementition must close the internal tcp listener socket.
+    pub trait DriverTcpStream: Sync + Send + Debug {
+        /// Returns the local address that this stream is connected from.
+        fn local_addr(&self) -> Result<SocketAddr>;
+
+        /// Returns the local address that this stream is connected to.
+        fn peer_addr(&self) -> Result<SocketAddr>;
+
+        /// Gets the value of the IP_TTL option for this socket.
+        /// For more information about this option, see [`set_ttl`](NDTcpListener::set_ttl).
+        fn ttl(&self) -> Result<u32>;
+
+        /// Sets the value for the IP_TTL option on this socket.
+        /// This value sets the time-to-live field that is used in every packet sent from this socket.
+        fn set_ttl(&self, ttl: u32) -> Result<()>;
+
+        /// Gets the value of the `TCP_NODELAY` option on this socket.
+        ///
+        /// For more information about this option, see [`set_nodelay`].
+        fn nodelay(&self) -> Result<bool>;
+
+        /// Sets the value of the `TCP_NODELAY` option on this socket.
+        ///
+        /// If set, this option disables the Nagle algorithm. This means that
+        /// segments are always sent as soon as possible, even if there is only a
+        /// small amount of data. When not set, data is buffered until there is a
+        /// sufficient amount to send out, thereby avoiding the frequent sending of
+        /// small packets.
+        fn set_nodelay(&self, nodelay: bool) -> Result<()>;
+
+        /// Shuts down the read, write, or both halves of this connection.
+        ///
+        /// This method will cause all pending and future I/O on the specified portions to return
+        /// immediately with an appropriate value (see the documentation of [`Shutdown`]).
+        ///
+        /// [`Shutdown`]: https://doc.rust-lang.org/std/net/enum.Shutdown.html
+        fn shutdown(&self, how: Shutdown) -> Result<()>;
+
+        /// poll and receives data from the socket.
+        ///
+        /// On success, returns the number of bytes read.
+        fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
+
+        /// Sends data on the socket to the remote address
+        ///
+        /// On success, returns the number of bytes written.
+        fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
+
+        /// Poll and wait underlying tcp connection established event.
+        ///
+        /// This function is no effect for server side socket created
+        /// by [`poll_next`](NTTcpListener::poll_next) function.
+        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+    }
 }
 
 /// A TCP socket server, listening for connections.
@@ -63,16 +124,16 @@ pub trait NDTcpListener: Sync + Send {
 /// The socket will be closed when the value is dropped.
 /// The Transmission Control Protocol is specified in IETF RFC 793.
 /// This type is an async version of std::net::TcpListener.
-pub struct TcpListener(Box<dyn NDTcpListener>);
+pub struct TcpListener(Box<dyn syscall::DriverTcpListener>);
 
-impl<T: NDTcpListener + 'static> From<T> for TcpListener {
+impl<T: syscall::DriverTcpListener + 'static> From<T> for TcpListener {
     fn from(value: T) -> Self {
         Self(Box::new(value))
     }
 }
 
 impl Deref for TcpListener {
-    type Target = dyn NDTcpListener;
+    type Target = dyn syscall::DriverTcpListener;
     fn deref(&self) -> &Self::Target {
         &*self.0
     }
@@ -80,7 +141,7 @@ impl Deref for TcpListener {
 
 impl TcpListener {
     /// Returns inner [`NetworkDriverTcpListener`] ptr.
-    pub fn as_raw_ptr(&self) -> &dyn NDTcpListener {
+    pub fn as_raw_ptr(&self) -> &dyn syscall::DriverTcpListener {
         &*self.0
     }
 
@@ -97,7 +158,7 @@ impl TcpListener {
     /// Use custom `NetworkDriver` to create new `TcpListener` which will be bound to the specified `laddrs`.
     pub async fn bind_with<L: ToSocketAddrs>(
         laddrs: L,
-        driver: &dyn NetworkDriver,
+        driver: &dyn syscall::Driver,
     ) -> Result<Self> {
         let laddrs = laddrs.to_socket_addrs()?.collect::<Vec<_>>();
         driver.tcp_listen(&laddrs)
@@ -122,63 +183,6 @@ impl Stream for TcpListener {
     }
 }
 
-/// Driver-specific `TcpStream` implementation must implement this trait.
-///
-/// When this trait object is dropping, the implementition must close the internal tcp listener socket.
-pub trait NDTcpStream: Sync + Send + Debug {
-    /// Returns the local address that this stream is connected from.
-    fn local_addr(&self) -> Result<SocketAddr>;
-
-    /// Returns the local address that this stream is connected to.
-    fn peer_addr(&self) -> Result<SocketAddr>;
-
-    /// Gets the value of the IP_TTL option for this socket.
-    /// For more information about this option, see [`set_ttl`](NDTcpListener::set_ttl).
-    fn ttl(&self) -> Result<u32>;
-
-    /// Sets the value for the IP_TTL option on this socket.
-    /// This value sets the time-to-live field that is used in every packet sent from this socket.
-    fn set_ttl(&self, ttl: u32) -> Result<()>;
-
-    /// Gets the value of the `TCP_NODELAY` option on this socket.
-    ///
-    /// For more information about this option, see [`set_nodelay`].
-    fn nodelay(&self) -> Result<bool>;
-
-    /// Sets the value of the `TCP_NODELAY` option on this socket.
-    ///
-    /// If set, this option disables the Nagle algorithm. This means that
-    /// segments are always sent as soon as possible, even if there is only a
-    /// small amount of data. When not set, data is buffered until there is a
-    /// sufficient amount to send out, thereby avoiding the frequent sending of
-    /// small packets.
-    fn set_nodelay(&self, nodelay: bool) -> Result<()>;
-
-    /// Shuts down the read, write, or both halves of this connection.
-    ///
-    /// This method will cause all pending and future I/O on the specified portions to return
-    /// immediately with an appropriate value (see the documentation of [`Shutdown`]).
-    ///
-    /// [`Shutdown`]: https://doc.rust-lang.org/std/net/enum.Shutdown.html
-    fn shutdown(&self, how: Shutdown) -> Result<()>;
-
-    /// poll and receives data from the socket.
-    ///
-    /// On success, returns the number of bytes read.
-    fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
-
-    /// Sends data on the socket to the remote address
-    ///
-    /// On success, returns the number of bytes written.
-    fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
-
-    /// Poll and wait underlying tcp connection established event.
-    ///
-    /// This function is no effect for server side socket created
-    /// by [`poll_next`](NTTcpListener::poll_next) function.
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-}
-
 /// A TCP stream between a local and a remote socket.
 ///
 /// A `TcpStream` can either be created by connecting to an endpoint, via the [`connect`] method,
@@ -199,16 +203,16 @@ pub trait NDTcpStream: Sync + Send + Debug {
 /// [`shutdown`]: struct.TcpStream.html#method.shutdown
 /// [`std::net::TcpStream`]: https://doc.rust-lang.org/std/net/struct.TcpStream.html
 #[derive(Debug, Clone)]
-pub struct TcpStream(Arc<Box<dyn NDTcpStream>>);
+pub struct TcpStream(Arc<Box<dyn syscall::DriverTcpStream>>);
 
-impl<T: NDTcpStream + 'static> From<T> for TcpStream {
+impl<T: syscall::DriverTcpStream + 'static> From<T> for TcpStream {
     fn from(value: T) -> Self {
         Self(Arc::new(Box::new(value)))
     }
 }
 
 impl Deref for TcpStream {
-    type Target = dyn NDTcpStream;
+    type Target = dyn syscall::DriverTcpStream;
     fn deref(&self) -> &Self::Target {
         &**self.0
     }
@@ -216,7 +220,7 @@ impl Deref for TcpStream {
 
 impl TcpStream {
     /// Returns inner [`NetworkDriverTcpListener`] ptr.
-    pub fn as_raw_ptr(&self) -> &dyn NDTcpStream {
+    pub fn as_raw_ptr(&self) -> &dyn syscall::DriverTcpStream {
         &**self.0
     }
 
@@ -228,7 +232,7 @@ impl TcpStream {
     /// Use custom `NetworkDriver` to connect to peer by provided `raddrs`.
     pub async fn connect_with<R: ToSocketAddrs>(
         raddrs: R,
-        driver: &dyn NetworkDriver,
+        driver: &dyn syscall::Driver,
     ) -> Result<Self> {
         let raddrs = raddrs.to_socket_addrs()?.collect::<Vec<_>>();
 
@@ -397,7 +401,7 @@ impl UdpSocket {
 
     pub async fn bind_with<L: ToSocketAddrs>(
         laddrs: L,
-        driver: &dyn NetworkDriver,
+        driver: &dyn syscall::Driver,
     ) -> Result<Self> {
         let laddrs = laddrs.to_socket_addrs()?.collect::<Vec<_>>();
         driver.udp_bind(&laddrs)
@@ -483,7 +487,7 @@ pub mod unix {
         /// Use custom `NetworkDriver` to create new `UnixListener` which will be bound to the specified `laddrs`.
         pub async fn bind_with<P: AsRef<Path>>(
             path: P,
-            driver: &dyn NetworkDriver,
+            driver: &dyn syscall::Driver,
         ) -> Result<Self> {
             driver.unix_listen(path.as_ref())
         }
@@ -572,7 +576,7 @@ pub mod unix {
         /// Use custom `NetworkDriver` to connect to peer by provided `raddrs`.
         pub async fn connect_with<P: AsRef<Path>>(
             path: P,
-            driver: &dyn NetworkDriver,
+            driver: &dyn syscall::Driver,
         ) -> Result<Self> {
             let stream = driver.unix_connect(path.as_ref())?;
 
@@ -614,10 +618,10 @@ pub mod unix {
     }
 }
 
-static NETWORK_DRIVER: OnceLock<Box<dyn NetworkDriver>> = OnceLock::new();
+static NETWORK_DRIVER: OnceLock<Box<dyn syscall::Driver>> = OnceLock::new();
 
 /// Get global register `NetworkDriver` instance.
-pub fn get_network_driver() -> &'static dyn NetworkDriver {
+pub fn get_network_driver() -> &'static dyn syscall::Driver {
     NETWORK_DRIVER
         .get()
         .expect("Call register_network_driver first.")
@@ -629,7 +633,7 @@ pub fn get_network_driver() -> &'static dyn NetworkDriver {
 /// # Panic
 ///
 /// Multiple calls to this function are not permitted!!!
-pub fn register_network_driver<E: NetworkDriver + 'static>(driver: E) {
+pub fn register_network_driver<E: syscall::Driver + 'static>(driver: E) {
     if NETWORK_DRIVER.set(Box::new(driver)).is_err() {
         panic!("Multiple calls to register_global_network are not permitted!!!");
     }

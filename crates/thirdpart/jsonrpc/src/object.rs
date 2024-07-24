@@ -78,7 +78,7 @@ where
 
 /// JSONRPC type compatible with both [`Request`] and [`Response`] data structures
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq)]
-struct JsonRpc<S, P, R, D>
+pub struct JsonRpc<S, P, R, D>
 where
     S: AsRef<str>,
 {

@@ -115,8 +115,8 @@ mod unix {
 
     use crate::net::{
         get_network_driver,
+        syscall::Driver,
         unix::{UnixListener, UnixStream},
-        NetworkDriver,
     };
 
     /// Interprocess communication server socket.
@@ -126,10 +126,7 @@ mod unix {
 
     impl IpcListener {
         /// Create new ipc server lsitener with custom [`syscall`](Network) and bind to `addr`
-        pub async fn bind_with<A: AsRef<str>>(
-            name: A,
-            syscall: &dyn NetworkDriver,
-        ) -> io::Result<Self> {
+        pub async fn bind_with<A: AsRef<str>>(name: A, syscall: &dyn Driver) -> io::Result<Self> {
             let dir = temp_dir().join("inter_process");
 
             if !dir.exists() {
@@ -185,7 +182,7 @@ mod unix {
         /// Create new client named pipe stream and connect to `addr`
         pub async fn connect_with<A: AsRef<str>>(
             name: A,
-            syscall: &dyn NetworkDriver,
+            syscall: &dyn Driver,
         ) -> io::Result<Self> {
             let dir = temp_dir();
             let bind_path = dir.join("inter_process").join(name.as_ref());

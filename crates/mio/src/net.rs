@@ -42,7 +42,7 @@ impl<S: Source> Drop for MioSocket<S> {
 
 type MioTcpListener = MioSocket<mio::net::TcpListener>;
 
-impl rasi::net::NDTcpListener for MioTcpListener {
+impl rasi::net::syscall::DriverTcpListener for MioTcpListener {
     fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
         self.socket.local_addr()
     }
@@ -90,7 +90,7 @@ impl rasi::net::NDTcpListener for MioTcpListener {
 
 type MioTcpStream = MioSocket<mio::net::TcpStream>;
 
-impl rasi::net::NDTcpStream for MioTcpStream {
+impl rasi::net::syscall::DriverTcpStream for MioTcpStream {
     fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
         self.socket.local_addr()
     }
@@ -311,7 +311,7 @@ impl rasi::net::unix::NDUnixStream for MioUnixStream {
 
 struct MioNetworkDriver;
 
-impl rasi::net::NetworkDriver for MioNetworkDriver {
+impl rasi::net::syscall::Driver for MioNetworkDriver {
     fn tcp_listen(
         &self,
         laddrs: &[std::net::SocketAddr],

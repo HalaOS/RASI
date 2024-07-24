@@ -1,12 +1,12 @@
 use std::{env::temp_dir, fs::remove_file};
 
 use futures::{executor::ThreadPool, task::SpawnExt, AsyncReadExt, AsyncWriteExt};
+use rasi::net::syscall::Driver;
 use rasi::net::unix::{UnixListener, UnixStream};
-use rasi::net::NetworkDriver;
 
 use crate::async_spec;
 
-pub async fn test_unix_echo(syscall: &dyn NetworkDriver) {
+pub async fn test_unix_echo(syscall: &dyn Driver) {
     let thread_pool = ThreadPool::new().unwrap();
 
     let dir = temp_dir();
@@ -47,6 +47,6 @@ pub async fn test_unix_echo(syscall: &dyn NetworkDriver) {
     assert_eq!(&buf[..read_size], message);
 }
 
-pub async fn run_unix_spec(syscall: &dyn NetworkDriver) {
+pub async fn run_unix_spec(syscall: &dyn Driver) {
     async_spec!(test_unix_echo, syscall);
 }

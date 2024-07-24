@@ -15,5 +15,11 @@ num_cpus = { workspace = true }
 bigdecimal = { workspace = true }
 
 [features]
-default = ["futures-spawn"]
-futures-spawn = ["futures/thread-pool", "futures/executor"]
+default = ["fs", "ipc", "net", "rdbc", "task", "timer"]
+fs = []
+ipc = []
+net = []
+rdbc = []
+task = []
+timer = []
+task-futures = ["futures/thread-pool", "futures/executor", "task"]

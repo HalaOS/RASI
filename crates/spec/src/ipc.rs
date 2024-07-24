@@ -4,15 +4,15 @@ use futures::{executor::ThreadPool, task::SpawnExt, AsyncReadExt, AsyncWriteExt,
 use rasi::ipc::{IpcListener, IpcStream};
 
 #[cfg(windows)]
-use rasi::fs::FileSystemDriver;
+use rasi::fs::syscall::Driver;
 #[cfg(unix)]
-use rasi::net::NetworkDriver;
+use rasi::net::syscall::Driver;
 
 use crate::async_spec;
 
 pub async fn test_named_pipe(
-    #[cfg(windows)] syscall: &dyn FileSystemDriver,
-    #[cfg(unix)] syscall: &dyn NetworkDriver,
+    #[cfg(windows)] syscall: &dyn Driver,
+    #[cfg(unix)] syscall: &dyn Driver,
 ) {
     let thread_pool = ThreadPool::new().unwrap();
 
@@ -51,9 +51,6 @@ pub async fn test_named_pipe(
     assert_eq!(&buf[..read_size], message);
 }
 
-pub async fn run_ipc_spec(
-    #[cfg(windows)] syscall: &dyn FileSystemDriver,
-    #[cfg(unix)] syscall: &dyn NetworkDriver,
-) {
+pub async fn run_ipc_spec(#[cfg(windows)] syscall: &dyn Driver, #[cfg(unix)] syscall: &dyn Driver) {
     async_spec!(test_named_pipe, syscall);
 }

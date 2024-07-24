@@ -23,6 +23,7 @@ This is because the ***futures*** library is missing several key abstractions:
 * network
 * filesystem
 * time
+* rdbc
 
 > `RASI` attempts to be a portable abstraction layer for asynchronous runtimes, either as a **decorator** for existing asynchronous runtimes or as a good starting point for newly developed asynchronous runtimes.
 
