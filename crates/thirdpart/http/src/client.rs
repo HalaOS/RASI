@@ -1,274 +1,314 @@
-use futures::{
-    io::{self, Cursor},
-    AsyncRead, AsyncWrite, Future,
-};
+use std::{future::Future, io::Result};
+
+use futures::{AsyncRead, AsyncWrite};
 use http::{Request, Response};
 
 use crate::{
     parse::{BodyReader, Responser},
-    writer::RequestWriter,
+    writer::{RequestWithStreamBodyWriter, RequestWriter},
 };
 
-/// extension trait for the http "send" method added to the "AsyncWrite + AsyncRead + Unpin" object
-pub trait HttpClient: AsyncWrite + AsyncRead + Send + Unpin {
-    fn send<B>(
-        mut self,
-        request: http::Request<B>,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<Self>>>>
+/// An extension trait for [`Request`](http::Request) with addition `send` method.
+pub trait HttpWithStreamBodyClient {
+    /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+    ///
+    /// On success, returns [`Response`](http::Response) from peer.
+    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
     where
-        B: AsyncRead + Send + Unpin,
-        Self: Sized,
+        S: AsyncRead + AsyncWrite + Unpin;
+}
+
+impl<T> HttpWithStreamBodyClient for Request<T>
+where
+    T: AsyncRead + Unpin + 'static,
+{
+    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
+    where
+        S: AsyncRead + AsyncWrite + Unpin,
     {
         async move {
-            let writer = RequestWriter::new(&mut self);
+            RequestWithStreamBodyWriter::write_http_request(stream, self).await?;
 
-            writer.write_with_stream_body(request).await?;
-
-            let response = Responser::new(self).parse().await?;
+            let response = Responser::new(stream).parse().await?;
 
             Ok(response)
         }
     }
 }
 
-impl<T: AsyncWrite + AsyncRead + Send + Unpin> HttpClient for T {}
-
-/// A trait exntend [`Request`](http::Request) object with `send` and `send_with` methods.
-pub trait HttpRequestWithStreamBodySend {
-    fn send_with<T>(
-        self,
-        transport: &mut T,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<&mut T>>>>
+/// An extension trait for [`Request`](http::Request) with addition `send` method.
+pub trait HttpClient {
+    /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+    ///
+    /// On success, returns [`Response`](http::Response) from peer.
+    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
     where
-        T: AsyncWrite + AsyncRead + Send + Unpin;
-
-    #[cfg(feature = "with_rasi")]
-    #[cfg_attr(docsrs, doc(feature = "with_rasi"))]
-    fn send<O: AsRef<crate::client::rasi::SendOptions>>(
-        self,
-        ops: O,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>;
+        S: AsyncRead + AsyncWrite + Unpin;
 }
 
-impl<B> HttpRequestWithStreamBodySend for Request<B>
+impl<T> HttpClient for Request<T>
 where
-    B: AsyncRead + Send + Unpin,
+    T: AsRef<[u8]>,
 {
-    fn send_with<T>(
-        self,
-        transport: &mut T,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<&mut T>>>>
+    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
     where
-        T: AsyncWrite + AsyncRead + Send + Unpin,
+        S: AsyncRead + AsyncWrite + Unpin,
     {
-        transport.send(self)
-    }
+        async move {
+            RequestWriter::write_http_request(stream, self).await?;
 
-    #[cfg(feature = "with_rasi")]
-    #[cfg_attr(docsrs, doc(feature = "with_rasi"))]
-    fn send<O: AsRef<crate::client::rasi::SendOptions>>(
-        self,
-        ops: O,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
-    {
-        rasi::send(self, ops)
-    }
-}
+            let response = Responser::new(stream).parse().await?;
 
-/// A trait exntend [`Request`](http::Request) object with `send` and `send_with` methods.
-pub trait HttpRequestSend {
-    fn send_with<T>(
-        self,
-        transport: &mut T,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<&mut T>>>>
-    where
-        T: AsyncWrite + AsyncRead + Send + Unpin;
-
-    #[cfg(feature = "with_rasi")]
-    #[cfg_attr(docsrs, doc(feature = "with_rasi"))]
-    fn send<O: AsRef<crate::client::rasi::SendOptions>>(
-        self,
-        ops: O,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>;
-}
-
-impl<B> HttpRequestSend for Request<B>
-where
-    B: AsRef<[u8]> + Send + Unpin,
-{
-    fn send_with<T>(
-        self,
-        transport: &mut T,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<&mut T>>>>
-    where
-        T: AsyncWrite + AsyncRead + Send + Unpin,
-    {
-        let (parts, body) = self.into_parts();
-
-        let request = Request::from_parts(parts, Cursor::new(body));
-
-        transport.send(request)
-    }
-
-    #[cfg(feature = "with_rasi")]
-    #[cfg_attr(docsrs, doc(feature = "with_rasi"))]
-    fn send<O: AsRef<crate::client::rasi::SendOptions>>(
-        self,
-        ops: O,
-    ) -> impl Future<Output = io::Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
-    {
-        let (parts, body) = self.into_parts();
-
-        let request = Request::from_parts(parts, Cursor::new(body));
-
-        rasi::send(request, ops)
+            Ok(response)
+        }
     }
 }
 
 #[cfg(feature = "with_rasi")]
-#[cfg_attr(docsrs, doc(feature = "with_rasi"))]
-pub mod rasi {
-
+pub mod rasio {
     use std::{
-        io,
+        future::Future,
+        io::{Error, ErrorKind, Result},
         net::{SocketAddr, ToSocketAddrs},
         path::{Path, PathBuf},
     };
 
-    use futures::AsyncRead;
+    use futures::{io::Cursor, AsyncRead};
     use futures_boring::{
         connect,
         ssl::{SslConnector, SslMethod},
     };
-
-    use http::uri::Scheme;
+    use http::{uri::Scheme, Request, Response};
     use rasi::net::TcpStream;
-
-    use http::Response;
 
     use crate::parse::BodyReader;
 
-    #[derive(Debug, Default)]
-    pub struct SendOptions {
+    /// Options and flags which can be used to configure how a http client is opened.
+    #[derive(Default, Debug, Clone)]
+    pub struct HttpClientOptions {
         raddrs: Option<Vec<SocketAddr>>,
         server_name: Option<String>,
         ca_file: Option<PathBuf>,
     }
 
-    impl AsRef<SendOptions> for SendOptions {
-        fn as_ref(&self) -> &SendOptions {
-            self
+    impl HttpClientOptions {
+        /// Create a `HttpClientOptionsBuilder` instance to build `HttpClientOptions`.
+        pub fn new() -> HttpClientOptionsBuilder {
+            HttpClientOptionsBuilder {
+                ops: Ok(HttpClientOptions::default()),
+            }
+        }
+
+        async fn send<T>(
+            self,
+            request: Request<T>,
+        ) -> Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>
+        where
+            T: AsyncRead + Unpin + 'static,
+        {
+            let scheme = request.uri().scheme().ok_or(Error::new(
+                ErrorKind::InvalidInput,
+                "Unspecified request scheme",
+            ))?;
+
+            let host = request.uri().host().ok_or(Error::new(
+                ErrorKind::InvalidInput,
+                "Unspecified request uri",
+            ))?;
+
+            let port = request.uri().port_u16().unwrap_or_else(|| {
+                if scheme == &Scheme::HTTP {
+                    80
+                } else {
+                    440
+                }
+            });
+
+            let raddrs = if let Some(raddrs) = &self.raddrs {
+                raddrs.to_owned()
+            } else {
+                vec![format!("{}:{}", host, port,)
+                    .parse()
+                    .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?]
+            };
+
+            if scheme == &Scheme::HTTP {
+                let mut transport = TcpStream::connect(raddrs.as_slice()).await?;
+                let response =
+                    super::HttpWithStreamBodyClient::send(request, &mut transport).await?;
+
+                let (parts, body) = response.into_parts();
+
+                let (bytes, _) = body.into_parts();
+
+                let body: BodyReader<Box<dyn AsyncRead + Send + Unpin>> =
+                    BodyReader::new(bytes, Box::new(transport));
+
+                let response = Response::from_parts(parts, body);
+
+                return Ok(response);
+            } else {
+                let stream = TcpStream::connect(raddrs.as_slice()).await?;
+
+                let mut config = SslConnector::builder(SslMethod::tls())
+                    .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
+
+                if let Some(ca_file) = self.ca_file.to_owned() {
+                    log::trace!("load trust root ca: {:?}", ca_file);
+
+                    config
+                        .set_ca_file(ca_file)
+                        .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
+                }
+
+                let config = config.build().configure().unwrap();
+
+                let mut transport = connect(config, host, stream)
+                    .await
+                    .map_err(|err| Error::new(ErrorKind::ConnectionRefused, err))?;
+
+                let response =
+                    super::HttpWithStreamBodyClient::send(request, &mut transport).await?;
+
+                let (parts, body) = response.into_parts();
+
+                let (bytes, _) = body.into_parts();
+
+                let body: BodyReader<Box<dyn AsyncRead + Send + Unpin>> =
+                    BodyReader::new(bytes, Box::new(transport));
+
+                let response = Response::from_parts(parts, body);
+
+                return Ok(response);
+            }
         }
     }
 
-    impl SendOptions {
-        /// Rewrite http request's host:port fields and send request to the specified `raddrs`.
-        pub fn redirect<R: ToSocketAddrs>(mut self, raddrs: R) -> io::Result<Self> {
-            self.raddrs = Some(
-                raddrs
-                    .to_socket_addrs()
-                    .map(|iter| iter.collect::<Vec<_>>())?,
-            );
+    impl TryInto<HttpClientOptions> for &HttpClientOptions {
+        type Error = std::io::Error;
 
-            Ok(self)
+        fn try_into(self) -> std::result::Result<HttpClientOptions, Self::Error> {
+            Ok(self.clone())
+        }
+    }
+
+    /// A `HttpClientOptions` builder.
+    pub struct HttpClientOptionsBuilder {
+        ops: Result<HttpClientOptions>,
+    }
+
+    impl HttpClientOptionsBuilder {
+        pub fn redirect<R: ToSocketAddrs>(self, raddrs: R) -> Self {
+            self.and_then(|mut ops| {
+                ops.raddrs = Some(
+                    raddrs
+                        .to_socket_addrs()
+                        .map(|iter| iter.collect::<Vec<_>>())?,
+                );
+                Ok(ops)
+            })
         }
 
         /// Set remote server's server name, this option will rewrite request's host field.
-        pub fn with_server_name(mut self, server_name: &str) -> Self {
-            self.server_name = Some(server_name.to_string());
+        pub fn with_server_name(self, server_name: &str) -> Self {
+            self.and_then(|mut ops| {
+                ops.server_name = Some(server_name.to_string());
 
-            self
+                Ok(ops)
+            })
         }
 
         /// Set the server verification ca file, this is useful for self signed server.
-        pub fn with_ca_file<P: AsRef<Path>>(mut self, ca_file: P) -> Self {
-            self.ca_file = Some(ca_file.as_ref().to_path_buf());
-            self
+        pub fn with_ca_file<P: AsRef<Path>>(self, ca_file: P) -> Self {
+            self.and_then(|mut ops| {
+                ops.ca_file = Some(ca_file.as_ref().to_path_buf());
+
+                Ok(ops)
+            })
+        }
+
+        fn and_then<F>(self, func: F) -> Self
+        where
+            F: FnOnce(HttpClientOptions) -> Result<HttpClientOptions>,
+        {
+            HttpClientOptionsBuilder {
+                ops: self.ops.and_then(func),
+            }
         }
     }
 
-    /// Create a new http client for a specific [`Request`](http::Request), and process http request.
-    pub async fn send<B, O: AsRef<SendOptions>>(
-        request: http::Request<B>,
-        ops: O,
-    ) -> std::io::Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>
+    impl TryInto<HttpClientOptions> for HttpClientOptionsBuilder {
+        type Error = std::io::Error;
+        fn try_into(self) -> std::result::Result<HttpClientOptions, Self::Error> {
+            self.ops
+        }
+    }
+
+    /// An extension trait for [`Request`](http::Request) with addition `send` method.
+    pub trait HttpWithStreamBodyClient {
+        /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+        ///
+        /// On success, returns [`Response`](http::Response) from peer.
+        fn send<Op>(
+            self,
+            ops: Op,
+        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
+        where
+            Op: TryInto<HttpClientOptions, Error = std::io::Error>;
+    }
+
+    impl<T> HttpWithStreamBodyClient for Request<T>
     where
-        B: AsyncRead + Send + Unpin,
+        T: AsyncRead + Unpin + 'static,
     {
-        let scheme = request.uri().scheme().ok_or(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Unspecified request scheme",
-        ))?;
+        fn send<Op>(
+            self,
+            ops: Op,
+        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
+        where
+            Op: TryInto<HttpClientOptions, Error = std::io::Error>,
+        {
+            async move {
+                let ops: HttpClientOptions = ops.try_into()?;
 
-        let host = request.uri().host().ok_or(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Unspecified request uri",
-        ))?;
-
-        let port =
-            request
-                .uri()
-                .port_u16()
-                .unwrap_or_else(|| if scheme == &Scheme::HTTP { 80 } else { 440 });
-
-        let ops = ops.as_ref();
-
-        let raddrs = if let Some(raddrs) = &ops.raddrs {
-            raddrs.to_owned()
-        } else {
-            vec![format!("{}:{}", host, port,)
-                .parse()
-                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?]
-        };
-
-        use super::HttpRequestWithStreamBodySend;
-
-        if scheme == &Scheme::HTTP {
-            let mut transport = TcpStream::connect(raddrs.as_slice()).await?;
-            let response = request.send_with(&mut transport).await?;
-
-            let (parts, body) = response.into_parts();
-
-            let (bytes, _) = body.into_parts();
-
-            let body: BodyReader<Box<dyn AsyncRead + Send + Unpin>> =
-                BodyReader::new(bytes, Box::new(transport));
-
-            let response = Response::from_parts(parts, body);
-
-            return Ok(response);
-        } else {
-            let stream = TcpStream::connect(raddrs.as_slice()).await?;
-
-            let mut config = SslConnector::builder(SslMethod::tls())
-                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
-
-            if let Some(ca_file) = ops.ca_file.to_owned() {
-                log::trace!("load trust root ca: {:?}", ca_file);
-
-                config
-                    .set_ca_file(ca_file)
-                    .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+                ops.send(self).await
             }
+        }
+    }
 
-            let config = config.build().configure().unwrap();
+    /// An extension trait for [`Request`](http::Request) with addition `send` method.
+    pub trait HttpClient {
+        /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+        ///
+        /// On success, returns [`Response`](http::Response) from peer.
+        fn send<Op>(
+            self,
+            ops: Op,
+        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
+        where
+            Op: TryInto<HttpClientOptions, Error = std::io::Error>;
+    }
 
-            let mut transport = connect(config, host, stream)
-                .await
-                .map_err(|err| io::Error::new(io::ErrorKind::ConnectionRefused, err))?;
+    impl<T> HttpClient for Request<T>
+    where
+        T: AsRef<[u8]>,
+    {
+        fn send<Op>(
+            self,
+            ops: Op,
+        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
+        where
+            Op: TryInto<HttpClientOptions, Error = std::io::Error>,
+        {
+            async move {
+                let ops: HttpClientOptions = ops.try_into()?;
 
-            let response = request.send_with(&mut transport).await?;
+                let (parts, body) = self.into_parts();
 
-            let (parts, body) = response.into_parts();
+                let body = Cursor::new(body.as_ref().to_owned());
 
-            let (bytes, _) = body.into_parts();
-
-            let body: BodyReader<Box<dyn AsyncRead + Send + Unpin>> =
-                BodyReader::new(bytes, Box::new(transport));
-
-            let response = Response::from_parts(parts, body);
-
-            return Ok(response);
+                ops.send(Request::from_parts(parts, body)).await
+            }
         }
     }
 }

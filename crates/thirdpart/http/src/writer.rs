@@ -1,4 +1,4 @@
-use std::io;
+use std::{future::Future, io};
 
 use futures::io::{copy, AsyncRead, AsyncWrite, AsyncWriteExt, Cursor};
 use http::{header::ToStrError, Request, Response};
@@ -7,26 +7,19 @@ fn map_to_str_error(err: ToStrError) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, err)
 }
 
-/// A http response writer, that write response packet into output stream.
-pub struct RequestWriter<'a, S> {
-    output: &'a mut S,
-}
-
-impl<'a, S> RequestWriter<'a, S> {
-    /// Create new `ResponseWriter` with `output` stream.
-    pub fn new(output: &'a mut S) -> Self {
-        Self { output }
-    }
-
+/// Writer for http request with stream body
+pub trait RequestWithStreamBodyWriter: AsyncWrite + Unpin {
     /// write request packet into output stream.
-    pub async fn write_with_stream_body<T>(mut self, mut request: Request<T>) -> io::Result<()>
+    fn write_http_request<T>(
+        &mut self,
+        mut request: Request<T>,
+    ) -> impl Future<Output = io::Result<()>>
     where
-        S: AsyncWrite + Unpin,
-        T: AsyncRead + Unpin,
+        T: AsyncRead + Unpin + 'static,
     {
-        // write status line.
-        self.output
-            .write_all(
+        async move {
+            // write status line.
+            self.write_all(
                 format!(
                     "{} {} {:?}\r\n",
                     request.method(),
@@ -37,10 +30,9 @@ impl<'a, S> RequestWriter<'a, S> {
             )
             .await?;
 
-        // write headers.
-        for (name, value) in request.headers() {
-            self.output
-                .write_all(
+            // write headers.
+            for (name, value) in request.headers() {
+                self.write_all(
                     format!(
                         "{}: {}\r\n",
                         name,
@@ -49,56 +41,61 @@ impl<'a, S> RequestWriter<'a, S> {
                     .as_bytes(),
                 )
                 .await?;
+            }
+
+            self.write_all(b"\r\n").await?;
+
+            // write body.
+            copy(request.body_mut(), self).await?;
+
+            Ok(())
         }
-
-        self.output.write_all(b"\r\n").await?;
-
-        // write body.
-        copy(request.body_mut(), &mut self.output).await?;
-
-        Ok(())
     }
+}
 
-    /// Write
-    pub async fn write<T>(self, request: Request<T>) -> io::Result<()>
+impl<T: AsyncWrite + Unpin> RequestWithStreamBodyWriter for T {}
+
+/// Writer for http request with stream body
+pub trait RequestWriter: AsyncWrite + Unpin {
+    /// write request packet into output stream.
+    fn write_http_request<T>(&mut self, request: Request<T>) -> impl Future<Output = io::Result<()>>
     where
-        S: AsyncWrite + Unpin,
         T: AsRef<[u8]>,
+        Self: Sized,
     {
-        let (parts, body) = request.into_parts();
+        async move {
+            let (parts, body) = request.into_parts();
 
-        let request = Request::from_parts(parts, Cursor::new(body.as_ref()));
+            let body = Cursor::new(body.as_ref().to_owned());
 
-        self.write_with_stream_body(request).await
+            RequestWithStreamBodyWriter::write_http_request(self, Request::from_parts(parts, body))
+                .await
+        }
     }
 }
 
-/// A http response writer, that write response packet into output stream.
-pub struct ResponseWriter<S> {
-    output: S,
-}
+impl<T: AsyncWrite + Unpin> RequestWriter for T {}
 
-impl<S> ResponseWriter<S> {
-    /// Create new `ResponseWriter` with `output` stream.
-    pub fn new(output: S) -> Self {
-        Self { output }
-    }
-
-    /// write response packet which body type is a [`AsyncRead`]
-    pub async fn write_with_stream_body<T>(mut self, mut response: Response<T>) -> io::Result<()>
+/// Writer for http response with stream body
+pub trait ResponseWithStreamBodyWriter: AsyncWrite + Unpin {
+    /// write request packet into output stream.
+    fn write_http_response<T>(
+        &mut self,
+        mut response: Response<T>,
+    ) -> impl Future<Output = io::Result<()>>
     where
-        S: AsyncWrite + Send + Unpin,
-        T: AsyncRead + Send + Unpin,
+        T: AsyncRead + Unpin + 'static,
     {
-        // write status line.
-        self.output
-            .write_all(format!("{:?} {}\r\n", response.version(), response.status()).as_bytes())
+        async move {
+            // write status line.
+            self.write_all(
+                format!("{:?} {}\r\n", response.version(), response.status()).as_bytes(),
+            )
             .await?;
 
-        // write headers.
-        for (name, value) in response.headers() {
-            self.output
-                .write_all(
+            // write headers.
+            for (name, value) in response.headers() {
+                self.write_all(
                     format!(
                         "{}: {}\r\n",
                         name,
@@ -107,29 +104,46 @@ impl<S> ResponseWriter<S> {
                     .as_bytes(),
                 )
                 .await?;
+            }
+
+            self.write_all(b"\r\n").await?;
+
+            // write body.
+            copy(response.body_mut(), self).await?;
+
+            Ok(())
         }
-
-        self.output.write_all(b"\r\n").await?;
-
-        // write body.
-        copy(response.body_mut(), &mut self.output).await?;
-
-        Ok(())
-    }
-
-    pub async fn write<T>(self, response: Response<T>) -> io::Result<()>
-    where
-        S: AsyncWrite + Send + Unpin,
-        T: AsRef<[u8]>,
-    {
-        let (parts, body) = response.into_parts();
-
-        let response = Response::from_parts(parts, Cursor::new(body.as_ref()));
-
-        self.write_with_stream_body(response).await
     }
 }
 
+impl<T: AsyncWrite + Unpin> ResponseWithStreamBodyWriter for T {}
+
+/// Writer for http request with stream body
+pub trait ResponseWriter: AsyncWrite + Unpin {
+    /// write request packet into output stream.
+    fn write_http_response<T>(
+        &mut self,
+        response: Response<T>,
+    ) -> impl Future<Output = io::Result<()>>
+    where
+        T: AsRef<[u8]>,
+        Self: Sized,
+    {
+        async move {
+            let (parts, body) = response.into_parts();
+
+            let body = Cursor::new(body.as_ref().to_owned());
+
+            ResponseWithStreamBodyWriter::write_http_response(
+                self,
+                Response::from_parts(parts, body),
+            )
+            .await
+        }
+    }
+}
+
+impl<T: AsyncWrite + Unpin> ResponseWriter for T {}
 #[cfg(test)]
 mod tests {
 
@@ -141,8 +155,7 @@ mod tests {
     async fn write_request_test(request: Request<&str>, expect: &[u8]) {
         let mut output = Cursor::new(Vec::new());
 
-        RequestWriter::new(&mut output)
-            .write(request)
+        RequestWriter::write_http_request(&mut output, request)
             .await
             .unwrap();
 
@@ -157,8 +170,7 @@ mod tests {
     async fn write_response_test(response: Response<&str>, expect: &[u8]) {
         let mut output = Cursor::new(Vec::new());
 
-        ResponseWriter::new(&mut output)
-            .write(response)
+        ResponseWriter::write_http_response(&mut output, response)
             .await
             .unwrap();
 

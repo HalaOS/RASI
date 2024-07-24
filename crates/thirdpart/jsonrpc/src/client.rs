@@ -151,7 +151,7 @@ pub mod rasi {
     use std::{any::Any, io, net::ToSocketAddrs, path::Path};
 
     use futures_http::{
-        client::{rasi::SendOptions, HttpRequestSend},
+        client::rasio::{HttpClient, HttpClientOptions, HttpClientOptionsBuilder},
         types::{
             request::Builder as RequestBuilder, Error as HttpError, HeaderName, HeaderValue,
             Request, StatusCode, Uri,
@@ -169,7 +169,7 @@ pub mod rasi {
         max_body_size: usize,
         send_cached_len: usize,
         builder: RequestBuilder,
-        send_ops: SendOptions,
+        send_ops: HttpClientOptionsBuilder,
     }
 
     impl HttpJsonRpcClient {
@@ -183,7 +183,7 @@ pub mod rasi {
                 max_body_size: 2048,
                 send_cached_len: 0,
                 builder: RequestBuilder::new().method("POST").uri(uri),
-                send_ops: Default::default(),
+                send_ops: HttpClientOptions::new(),
             }
         }
 
@@ -210,10 +210,10 @@ pub mod rasi {
         }
 
         /// Rewrite http request's host:port fields and send request to the specified `raddrs`.
-        pub fn redirect<R: ToSocketAddrs>(mut self, raddrs: R) -> io::Result<Self> {
-            self.send_ops = self.send_ops.redirect(raddrs)?;
+        pub fn redirect<R: ToSocketAddrs>(mut self, raddrs: R) -> Self {
+            self.send_ops = self.send_ops.redirect(raddrs);
 
-            Ok(self)
+            self
         }
 
         /// Set remote server's server name, this option will rewrite request's host field.
@@ -242,11 +242,13 @@ pub mod rasi {
 
             let background = client.clone();
 
+            let ops: HttpClientOptions = self.send_ops.try_into()?;
+
             spawn_ok(async move {
                 while let Some((id, packet)) = background.send().await {
                     let request = Request::from_parts(parts.clone(), packet);
 
-                    let resp = match request.send(&self.send_ops).await {
+                    let resp = match request.send(&ops).await {
                         Ok(resp) => resp,
                         Err(err) => {
                             Self::handle_recv(

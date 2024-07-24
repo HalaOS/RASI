@@ -32,12 +32,7 @@ impl<I> HttpServer<I> {
     }
 
     /// Accept new incoming http connection.
-    pub async fn accept<S, E>(
-        &mut self,
-    ) -> Result<(
-        Request<BodyReader<ReadHalf<S>>>,
-        ResponseWriter<WriteHalf<S>>,
-    )>
+    pub async fn accept<S, E>(&mut self) -> Result<(Request<BodyReader<ReadHalf<S>>>, WriteHalf<S>)>
     where
         I: Stream<Item = std::result::Result<S, E>> + Unpin,
         S: AsyncRead + AsyncWrite + Send + Unpin,
@@ -51,9 +46,7 @@ impl<I> HttpServer<I> {
                 .ok_or(Error::new(ErrorKind::BrokenPipe, "http server shutdown."))?
             {
                 Ok(stream) => {
-                    let (read, write) = stream.split();
-
-                    let response = ResponseWriter::new(write);
+                    let (read, mut write) = stream.split();
 
                     let request = match Requester::new(read).parse().await {
                         Ok(request) => request,
@@ -64,8 +57,8 @@ impl<I> HttpServer<I> {
                                 err
                             );
 
-                            if let Err(err) = response
-                                .write(
+                            if let Err(err) = write
+                                .write_http_response(
                                     Response::builder()
                                         .status(StatusCode::BAD_REQUEST)
                                         .body(b"")
@@ -84,7 +77,7 @@ impl<I> HttpServer<I> {
                         }
                     };
 
-                    return Ok((request, response));
+                    return Ok((request, write));
                 }
                 Err(err) => return Err(Error::new(ErrorKind::Other, err.to_string())),
             }
@@ -93,12 +86,7 @@ impl<I> HttpServer<I> {
 
     pub fn into_incoming<S, E>(
         self,
-    ) -> impl Stream<
-        Item = Result<(
-            Request<BodyReader<ReadHalf<S>>>,
-            ResponseWriter<WriteHalf<S>>,
-        )>,
-    > + Unpin
+    ) -> impl Stream<Item = Result<(Request<BodyReader<ReadHalf<S>>>, WriteHalf<S>)>> + Unpin
     where
         I: Stream<Item = std::result::Result<S, E>> + Unpin,
         S: AsyncRead + AsyncWrite + Send + Unpin,

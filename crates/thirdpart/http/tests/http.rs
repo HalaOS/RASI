@@ -9,8 +9,9 @@ use futures_boring::{
     SslListener,
 };
 use futures_http::{
-    client::{rasi::SendOptions, HttpRequestSend},
+    client::rasio::{HttpClient, HttpClientOptions},
     server::HttpServer,
+    writer::ResponseWriter,
 };
 use http::{Request, Response, StatusCode};
 use rasi::net::TcpListener;
@@ -51,10 +52,10 @@ async fn test_http() {
 
         let mut incoming = server.into_incoming();
 
-        while let Some((req, resp)) = incoming.try_next().await.unwrap() {
+        while let Some((req, mut resp)) = incoming.try_next().await.unwrap() {
             assert_eq!(req.uri().path(), "/hello");
 
-            resp.write(
+            resp.write_http_response(
                 Response::builder()
                     .status(StatusCode::OK)
                     .body("hello world")
@@ -68,7 +69,7 @@ async fn test_http() {
     let response = Request::get(format!("http://{:?}/hello", raddr))
         .body("")
         .unwrap()
-        .send(SendOptions::default())
+        .send(HttpClientOptions::new())
         .await
         .unwrap();
 
@@ -110,10 +111,10 @@ async fn test_https() {
 
         let mut incoming = server.into_incoming();
 
-        while let Some((req, resp)) = incoming.try_next().await.unwrap() {
+        while let Some((req, mut resp)) = incoming.try_next().await.unwrap() {
             assert_eq!(req.uri().path(), "/hello");
 
-            resp.write(
+            resp.write_http_response(
                 Response::builder()
                     .status(StatusCode::OK)
                     .body("hello world")
@@ -132,9 +133,8 @@ async fn test_https() {
         .body("")
         .unwrap()
         .send(
-            SendOptions::default()
+            HttpClientOptions::new()
                 .redirect(raddr)
-                .unwrap()
                 .with_ca_file(ca_file),
         )
         .await
