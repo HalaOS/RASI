@@ -146,7 +146,7 @@ impl rasi::net::syscall::DriverTcpStream for MioTcpStream {
 
 type MioUdpSocket = MioSocket<mio::net::UdpSocket>;
 
-impl rasi::net::NDUdpSocket for MioUdpSocket {
+impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
     fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
         self.socket.local_addr()
     }
@@ -229,7 +229,7 @@ impl rasi::net::NDUdpSocket for MioUdpSocket {
 type MioUnixListener = MioSocket<mio::net::UnixListener>;
 
 #[cfg(unix)]
-impl rasi::net::unix::NDUnixListener for MioUnixListener {
+impl rasi::net::syscall::unix::DriverUnixListener for MioUnixListener {
     fn local_addr(&self) -> std::io::Result<std::os::unix::net::SocketAddr> {
         self.socket.local_addr()
     }
@@ -271,7 +271,7 @@ impl rasi::net::unix::NDUnixListener for MioUnixListener {
 type MioUnixStream = MioSocket<mio::net::UnixStream>;
 
 #[cfg(unix)]
-impl rasi::net::unix::NDUnixStream for MioUnixStream {
+impl rasi::net::syscall::unix::DriverUnixStream for MioUnixStream {
     fn shutdown(&self, how: std::net::Shutdown) -> std::io::Result<()> {
         self.socket.shutdown(how)
     }

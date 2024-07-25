@@ -11,8 +11,58 @@ use std::{
 
 use futures::{future::poll_fn, AsyncRead, AsyncWrite, Stream};
 
+/// A network driver must implement the `Driver-*` traits in this module.
 pub mod syscall {
     use super::*;
+
+    #[cfg(unix)]
+    pub mod unix {
+        use super::*;
+        pub trait DriverUnixListener: Sync + Send {
+            /// Returns the local socket address of this listener.
+            fn local_addr(&self) -> Result<std::os::unix::net::SocketAddr>;
+
+            /// Polls and accepts a new incoming connection to this listener.
+            ///
+            /// When a connection is established, the corresponding stream and address will be returned.
+            fn poll_next(
+                &self,
+                cx: &mut Context<'_>,
+            ) -> Poll<Result<(crate::net::unix::UnixStream, std::os::unix::net::SocketAddr)>>;
+        }
+
+        pub trait DriverUnixStream: Sync + Send {
+            /// Returns the local address that this stream is connected from.
+            fn local_addr(&self) -> Result<std::os::unix::net::SocketAddr>;
+
+            /// Returns the local address that this stream is connected to.
+            fn peer_addr(&self) -> Result<std::os::unix::net::SocketAddr>;
+
+            /// Shuts down the read, write, or both halves of this connection.
+            ///
+            /// This method will cause all pending and future I/O on the specified portions to return
+            /// immediately with an appropriate value (see the documentation of [`Shutdown`]).
+            ///
+            /// [`Shutdown`]: https://doc.rust-lang.org/std/net/enum.Shutdown.html
+            fn shutdown(&self, how: Shutdown) -> Result<()>;
+
+            /// poll and receives data from the socket.
+            ///
+            /// On success, returns the number of bytes read.
+            fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
+
+            /// Sends data on the socket to the remote address
+            ///
+            /// On success, returns the number of bytes written.
+            fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
+
+            /// Poll and wait underlying tcp connection established event.
+            ///
+            /// This function is no effect for server side socket created
+            /// by [`poll_next`](DriverUnixListener::poll_next) function.
+            fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+        }
+    }
 
     /// A driver is the main entry to access asynchronously network functions.
     pub trait Driver: Send + Sync {
@@ -32,11 +82,11 @@ pub mod syscall {
 
         #[cfg(unix)]
         #[cfg_attr(docsrs, doc(cfg(unix)))]
-        fn unix_listen(&self, path: &std::path::Path) -> Result<unix::UnixListener>;
+        fn unix_listen(&self, path: &std::path::Path) -> Result<crate::net::unix::UnixListener>;
 
         #[cfg(unix)]
         #[cfg_attr(docsrs, doc(cfg(unix)))]
-        fn unix_connect(&self, path: &std::path::Path) -> Result<unix::UnixStream>;
+        fn unix_connect(&self, path: &std::path::Path) -> Result<crate::net::unix::UnixStream>;
     }
 
     /// Driver-specific `TcpListener` implementation must implement this trait.
@@ -115,6 +165,84 @@ pub mod syscall {
         /// This function is no effect for server side socket created
         /// by [`poll_next`](DriverTcpListener::poll_next) function.
         fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
+    }
+
+    /// Driver-specific `UdpSocket` implementation
+    ///
+    /// When this trait object is dropping, the implementition must close the internal tcp socket.
+    pub trait DriverUdpSocket: Sync + Send {
+        /// Returns the local address that this stream is connected from.
+        fn local_addr(&self) -> Result<SocketAddr>;
+
+        /// Returns the local address that this stream is connected to.
+        fn peer_addr(&self) -> Result<SocketAddr>;
+
+        /// Gets the value of the IP_TTL option for this socket.
+        /// For more information about this option, see [`set_ttl`](DriverUdpSocket::set_ttl).
+        fn ttl(&self) -> Result<u32>;
+
+        /// Sets the value for the IP_TTL option on this socket.
+        /// This value sets the time-to-live field that is used in every packet sent from this socket.
+        fn set_ttl(&self, ttl: u32) -> Result<()>;
+
+        /// Executes an operation of the IP_ADD_MEMBERSHIP type.
+        ///
+        /// This function specifies a new multicast group for this socket to join.
+        /// The address must be a valid multicast address, and interface is the
+        /// address of the local interface with which the system should join the
+        /// multicast group. If it’s equal to INADDR_ANY then an appropriate
+        /// interface is chosen by the system.
+        fn join_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> Result<()>;
+
+        /// Executes an operation of the `IPV6_ADD_MEMBERSHIP` type.
+        ///
+        /// This function specifies a new multicast group for this socket to join.
+        /// The address must be a valid multicast address, and `interface` is the
+        /// index of the interface to join/leave (or 0 to indicate any interface).
+        fn join_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> Result<()>;
+
+        /// Executes an operation of the `IP_DROP_MEMBERSHIP` type.
+        ///
+        /// For more information about this option, see
+        /// [`join_multicast_v4`][link].
+        ///
+        /// [link]: #method.join_multicast_v4
+        fn leave_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> Result<()>;
+
+        /// Executes an operation of the `IPV6_DROP_MEMBERSHIP` type.
+        ///
+        /// For more information about this option, see
+        /// [`join_multicast_v6`][link].
+        ///
+        /// [link]: #method.join_multicast_v6
+        fn leave_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> Result<()>;
+
+        /// Sets the value of the SO_BROADCAST option for this socket.
+        /// When enabled, this socket is allowed to send packets to a broadcast address.
+        fn set_broadcast(&self, on: bool) -> Result<()>;
+
+        /// Gets the value of the SO_BROADCAST option for this socket.
+        /// For more information about this option, see [`set_broadcast`](DriverUdpSocket::set_broadcast).
+        fn broadcast(&self) -> Result<bool>;
+
+        /// Receives data from the socket.
+        ///
+        /// On success, returns the number of bytes read and the origin.
+        fn poll_recv_from(
+            &self,
+            cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<Result<(usize, SocketAddr)>>;
+
+        /// Sends data on the socket to the given `target` address.
+        ///
+        /// On success, returns the number of bytes written.
+        fn poll_send_to(
+            &self,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+            peer: SocketAddr,
+        ) -> Poll<Result<usize>>;
     }
 }
 
@@ -277,84 +405,6 @@ impl AsyncWrite for TcpStream {
     }
 }
 
-/// Driver-specific `UdpSocket` implementation
-///
-/// When this trait object is dropping, the implementition must close the internal tcp socket.
-pub trait NDUdpSocket: Sync + Send {
-    /// Returns the local address that this stream is connected from.
-    fn local_addr(&self) -> Result<SocketAddr>;
-
-    /// Returns the local address that this stream is connected to.
-    fn peer_addr(&self) -> Result<SocketAddr>;
-
-    /// Gets the value of the IP_TTL option for this socket.
-    /// For more information about this option, see [`set_ttl`](NDUdpSocket::set_ttl).
-    fn ttl(&self) -> Result<u32>;
-
-    /// Sets the value for the IP_TTL option on this socket.
-    /// This value sets the time-to-live field that is used in every packet sent from this socket.
-    fn set_ttl(&self, ttl: u32) -> Result<()>;
-
-    /// Executes an operation of the IP_ADD_MEMBERSHIP type.
-    ///
-    /// This function specifies a new multicast group for this socket to join.
-    /// The address must be a valid multicast address, and interface is the
-    /// address of the local interface with which the system should join the
-    /// multicast group. If it’s equal to INADDR_ANY then an appropriate
-    /// interface is chosen by the system.
-    fn join_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> Result<()>;
-
-    /// Executes an operation of the `IPV6_ADD_MEMBERSHIP` type.
-    ///
-    /// This function specifies a new multicast group for this socket to join.
-    /// The address must be a valid multicast address, and `interface` is the
-    /// index of the interface to join/leave (or 0 to indicate any interface).
-    fn join_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> Result<()>;
-
-    /// Executes an operation of the `IP_DROP_MEMBERSHIP` type.
-    ///
-    /// For more information about this option, see
-    /// [`join_multicast_v4`][link].
-    ///
-    /// [link]: #method.join_multicast_v4
-    fn leave_multicast_v4(&self, multiaddr: &Ipv4Addr, interface: &Ipv4Addr) -> Result<()>;
-
-    /// Executes an operation of the `IPV6_DROP_MEMBERSHIP` type.
-    ///
-    /// For more information about this option, see
-    /// [`join_multicast_v6`][link].
-    ///
-    /// [link]: #method.join_multicast_v6
-    fn leave_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> Result<()>;
-
-    /// Sets the value of the SO_BROADCAST option for this socket.
-    /// When enabled, this socket is allowed to send packets to a broadcast address.
-    fn set_broadcast(&self, on: bool) -> Result<()>;
-
-    /// Gets the value of the SO_BROADCAST option for this socket.
-    /// For more information about this option, see [`udp_set_broadcast`](NDUdpSocket::set_broadcast).
-    fn broadcast(&self) -> Result<bool>;
-
-    /// Receives data from the socket.
-    ///
-    /// On success, returns the number of bytes read and the origin.
-    fn poll_recv_from(
-        &self,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<Result<(usize, SocketAddr)>>;
-
-    /// Sends data on the socket to the given `target` address.
-    ///
-    /// On success, returns the number of bytes written.
-    fn poll_send_to(
-        &self,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-        peer: SocketAddr,
-    ) -> Poll<Result<usize>>;
-}
-
 /// A UDP socket.
 ///
 /// After creating a `UdpSocket` by [`bind`]ing it to a socket address, data can be [sent to] and
@@ -375,16 +425,16 @@ pub trait NDUdpSocket: Sync + Send {
 /// [`std::net::UdpSocket`]: https://doc.rust-lang.org/std/net/struct.UdpSocket.html
 ///
 #[derive(Clone)]
-pub struct UdpSocket(Arc<Box<dyn NDUdpSocket>>);
+pub struct UdpSocket(Arc<Box<dyn syscall::DriverUdpSocket>>);
 
-impl<T: NDUdpSocket + 'static> From<T> for UdpSocket {
+impl<T: syscall::DriverUdpSocket + 'static> From<T> for UdpSocket {
     fn from(value: T) -> Self {
         Self(Arc::new(Box::new(value)))
     }
 }
 
 impl Deref for UdpSocket {
-    type Target = dyn NDUdpSocket;
+    type Target = dyn syscall::DriverUdpSocket;
     fn deref(&self) -> &Self::Target {
         &**self.0
     }
@@ -392,7 +442,7 @@ impl Deref for UdpSocket {
 
 impl UdpSocket {
     /// Returns inner driver-specific implementation.
-    pub fn as_raw_ptr(&self) -> &dyn NDUdpSocket {
+    pub fn as_raw_ptr(&self) -> &dyn syscall::DriverUdpSocket {
         &**self.0
     }
 
@@ -435,6 +485,7 @@ impl UdpSocket {
     }
 }
 
+/// Unix-specific sockets implementation.
 #[cfg(unix)]
 #[cfg_attr(docsrs, doc(cfg(unix)))]
 pub mod unix {
@@ -442,29 +493,19 @@ pub mod unix {
     use super::*;
     use std::path::Path;
 
-    pub trait NDUnixListener: Sync + Send {
-        /// Returns the local socket address of this listener.
-        fn local_addr(&self) -> Result<std::os::unix::net::SocketAddr>;
+    use super::syscall::unix::*;
 
-        /// Polls and accepts a new incoming connection to this listener.
-        ///
-        /// When a connection is established, the corresponding stream and address will be returned.
-        fn poll_next(
-            &self,
-            cx: &mut Context<'_>,
-        ) -> Poll<Result<(UnixStream, std::os::unix::net::SocketAddr)>>;
-    }
+    /// A unix domain server-side socket.
+    pub struct UnixListener(Box<dyn DriverUnixListener>);
 
-    pub struct UnixListener(Box<dyn NDUnixListener>);
-
-    impl<T: NDUnixListener + 'static> From<T> for UnixListener {
+    impl<T: DriverUnixListener + 'static> From<T> for UnixListener {
         fn from(value: T) -> Self {
             Self(Box::new(value))
         }
     }
 
     impl Deref for UnixListener {
-        type Target = dyn NDUnixListener;
+        type Target = dyn DriverUnixListener;
         fn deref(&self) -> &Self::Target {
             &*self.0
         }
@@ -472,11 +513,11 @@ pub mod unix {
 
     impl UnixListener {
         /// Returns inner driver-specific implementation.
-        pub fn as_raw_ptr(&self) -> &dyn NDUnixListener {
+        pub fn as_raw_ptr(&self) -> &dyn DriverUnixListener {
             &*self.0
         }
 
-        /// See [`poll_next`](NDUnixListener::poll_next) for more information.
+        /// See [`poll_next`](syscall::unix::DriverUnixListener::poll_next) for more information.
         pub async fn accept(&self) -> Result<(UnixStream, std::os::unix::net::SocketAddr)> {
             poll_fn(|cx| self.poll_next(cx)).await
         }
@@ -516,49 +557,18 @@ pub mod unix {
         }
     }
 
-    pub trait NDUnixStream: Sync + Send {
-        /// Returns the local address that this stream is connected from.
-        fn local_addr(&self) -> Result<std::os::unix::net::SocketAddr>;
-
-        /// Returns the local address that this stream is connected to.
-        fn peer_addr(&self) -> Result<std::os::unix::net::SocketAddr>;
-
-        /// Shuts down the read, write, or both halves of this connection.
-        ///
-        /// This method will cause all pending and future I/O on the specified portions to return
-        /// immediately with an appropriate value (see the documentation of [`Shutdown`]).
-        ///
-        /// [`Shutdown`]: https://doc.rust-lang.org/std/net/enum.Shutdown.html
-        fn shutdown(&self, how: Shutdown) -> Result<()>;
-
-        /// poll and receives data from the socket.
-        ///
-        /// On success, returns the number of bytes read.
-        fn poll_read(&self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<Result<usize>>;
-
-        /// Sends data on the socket to the remote address
-        ///
-        /// On success, returns the number of bytes written.
-        fn poll_write(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>>;
-
-        /// Poll and wait underlying tcp connection established event.
-        ///
-        /// This function is no effect for server side socket created
-        /// by [`poll_next`](UnixListener::poll_next) function.
-        fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
-    }
-
+    /// A unix domain stream between a local and a remote socket.
     #[derive(Clone)]
-    pub struct UnixStream(Arc<Box<dyn NDUnixStream>>);
+    pub struct UnixStream(Arc<Box<dyn DriverUnixStream>>);
 
-    impl<T: NDUnixStream + 'static> From<T> for UnixStream {
+    impl<T: DriverUnixStream + 'static> From<T> for UnixStream {
         fn from(value: T) -> Self {
             Self(Arc::new(Box::new(value)))
         }
     }
 
     impl Deref for UnixStream {
-        type Target = dyn NDUnixStream;
+        type Target = dyn DriverUnixStream;
         fn deref(&self) -> &Self::Target {
             &**self.0
         }
@@ -566,7 +576,7 @@ pub mod unix {
 
     impl UnixStream {
         /// Returns inner driver-specific implementation.
-        pub fn as_raw_ptr(&self) -> &dyn NDUnixStream {
+        pub fn as_raw_ptr(&self) -> &dyn DriverUnixStream {
             &**self.0
         }
 
