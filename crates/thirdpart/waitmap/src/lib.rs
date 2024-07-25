@@ -61,6 +61,24 @@ where
         }
     }
 
+    /// Inserts a event-value pair into the map.
+    ///
+    /// If the map did not have this key present, None is returned.
+    pub async fn batch_insert<I>(&self, kv: I)
+    where
+        I: IntoIterator<Item = (K, V)>,
+    {
+        let mut raw = self.inner.lock().await;
+
+        for (k, v) in kv.into_iter() {
+            if let Some(waker) = raw.wakers.remove(&k) {
+                waker.wake();
+            }
+
+            raw.kv.insert(k, Event::Value(v));
+        }
+    }
+
     /// Create a key waiting task until a value is put under the key,
     /// only one waiting task for a key can exist at a time.
     ///

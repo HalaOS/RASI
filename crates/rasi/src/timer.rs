@@ -61,6 +61,20 @@ pub async fn sleep(duration: Duration) {
     sleep_with(duration, get_timer_driver()).await
 }
 
+/// Sleep current thread until provided at.
+pub async fn sleep_until(at: Instant) {
+    sleep_until_with(at, get_timer_driver()).await
+}
+
+pub async fn sleep_until_with(at: Instant, driver: &dyn syscall::Driver) {
+    if let Some(dead_line) = driver
+        .deadline(at)
+        .expect("Call register_global_timer first")
+    {
+        dead_line.await
+    }
+}
+
 /// Sleeps for the specified amount of time.
 ///
 /// This function might sleep for slightly longer than the specified duration but never less.
@@ -102,6 +116,36 @@ pub trait TimeoutExt: Future {
         async move {
             futures::select! {
                 _ =  sleep_with(duration,driver).fuse() => {
+                    None
+                }
+                fut = self.fuse() => {
+                    Some(fut)
+                }
+
+            }
+        }
+    }
+
+    /// Awaits a future or times out after a duration of time.
+    ///
+    fn timeout_at(self, at: Instant) -> impl Future<Output = Option<Self::Output>>
+    where
+        Self: Sized,
+    {
+        self.timeout_at_with(at, get_timer_driver())
+    }
+
+    fn timeout_at_with(
+        self,
+        at: Instant,
+        driver: &dyn syscall::Driver,
+    ) -> impl Future<Output = Option<Self::Output>>
+    where
+        Self: Sized,
+    {
+        async move {
+            futures::select! {
+                _ =  sleep_until_with(at,driver).fuse() => {
                     None
                 }
                 fut = self.fuse() => {
