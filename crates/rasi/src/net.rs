@@ -47,7 +47,7 @@ pub mod syscall {
         fn local_addr(&self) -> Result<SocketAddr>;
 
         /// Gets the value of the IP_TTL option for this socket.
-        /// For more information about this option, see [`set_ttl`](NDTcpListener::set_ttl).
+        /// For more information about this option, see [`set_ttl`](DriverTcpListener::set_ttl).
         fn ttl(&self) -> Result<u32>;
 
         /// Sets the value for the IP_TTL option on this socket.
@@ -71,7 +71,7 @@ pub mod syscall {
         fn peer_addr(&self) -> Result<SocketAddr>;
 
         /// Gets the value of the IP_TTL option for this socket.
-        /// For more information about this option, see [`set_ttl`](NDTcpListener::set_ttl).
+        /// For more information about this option, see [`set_ttl`](DriverTcpStream::set_ttl).
         fn ttl(&self) -> Result<u32>;
 
         /// Sets the value for the IP_TTL option on this socket.
@@ -80,7 +80,7 @@ pub mod syscall {
 
         /// Gets the value of the `TCP_NODELAY` option on this socket.
         ///
-        /// For more information about this option, see [`set_nodelay`].
+        /// For more information about this option, see [`set_nodelay`](DriverTcpStream::set_nodelay).
         fn nodelay(&self) -> Result<bool>;
 
         /// Sets the value of the `TCP_NODELAY` option on this socket.
@@ -113,7 +113,7 @@ pub mod syscall {
         /// Poll and wait underlying tcp connection established event.
         ///
         /// This function is no effect for server side socket created
-        /// by [`poll_next`](NTTcpListener::poll_next) function.
+        /// by [`poll_next`](DriverTcpListener::poll_next) function.
         fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
     }
 }
@@ -142,12 +142,12 @@ impl Deref for TcpListener {
 }
 
 impl TcpListener {
-    /// Returns inner [`NetworkDriverTcpListener`] ptr.
+    /// Returns inner [`syscall::DriverTcpListener`] ptr.
     pub fn as_raw_ptr(&self) -> &dyn syscall::DriverTcpListener {
         &*self.0
     }
 
-    /// See [`poll_next`](NDTcpListener::poll_next) for more information.
+    /// See [`poll_next`](syscall::DriverTcpListener::poll_next) for more information.
     pub async fn accept(&self) -> Result<(TcpStream, SocketAddr)> {
         poll_fn(|cx| self.poll_next(cx)).await
     }
@@ -221,7 +221,7 @@ impl Deref for TcpStream {
 }
 
 impl TcpStream {
-    /// Returns inner [`NetworkDriverTcpListener`] ptr.
+    /// Returns inner [`syscall::DriverTcpStream`] ptr.
     pub fn as_raw_ptr(&self) -> &dyn syscall::DriverTcpStream {
         &**self.0
     }
@@ -288,7 +288,7 @@ pub trait NDUdpSocket: Sync + Send {
     fn peer_addr(&self) -> Result<SocketAddr>;
 
     /// Gets the value of the IP_TTL option for this socket.
-    /// For more information about this option, see [`set_ttl`](NDTcpListener::set_ttl).
+    /// For more information about this option, see [`set_ttl`](NDUdpSocket::set_ttl).
     fn ttl(&self) -> Result<u32>;
 
     /// Sets the value for the IP_TTL option on this socket.
@@ -332,7 +332,7 @@ pub trait NDUdpSocket: Sync + Send {
     fn set_broadcast(&self, on: bool) -> Result<()>;
 
     /// Gets the value of the SO_BROADCAST option for this socket.
-    /// For more information about this option, see [`udp_set_broadcast`](Self::udp_set_broadcast).
+    /// For more information about this option, see [`udp_set_broadcast`](NDUdpSocket::set_broadcast).
     fn broadcast(&self) -> Result<bool>;
 
     /// Receives data from the socket.
@@ -476,7 +476,7 @@ pub mod unix {
             &*self.0
         }
 
-        /// See [`poll_next`](NDTcpListener::poll_next) for more information.
+        /// See [`poll_next`](NDUnixListener::poll_next) for more information.
         pub async fn accept(&self) -> Result<(UnixStream, std::os::unix::net::SocketAddr)> {
             poll_fn(|cx| self.poll_next(cx)).await
         }
@@ -544,7 +544,7 @@ pub mod unix {
         /// Poll and wait underlying tcp connection established event.
         ///
         /// This function is no effect for server side socket created
-        /// by [`poll_next`](NTTcpListener::poll_next) function.
+        /// by [`poll_next`](UnixListener::poll_next) function.
         fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
     }
 
@@ -630,7 +630,7 @@ pub fn get_network_driver() -> &'static dyn syscall::Driver {
         .as_ref()
 }
 
-/// Register provided [`Network`] as global network implementation.
+/// Register provided [`syscall::Driver`] as global network implementation.
 ///
 /// # Panic
 ///

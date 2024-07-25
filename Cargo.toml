@@ -35,6 +35,7 @@ bytes = "^1.5"
 num_cpus = "^1.16"
 bigdecimal = "^0.4"
 sqlite3-sys = "^0.17"
+quiche = { version = "^0.22", features = ["boringssl-boring-crate"] }
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }

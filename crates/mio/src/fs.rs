@@ -310,7 +310,7 @@ mod windows {
         }
     }
 
-    impl rasi::fs::syscall::windows::FSDNamedPipeListener for MioNamedPipeListener {
+    impl rasi::fs::syscall::windows::DriverNamedPipeListener for MioNamedPipeListener {
         fn poll_ready(
             &self,
             _cx: &mut std::task::Context<'_>,
@@ -355,7 +355,7 @@ mod windows {
 
     pub struct MioNamedPipeStream(pub MioSocket<mio::windows::NamedPipe>, pub bool);
 
-    impl rasi::fs::syscall::windows::FSDNamedPipeStream for MioNamedPipeStream {
+    impl rasi::fs::syscall::windows::DriverNamedPipeStream for MioNamedPipeStream {
         fn poll_ready(
             &self,
             _cx: &mut std::task::Context<'_>,

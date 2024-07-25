@@ -43,7 +43,7 @@ where
 
 static GLOBAL_SPAWN_DRIVER: OnceLock<Box<dyn syscall::Driver>> = OnceLock::new();
 
-/// Register provided [`SpawnDriver`] as global spawn implementation.
+/// Register provided [`syscall::Driver`] as global spawn implementation.
 ///
 /// # Panic
 ///
@@ -54,7 +54,7 @@ pub fn register_spawn_driver<T: syscall::Driver + 'static>(driver: T) {
     }
 }
 
-/// Get the globally registered instance of [`SpawnDriver`].
+/// Get the globally registered instance of [`syscall::Driver`].
 ///
 /// If the feature "futures-spawn" is enabled, this function will create a default
 /// instance of "SpawnDriver" based on the [`futures::executor::ThreadPool`] implementation,

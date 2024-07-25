@@ -86,24 +86,24 @@ pub mod windows {
 
     use super::*;
 
-    pub struct NamedPipeListener(Box<dyn syscall::windows::FSDNamedPipeListener>);
+    pub struct NamedPipeListener(Box<dyn syscall::windows::DriverNamedPipeListener>);
 
     impl Deref for NamedPipeListener {
-        type Target = dyn syscall::windows::FSDNamedPipeListener;
+        type Target = dyn syscall::windows::DriverNamedPipeListener;
         fn deref(&self) -> &Self::Target {
             &*self.0
         }
     }
 
-    impl<F: syscall::windows::FSDNamedPipeListener + 'static> From<F> for NamedPipeListener {
+    impl<F: syscall::windows::DriverNamedPipeListener + 'static> From<F> for NamedPipeListener {
         fn from(value: F) -> Self {
             Self(Box::new(value))
         }
     }
 
     impl NamedPipeListener {
-        /// Returns internal `FSDNamedPipeListener` object.
-        pub fn as_raw_ptr(&self) -> &dyn syscall::windows::FSDNamedPipeListener {
+        /// Returns internal `DriverNamedPipeListener` object.
+        pub fn as_raw_ptr(&self) -> &dyn syscall::windows::DriverNamedPipeListener {
             &*self.0
         }
 
@@ -133,24 +133,24 @@ pub mod windows {
         }
     }
 
-    pub struct NamedPipeStream(Arc<Box<dyn syscall::windows::FSDNamedPipeStream>>);
+    pub struct NamedPipeStream(Arc<Box<dyn syscall::windows::DriverNamedPipeStream>>);
 
     impl Deref for NamedPipeStream {
-        type Target = dyn syscall::windows::FSDNamedPipeStream;
+        type Target = dyn syscall::windows::DriverNamedPipeStream;
         fn deref(&self) -> &Self::Target {
             &**self.0
         }
     }
 
-    impl<F: syscall::windows::FSDNamedPipeStream + 'static> From<F> for NamedPipeStream {
+    impl<F: syscall::windows::DriverNamedPipeStream + 'static> From<F> for NamedPipeStream {
         fn from(value: F) -> Self {
             Self(Arc::new(Box::new(value)))
         }
     }
 
     impl NamedPipeStream {
-        /// Returns internal `FSDNamedPipeStream` object.
-        pub fn as_raw_ptr(&self) -> &dyn syscall::windows::FSDNamedPipeStream {
+        /// Returns internal `DriverNamedPipeStream` object.
+        pub fn as_raw_ptr(&self) -> &dyn syscall::windows::DriverNamedPipeStream {
             &**self.0
         }
     }
@@ -192,7 +192,7 @@ pub mod syscall {
     pub mod windows {
 
         use super::*;
-        pub trait FSDNamedPipeListener: Sync + Send {
+        pub trait DriverNamedPipeListener: Sync + Send {
             fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
             fn poll_next(
@@ -201,7 +201,7 @@ pub mod syscall {
             ) -> Poll<Result<crate::fs::windows::NamedPipeStream>>;
         }
 
-        pub trait FSDNamedPipeStream: Sync + Send {
+        pub trait DriverNamedPipeStream: Sync + Send {
             fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<()>>;
 
             /// Write a buffer into this writer, returning how many bytes were written
@@ -306,8 +306,6 @@ pub mod syscall {
         ) -> Poll<Result<Metadata>>;
 
         /// Returns a iterator handle of entries in a directory.
-        ///
-        /// See [`dir_entry_next`](FileSystem::dir_entry_next) for more information about iteration.
         fn read_dir(&self, path: &Path) -> Result<ReadDir>;
 
         #[cfg(any(windows))]
@@ -332,7 +330,7 @@ pub mod syscall {
         fn name(&self) -> String;
 
         /// Returns the full path to this entry.
-        /// The full path is created by joining the original path passed to [`read_dir`](FileSystemDriver::read_dir) with the name of this entry.
+        /// The full path is created by joining the original path passed to [`read_dir`](syscall::Driver::read_dir) with the name of this entry.
         fn path(&self) -> PathBuf;
 
         /// Reads the metadata for this entry.
@@ -342,7 +340,7 @@ pub mod syscall {
 
         /// eads the file type for this entry.
         /// This function will not traverse symbolic links if this entry points at one.
-        /// If you want to read metadata with following symbolic links, use [`meta`](FSDDirEntry::meta) instead.
+        /// If you want to read metadata with following symbolic links, use [`meta`](syscall::DriverDirEntry::meta) instead.
         fn file_type(&self) -> Result<FileType>;
     }
 

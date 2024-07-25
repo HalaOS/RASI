@@ -403,9 +403,9 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
     }
 }
 
-/// This function using [`register_global_network`] to register the [`MioNetwork`] to global registry.
+/// This function using [`register_network_driver`] to register the `MioNetwork` to global registry.
 ///
-/// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_global_network`)
+/// So you may not call this function twice, otherwise will cause a panic. [`read more`](`register_network_driver`)
 pub fn register_mio_network() {
     register_network_driver(MioNetworkDriver)
 }

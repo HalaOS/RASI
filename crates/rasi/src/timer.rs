@@ -55,7 +55,7 @@ impl Future for DeadLine {
 ///
 /// # Panic
 ///
-/// You should call [`register_global_timer`](rasi_syscall::register_global_timer) first to register implementation,
+/// You should call [`register_timer_driver`] first to register implementation,
 /// otherwise this function will cause a panic with `Call register_global_timer first`
 pub async fn sleep(duration: Duration) {
     sleep_with(duration, get_timer_driver()).await
@@ -67,8 +67,8 @@ pub async fn sleep(duration: Duration) {
 ///
 /// # Panic
 ///
-/// You should call [`register_global_timer`](rasi_syscall::register_global_timer) first to register implementation,
-/// otherwise this function will cause a panic with `Call register_global_timer first`
+/// You should call [`register_timer_driver`] first to register implementation,
+/// otherwise this function will cause a panic with `Call register_timer_driver first`
 pub async fn sleep_with(duration: Duration, driver: &dyn syscall::Driver) {
     if let Some(dead_line) = driver
         .deadline(Instant::now() + duration)
@@ -117,7 +117,7 @@ impl<T> TimeoutExt for T where T: Future {}
 
 static GLOBAL_TIMER: OnceLock<Box<dyn syscall::Driver>> = OnceLock::new();
 
-/// Register provided [`Timer`] as global timer implementation.
+/// Register provided [`syscall::Driver`] as global timer implementation.
 ///
 /// # Panic
 ///
@@ -128,7 +128,7 @@ pub fn register_timer_driver<T: syscall::Driver + 'static>(timer: T) {
     }
 }
 
-/// Get the globally registered instance of [`Timer`].
+/// Get the [`syscall::Driver`] from global context of this application.
 ///
 /// # Panic
 ///

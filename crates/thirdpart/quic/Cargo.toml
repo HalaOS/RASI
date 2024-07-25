@@ -1,0 +1,14 @@
+[package]
+description = "An implementation of quic protocol backed by Quiche"
+documentation = "https://docs.rs/futures-quic"
+edition.workspace = true
+license = "MIT"
+name = "futures-quic"
+repository.workspace = true
+version.workspace = true
+readme = "README.md"
+
+[dependencies]
+futures-waitmap = { workspace = true }
+quiche = { workspace = true }
+futures = { workspace = true }

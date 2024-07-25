@@ -54,7 +54,7 @@ pub mod syscall {
         /// Create a new database connection instance with `source_name`.
         ///
         /// When the object returns, the database connection may not actually be established.
-        /// The user needs to manually call the [`is_ready`](Connection::is_ready) method to check the status of the connection
+        /// The user needs to manually call the [`poll_ready`](DriverConn::poll_ready) method to check the status of the connection
         fn create_connection(&self, driver_name: &str, source_name: &str) -> Result<Connection>;
     }
 
@@ -66,7 +66,7 @@ pub mod syscall {
         /// Starts a transaction via one connection. The default isolation level is dependent on the driver.
         ///
         /// When the transaction object is returned, the database transaction may not actually be ready.
-        /// The user needs to manually call the [`is_ready`](DriverTx::is_ready) method to check the status of the transaction.
+        /// The user needs to manually call the [`poll_ready`](DriverTx::poll_ready) method to check the status of the transaction.
         fn begin(&self) -> Result<Transaction>;
 
         /// Create a prepared statement for execution via the connection.
@@ -204,14 +204,14 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    /// Get inner [`DriverConn`] reference.
+    /// Get inner [`syscall::DriverConn`] reference.
     pub fn as_driver_conn(&self) -> &dyn syscall::DriverConn {
         &*self.1.as_deref().unwrap()
     }
 
     /// Check if the object is already connected.
     ///
-    /// When the `Connection` object is created by [`create_connection`](Driver::create_connection)
+    /// When the `Connection` object is created by [`create_connection`](syscall::Driver::create_connection)
     /// function, you should first call this function to waiting
     /// connected event or connection error event.
     pub async fn is_ready(&self) -> Result<()> {
@@ -220,7 +220,7 @@ impl Connection {
 
     /// Start a new `transaction` via this connection.
     ///
-    /// This function will automatically call the [`poll_ready`](DriverTx::poll_ready)
+    /// This function will automatically call the [`poll_ready`](syscall::DriverTx::poll_ready)
     /// function after the transaction object has been created,
     /// so the user should not have to call this function again.
     pub async fn begin(&self) -> Result<Transaction> {
@@ -259,7 +259,7 @@ impl<T: syscall::DriverPrepare + 'static> From<T> for Prepare {
 }
 
 impl Prepare {
-    /// Get inner [`DriverPrepare`] reference.
+    /// Get inner [`syscall::DriverPrepare`] reference.
     pub fn as_driver_query(&self) -> &dyn syscall::DriverPrepare {
         &*self.0
     }
@@ -302,7 +302,7 @@ impl<T: syscall::DriverQuery + 'static> From<T> for Query {
 }
 
 impl Query {
-    /// Get inner [`DriverQuery`] reference.
+    /// Get inner [`syscall::DriverQuery`] reference.
     pub fn as_driver_query(&self) -> &dyn syscall::DriverQuery {
         &*self.0
     }
@@ -348,7 +348,7 @@ impl<T: syscall::DriverRow + 'static> From<T> for Row {
 }
 
 impl Row {
-    /// Get inner [`DriverRow`] reference.
+    /// Get inner [`syscall::DriverRow`] reference.
     pub fn as_driver_row(&self) -> &dyn syscall::DriverRow {
         &*self.0
     }
@@ -523,13 +523,13 @@ impl<T: syscall::DriverTx + 'static> From<T> for Transaction {
 }
 
 impl Transaction {
-    /// Get inner [`DriverConn`] reference.
+    /// Get inner [`syscall::DriverConn`] reference.
     pub fn as_driver_tx(&self) -> &dyn syscall::DriverTx {
         &*self.0
     }
 
     /// Rollback this transaction.
-    /// see [`poll_rollback`](DriverTx::poll_rollback) for details.
+    /// see [`poll_rollback`](syscall::DriverTx::poll_rollback) for details.
     pub async fn rollback(&self) -> Result<()> {
         poll_fn(|cx: &mut Context| self.0.poll_rollback(cx)).await
     }

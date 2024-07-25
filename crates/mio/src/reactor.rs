@@ -177,16 +177,14 @@ impl ReactorBackground {
 
 static GLOBAL_REACTOR: OnceLock<ArcReactor> = OnceLock::new();
 
-/// Manually start [`Reactor`] service with providing `tick_interval`.
+/// Manually start `reactor` service with providing `tick_interval`.
 ///
 /// If `start_reactor_with` is not called at the very beginning of the `main fn`,
-/// [`Reactor`] will run with the default tick_interval = 10ms.
+/// `reactor` will run with the default tick_interval = 10ms.
 ///
 /// # Panic
 ///
-/// Call this function more than once or Call this function after calling any
-/// [`Network`](rasi_syscall::Network) [`Timer`](rasi_syscall::Timer) system interface , will cause a panic with message
-/// `Call start_reactor_with twice.`
+/// Multiple calls to this function are not permitted!!!
 pub fn start_reactor_with(tick_interval: Duration) {
     if GLOBAL_REACTOR
         .set(Reactor::new(tick_interval).unwrap())

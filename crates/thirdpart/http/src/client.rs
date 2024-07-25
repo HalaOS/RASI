@@ -10,11 +10,11 @@ use crate::{
     writer::{RequestWithStreamBodyWriter, RequestWriter},
 };
 
-/// An extension trait for [`Request`](http::Request) with addition `send` method.
+/// An extension trait for [`Request`] with addition `send` method.
 pub trait HttpWithStreamBodyClient {
-    /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+    /// Consume self and send [`Request`] via `stream` to peer.
     ///
-    /// On success, returns [`Response`](http::Response) from peer.
+    /// On success, returns [`Response`] from peer.
     fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
     where
         S: AsyncRead + AsyncWrite + Unpin;
@@ -38,11 +38,11 @@ where
     }
 }
 
-/// An extension trait for [`Request`](http::Request) with addition `send` method.
+/// An extension trait for [`Request`] with addition `send` method.
 pub trait HttpClient {
-    /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+    /// Consume self and send [`Request`] via `stream` to peer.
     ///
-    /// On success, returns [`Response`](http::Response) from peer.
+    /// On success, returns [`Response`] from peer.
     fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
     where
         S: AsyncRead + AsyncWrite + Unpin;
@@ -246,11 +246,11 @@ pub mod rasio {
         }
     }
 
-    /// An extension trait for [`Request`](http::Request) with addition `send` method.
+    /// An extension trait for [`Request`] with addition `send` method.
     pub trait HttpWithStreamBodyClient {
-        /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+        /// Consume self and send [`Request`] via `stream` to peer.
         ///
-        /// On success, returns [`Response`](http::Response) from peer.
+        /// On success, returns [`Response`] from peer.
         fn send<Op>(
             self,
             ops: Op,
@@ -278,11 +278,11 @@ pub mod rasio {
         }
     }
 
-    /// An extension trait for [`Request`](http::Request) with addition `send` method.
+    /// An extension trait for [`Request`] with addition `send` method.
     pub trait HttpClient {
-        /// Consume self and send [`Request`](http::Request) via `stream` to peer.
+        /// Consume self and send [`Request`] via `stream` to peer.
         ///
-        /// On success, returns [`Response`](http::Response) from peer.
+        /// On success, returns [`Response`] from peer.
         fn send<Op>(
             self,
             ops: Op,
