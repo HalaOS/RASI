@@ -11,6 +11,7 @@ readme = "README.md"
 [dependencies]
 log = { workspace = true }
 futures = { workspace = true }
+cooked-waker = { workspace = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }

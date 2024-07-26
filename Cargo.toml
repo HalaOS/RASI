@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "crates/rasi",
+    "crates/*",
     "crates/mio",
     "crates/spec",
     "crates/sqlite3",
-    "crates/thirdpart/*"
+    "futures/*"
 ]
 resolver = "2"
 
@@ -36,11 +36,13 @@ num_cpus = "^1.16"
 bigdecimal = "^0.4"
 sqlite3-sys = "^0.17"
 quiche = { version = "^0.22", features = ["boringssl-boring-crate"] }
+ring = "^0.17"
+cooked-waker = "^5.0"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }
 rasi-mio = { path = "crates/mio", version = "^0.2" }
-futures-boring = { path = "crates/thirdpart/boring", version = "^0.2" }
-futures-waitmap = { path = "crates/thirdpart/waitmap", version = "^0.2" }
-futures-http = { path = "crates/thirdpart/http", version = "^0.2" }
-futures-jsonrpcv2 = { path = "crates/thirdpart/jsonrpc", version = "^0.2" }
+futures-boring = { path = "futures/boring", version = "^0.2" }
+futures-waitmap = { path = "futures/waitmap", version = "^0.2" }
+futures-http = { path = "futures/http", version = "^0.2" }
+futures-jsonrpcv2 = { path = "futures/jsonrpc", version = "^0.2" }

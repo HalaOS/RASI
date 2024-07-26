@@ -271,6 +271,18 @@ impl QuicConn {
             stream_drop_table: Default::default(),
         }
     }
+
+    pub(crate) async fn into_send(&self, max_buf_len: usize) -> Result<(Vec<u8>, SendInfo)> {
+        let mut buf = vec![0; max_buf_len];
+
+        let (send_size, send_info) = self.send(&mut buf).await?;
+
+        // Safety: send method ensure send_size <= buf.len()
+        buf.resize(send_size, 0);
+
+        Ok((buf, send_info))
+    }
+
     /// Read sending data from the `QuicConn`.
     ///
     /// On success, returns the total number of bytes copied and the [`SendInfo`]

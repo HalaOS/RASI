@@ -14,3 +14,5 @@ quiche = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
 rasi = { workspace = true }
+futures-boring = { workspace = true }
+ring = { workspace = true }
