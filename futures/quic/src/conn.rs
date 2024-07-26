@@ -1,6 +1,7 @@
 use std::{
     collections::{HashSet, VecDeque},
     fmt::Debug,
+    hash::Hash,
     io::{Error, ErrorKind, Result},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -115,10 +116,26 @@ impl QuicStreamDropTable {
 /// A Quic connection between a local and a remote socket.
 #[derive(Clone)]
 pub struct QuicConn {
+    max_send_udp_payload_size: usize,
+    pub(crate) id: ConnectionId<'static>,
     state: Arc<Mutex<QuicConnState>>,
     event_map: Arc<WaitMap<QuicConnStateEvent, ()>>,
     stream_drop_table: Arc<QuicStreamDropTable>,
 }
+
+impl Hash for QuicConn {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state)
+    }
+}
+
+impl PartialEq for QuicConn {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id)
+    }
+}
+
+impl Eq for QuicConn {}
 
 impl QuicConn {
     async fn after_recv(&self, state: &mut QuicConnState) {
@@ -262,6 +279,8 @@ impl QuicConn {
         ack_eliciting_interval: Option<Duration>,
     ) -> Self {
         Self {
+            max_send_udp_payload_size: inner.max_send_udp_payload_size(),
+            id: inner.source_id().into_owned(),
             state: Arc::new(Mutex::new(QuicConnState::new(
                 inner,
                 init_stream_outbound_id,
@@ -272,8 +291,8 @@ impl QuicConn {
         }
     }
 
-    pub(crate) async fn into_send(&self, max_buf_len: usize) -> Result<(Vec<u8>, SendInfo)> {
-        let mut buf = vec![0; max_buf_len];
+    pub(crate) async fn into_send(self) -> Result<(Vec<u8>, SendInfo)> {
+        let mut buf = vec![0; self.max_send_udp_payload_size];
 
         let (send_size, send_info) = self.send(&mut buf).await?;
 
@@ -389,7 +408,7 @@ impl QuicConn {
     /// Iterating over this stream is equivalent to calling accept in a loop.
     /// The stream of connections is infinite, i.e awaiting the next connection
     /// will never result in None.
-    pub fn to_incoming(&self) -> impl Stream<Item = Result<QuicStream>> + Unpin {
+    pub fn incoming(&self) -> impl Stream<Item = Result<QuicStream>> + Unpin {
         Box::pin(futures::stream::unfold(self.clone(), |conn| async move {
             let res = conn.accept().await;
             Some((res, conn))
