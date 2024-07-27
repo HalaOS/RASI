@@ -1,5 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Error, ErrorKind, Result};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::lock::Mutex;
@@ -9,7 +10,24 @@ use futures_waitmap::{FutureWaitMap, WaitMap};
 use quiche::{Config, ConnectionId, RecvInfo, SendInfo};
 use ring::{hmac::Key, rand::SystemRandom};
 
+use crate::errors::map_quic_error;
 use crate::QuicConn;
+
+enum QuicListenerHandshake {
+    Connection {
+        #[allow(unused)]
+        conn: QuicConn,
+        is_established: bool,
+        /// the number of bytes processed from the input buffer
+        read_size: usize,
+    },
+    Response {
+        /// buf of response packet.
+        buf: Vec<u8>,
+        /// the number of bytes processed from the input buffer
+        read_size: usize,
+    },
+}
 
 /// Server-side incoming connection handshake pool.
 pub struct QuicListenerState {
@@ -42,12 +60,224 @@ impl QuicListenerState {
         })
     }
 
-    fn recv<Buf: AsRef<[u8]>>(
-        &self,
-        buf: Buf,
+    /// Get connection by id.
+    ///
+    /// If found, returns tuple (QuicConnState, is_established).
+    fn get_conn<'a>(&self, id: &ConnectionId<'a>) -> Option<(QuicConn, bool)> {
+        if let Some(conn) = self.handshaking_pool.get(id) {
+            return Some((conn.clone(), false));
+        }
+
+        if let Some(conn) = self.established_conns.get(id) {
+            return Some((conn.clone(), true));
+        }
+
+        None
+    }
+
+    /// Move connection from handshaking set to established set by id.
+    fn established<'a>(&mut self, id: &ConnectionId<'a>) {
+        let id = id.clone().into_owned();
+        if let Some(conn) = self.handshaking_pool.remove(&id) {
+            self.established_conns.insert(id, conn.clone());
+            self.incoming_conns.push_back(conn);
+        }
+    }
+
+    /// remove connection from pool.
+    fn remove_conn<'a>(&mut self, id: &ConnectionId<'a>) -> bool {
+        let id = id.clone().into_owned();
+        if self.handshaking_pool.remove(&id).is_some() {
+            return true;
+        }
+
+        if self.established_conns.remove(&id).is_some() {
+            return true;
+        }
+
+        false
+    }
+
+    /// Process Initial packet.
+    fn handshake<'a>(
+        &mut self,
+        header: &quiche::Header<'a>,
+        buf: &'a mut [u8],
         recv_info: RecvInfo,
-    ) -> Result<(usize, Option<ConnectionId<'static>>)> {
-        todo!()
+    ) -> Result<QuicListenerHandshake> {
+        if header.ty != quiche::Type::Initial {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                format!("Invalid packet: {:?}", recv_info),
+            ));
+        }
+
+        self.client_hello(header, buf, recv_info)
+    }
+
+    fn client_hello<'a>(
+        &mut self,
+        header: &quiche::Header<'a>,
+        buf: &'a mut [u8],
+        recv_info: RecvInfo,
+    ) -> Result<QuicListenerHandshake> {
+        if !quiche::version_is_supported(header.version) {
+            return self.negotiation_version(header, recv_info, buf);
+        }
+
+        let token = header.token.as_ref().unwrap();
+
+        // generate new token and retry
+        if token.is_empty() {
+            return self.retry(header, recv_info, buf);
+        }
+
+        // check token .
+        let odcid = Self::validate_token(token, &recv_info.from)?;
+
+        let scid: quiche::ConnectionId<'_> = header.dcid.clone();
+
+        if quiche::MAX_CONN_ID_LEN != scid.len() {
+            return Err(Error::new(
+                ErrorKind::Interrupted,
+                format!("Check dcid length error, len={}", scid.len()),
+            ));
+        }
+
+        let mut quiche_conn = quiche::accept(
+            &scid,
+            Some(&odcid),
+            recv_info.to,
+            recv_info.from,
+            &mut self.config,
+        )
+        .map_err(map_quic_error)?;
+
+        let read_size = quiche_conn.recv(buf, recv_info).map_err(map_quic_error)?;
+
+        log::trace!(
+            "Create new incoming conn, scid={:?}, dcid={:?}, read_size={}",
+            quiche_conn.source_id(),
+            quiche_conn.destination_id(),
+            read_size,
+        );
+
+        let is_established = quiche_conn.is_established();
+
+        let scid = quiche_conn.source_id().into_owned();
+
+        let conn = QuicConn::new(quiche_conn, 5, None);
+
+        if is_established {
+            self.established_conns.insert(scid, conn.clone());
+            self.incoming_conns.push_back(conn.clone());
+        } else {
+            self.handshaking_pool.insert(scid, conn.clone());
+        }
+
+        Ok(QuicListenerHandshake::Connection {
+            conn,
+            is_established,
+            read_size,
+        })
+    }
+
+    fn negotiation_version<'a>(
+        &mut self,
+        header: &quiche::Header<'a>,
+        _recv_info: RecvInfo,
+        buf: &mut [u8],
+    ) -> Result<QuicListenerHandshake> {
+        let scid = header.scid.clone().into_owned();
+        let dcid = header.dcid.clone().into_owned();
+
+        let mut read_buf = vec![0; 128];
+
+        let write_size = quiche::negotiate_version(&scid, &dcid, buf).map_err(map_quic_error)?;
+
+        read_buf.resize(write_size, 0);
+
+        Ok(QuicListenerHandshake::Response {
+            buf: read_buf,
+            read_size: buf.len(),
+        })
+    }
+    /// Generate retry package
+    fn retry<'a>(
+        &mut self,
+        header: &quiche::Header<'a>,
+        recv_info: RecvInfo,
+        buf: &mut [u8],
+    ) -> Result<QuicListenerHandshake> {
+        let token = self.mint_token(&header, &recv_info.from);
+
+        let new_scid = ring::hmac::sign(&self.seed_key, &header.dcid);
+        let new_scid = &new_scid.as_ref()[..quiche::MAX_CONN_ID_LEN];
+        let new_scid = quiche::ConnectionId::from_vec(new_scid.to_vec());
+
+        let scid = header.scid.clone().into_owned();
+        let dcid: ConnectionId<'_> = header.dcid.clone().into_owned();
+        let version = header.version;
+
+        let mut read_buf = vec![0; 1200];
+
+        let write_size = quiche::retry(&scid, &dcid, &new_scid, &token, version, &mut read_buf)
+            .map_err(map_quic_error)?;
+
+        read_buf.resize(write_size, 0);
+
+        Ok(QuicListenerHandshake::Response {
+            buf: read_buf,
+            read_size: buf.len(),
+        })
+    }
+
+    fn validate_token<'a>(token: &'a [u8], src: &SocketAddr) -> Result<quiche::ConnectionId<'a>> {
+        if token.len() < 6 {
+            return Err(Error::new(
+                ErrorKind::Interrupted,
+                format!("Invalid token, token length < 6"),
+            ));
+        }
+
+        if &token[..6] != b"quiche" {
+            return Err(Error::new(
+                ErrorKind::Interrupted,
+                format!("Invalid token, not start with 'quiche'"),
+            ));
+        }
+
+        let token = &token[6..];
+
+        let addr = match src.ip() {
+            std::net::IpAddr::V4(a) => a.octets().to_vec(),
+            std::net::IpAddr::V6(a) => a.octets().to_vec(),
+        };
+
+        if token.len() < addr.len() || &token[..addr.len()] != addr.as_slice() {
+            return Err(Error::new(
+                ErrorKind::Interrupted,
+                format!("Invalid token, address mismatch"),
+            ));
+        }
+
+        Ok(quiche::ConnectionId::from_ref(&token[addr.len()..]))
+    }
+
+    fn mint_token<'a>(&self, hdr: &quiche::Header<'a>, src: &SocketAddr) -> Vec<u8> {
+        let mut token = Vec::new();
+
+        token.extend_from_slice(b"quiche");
+
+        let addr = match src.ip() {
+            std::net::IpAddr::V4(a) => a.octets().to_vec(),
+            std::net::IpAddr::V6(a) => a.octets().to_vec(),
+        };
+
+        token.extend_from_slice(&addr);
+        token.extend_from_slice(&hdr.dcid);
+
+        token
     }
 }
 
@@ -59,6 +289,21 @@ pub struct QuicListener {
     state: Arc<Mutex<QuicListenerState>>,
     event_map: Arc<WaitMap<QuicListenerAccept, ()>>,
     send_map: FutureWaitMap<QuicConn, Result<(Vec<u8>, SendInfo)>>,
+}
+
+impl QuicListener {
+    async fn remove_conn(&self, scid: &ConnectionId<'static>) {
+        let mut raw = self.state.lock().await;
+
+        if raw.remove_conn(scid) {
+            log::info!("scid={:?}, remove connection from server pool", scid);
+        } else {
+            log::warn!(
+                "scid={:?}, removed from server pool with error: not found",
+                scid
+            );
+        }
+    }
 }
 
 impl QuicListener {
@@ -94,17 +339,71 @@ impl QuicListener {
     /// Processes QUIC packets received from the peer.
     ///
     /// On success the number of bytes processed from the input buffer is returned.
-    pub async fn recv<Buf: AsRef<[u8]>>(&self, buf: Buf, recv_info: RecvInfo) -> Result<usize> {
-        let state = self.state.lock().await;
+    pub async fn recv<Buf: AsMut<[u8]>>(
+        &self,
+        mut buf: Buf,
+        recv_info: RecvInfo,
+    ) -> Result<(usize, Option<Vec<u8>>)> {
+        let buf = buf.as_mut();
+        let header =
+            quiche::Header::from_slice(buf, quiche::MAX_CONN_ID_LEN).map_err(map_quic_error)?;
 
-        let (recv_size, accept) = state.recv(buf.as_ref(), recv_info)?;
+        let mut state = self.state.lock().await;
 
-        if let Some(id) = accept {
-            log::trace!("new incoming connection, id={:?}", id);
-            self.event_map.insert(QuicListenerAccept, ()).await;
+        if let Some((conn, is_established)) = state.get_conn(&header.dcid) {
+            // release the lock before call [QuicConnState::recv] function.
+            drop(state);
+
+            let recv_size = match conn.recv(buf, recv_info).await {
+                Ok(recv_size) => recv_size,
+                Err(err) => {
+                    self.remove_conn(&header.dcid).await;
+
+                    return Err(err);
+                }
+            };
+
+            if !is_established && conn.is_established().await {
+                // relock the state.
+                let mut state = self.state.lock().await;
+                // move the connection to established set and push state into incoming queue.
+                state.established(&header.dcid);
+
+                self.event_map.insert(QuicListenerAccept, ()).await;
+
+                drop(state);
+
+                let send = conn.clone().into_send();
+
+                self.send_map.insert(conn, send);
+            }
+
+            return Ok((recv_size, None));
         }
 
-        Ok(recv_size)
+        // Perform the handshake process.
+        match state.handshake(&header, buf, recv_info)? {
+            QuicListenerHandshake::Connection {
+                conn,
+                is_established,
+                read_size,
+            } => {
+                // notify incoming queue read ops.
+                if is_established {
+                    self.event_map.insert(QuicListenerAccept, ()).await;
+
+                    let send = conn.clone().into_send();
+
+                    self.send_map.insert(conn, send);
+                }
+
+                return Ok((read_size, None));
+            }
+            QuicListenerHandshake::Response {
+                buf,
+                read_size: recv_size,
+            } => return Ok((recv_size, Some(buf))),
+        }
     }
 
     /// Accept a new inbound connection.
