@@ -18,6 +18,12 @@ futures-boring = { workspace = true }
 ring = { workspace = true }
 rand = { workspace = true, optional = true }
 
+[dev-dependencies]
+futures-test = { workspace = true }
+rasi-mio = { workspace = true }
+rasi = { workspace = true, features = ["task-futures"] }
+pretty_env_logger = { workspace = true }
+
 [features]
 default = ["with-rasi"]
 with-rasi = ["rasi", "rand"]

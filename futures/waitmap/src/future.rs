@@ -61,6 +61,10 @@ impl<K, R> FutureWaitMap<K, R> {
 
         inner.ready_queue.push_back(k.clone());
         inner.futs.insert(k, Box::pin(fut));
+
+        if let Some(waker) = inner.waker.take() {
+            waker.wake();
+        }
     }
 
     pub fn poll_next(&self, cx: &mut Context<'_>) -> Poll<(K, R)>
@@ -68,28 +72,29 @@ impl<K, R> FutureWaitMap<K, R> {
         K: Hash + Eq + Clone + Send + Sync + 'static,
         R: 'static,
     {
-        let cloned = self.inner.clone();
-
         let mut inner = self.inner.lock().unwrap();
 
-        if let Some(key) = inner.ready_queue.pop_front() {
+        while let Some(key) = inner.ready_queue.pop_front() {
             let mut fut = inner.futs.remove(&key).expect(
                 "Inner error: when insert wake information, checking the futs map is necessarily",
             );
 
-            let waker = Arc::new(FutureWaitMapWaker(key.clone(), cloned)).into_waker();
+            drop(inner);
+
+            let waker = Arc::new(FutureWaitMapWaker(key.clone(), self.inner.clone())).into_waker();
 
             let mut proxy_context = Context::from_waker(&waker);
 
             match fut.poll_unpin(&mut proxy_context) {
                 Poll::Ready(r) => return Poll::Ready((key, r)),
                 Poll::Pending => {
-                    inner.waker = Some(cx.waker().clone());
+                    inner = self.inner.lock().unwrap();
                     inner.futs.insert(key, fut);
-                    return Poll::Pending;
                 }
             }
         }
+
+        inner.waker = Some(cx.waker().clone());
 
         Poll::Pending
     }

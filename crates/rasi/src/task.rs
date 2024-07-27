@@ -54,6 +54,16 @@ pub fn register_spawn_driver<T: syscall::Driver + 'static>(driver: T) {
     }
 }
 
+#[cfg(feature = "task-futures")]
+pub fn register_futures_spawn(pool_size: usize) {
+    register_spawn_driver(
+        task_futures::ThreadPoolSpawnDriver::builder()
+            .pool_size(pool_size)
+            .create()
+            .unwrap(),
+    )
+}
+
 /// Get the globally registered instance of [`syscall::Driver`].
 ///
 /// If the feature "futures-spawn" is enabled, this function will create a default

@@ -39,12 +39,12 @@ async fn create_echo_server() -> SocketAddr {
 
     acceptor
         .set_private_key_file(
-            root_path.join("../../../cert/server.key"),
+            root_path.join("../../cert/server.key"),
             ssl::SslFiletype::PEM,
         )
         .unwrap();
     acceptor
-        .set_certificate_chain_file(root_path.join("../../../cert/server.crt"))
+        .set_certificate_chain_file(root_path.join("../../cert/server.crt"))
         .unwrap();
 
     acceptor.check_private_key().unwrap();
@@ -97,7 +97,7 @@ async fn test_echo() {
     let mut config = ssl::SslConnector::builder(ssl::SslMethod::tls()).unwrap();
 
     config
-        .set_ca_file(root_path.join("../../../cert/rasi_ca.pem"))
+        .set_ca_file(root_path.join("../../cert/rasi_ca.pem"))
         .unwrap();
 
     let config = config.build().configure().unwrap();

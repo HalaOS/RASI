@@ -4,11 +4,10 @@ use std::{
     io::{Error, ErrorKind, Result},
     net::{SocketAddr, ToSocketAddrs},
     sync::Arc,
-    time::Instant,
 };
 
 use futures_waitmap::FutureWaitMap;
-use quiche::{Config, RecvInfo, SendInfo};
+use quiche::{Config, RecvInfo};
 use rand::{seq::IteratorRandom, thread_rng};
 use rasi::{
     net::{get_network_driver, UdpSocket},
@@ -152,17 +151,19 @@ pub trait QuicListenerBind {
         async move {
             let laddrs = laddrs.to_socket_addrs()?.collect::<Vec<_>>();
 
-            let listener = QuicListener::new(laddrs.as_slice(), config)?;
-
             // max_recv_udp_payload_size must be greater than or equal to the maximum mtu size.
             // generally, the maximum mtu is 1,500 bytes.
             let udp_group = UdpGroup::bind(laddrs.as_slice(), 1500).await?;
 
+            let laddrs = udp_group.local_addrs().cloned().collect::<Vec<_>>();
+
+            let listener = QuicListener::new(laddrs.as_slice(), config)?;
+
             spawn_ok(listener_recv_loop(udp_group.clone(), listener.clone()));
 
-            spawn_ok(listener_send_loop(udp_group, listener));
+            spawn_ok(listener_send_loop(udp_group, listener.clone()));
 
-            todo!()
+            Ok(listener)
         }
     }
 }
@@ -175,7 +176,15 @@ async fn listener_send_loop(group: UdpGroup, listener: QuicListener) {
 
 async fn listener_send_loop_priv(group: UdpGroup, listener: QuicListener) -> Result<()> {
     loop {
+        log::trace!("QuicListener send loop");
         let (buf, send_info) = listener.send().await?;
+
+        log::trace!(
+            "tx len={}, from={}, to={}",
+            buf.len(),
+            send_info.from,
+            send_info.to
+        );
 
         group
             .send_to(
@@ -210,16 +219,18 @@ async fn listener_recv_loop_priv(group: UdpGroup, listener: QuicListener) -> Res
             .await?;
 
         if let Some(buf) = handshake {
+            let send_info = PathInfo {
+                from: path_info.to,
+                to: path_info.from,
+            };
+            log::trace!(
+                "tx handshake len={} from={}, to={}",
+                buf.len(),
+                send_info.from,
+                send_info.to
+            );
             // send handshake internal packet: version and retry, etc.
-            group
-                .send_to(
-                    buf,
-                    PathInfo {
-                        from: path_info.to,
-                        to: path_info.from,
-                    },
-                )
-                .await?;
+            group.send_to(buf, send_info).await?;
         }
     }
 }
@@ -254,17 +265,7 @@ pub trait QuicConnect {
                     continue;
                 };
 
-                match Self::connect_on_path(
-                    server_name,
-                    SendInfo {
-                        from: laddr,
-                        to: raddr,
-                        at: Instant::now(),
-                    },
-                    config,
-                )
-                .await
-                {
+                match Self::connect_on_path(server_name, laddr, raddr, config).await {
                     Ok(conn) => return Ok(conn),
                     Err(err) => last_error = Some(err),
                 }
@@ -276,11 +277,12 @@ pub trait QuicConnect {
 
     fn connect_on_path(
         server_name: Option<&str>,
-        send_info: SendInfo,
+        laddr: SocketAddr,
+        raddr: SocketAddr,
         config: &mut Config,
     ) -> impl Future<Output = Result<QuicConn>> + Send {
         async move {
-            let udp_socket = UdpSocket::bind(send_info.from).await?;
+            let udp_socket = UdpSocket::bind(laddr).await?;
 
             let laddr = udp_socket.local_addr()?;
 
@@ -292,7 +294,7 @@ pub trait QuicConnect {
 
             let scid = quiche::ConnectionId::from_vec(scid);
 
-            let conn = quiche::connect(server_name, &scid, laddr, send_info.to, config)
+            let conn = quiche::connect(server_name, &scid, laddr, raddr, config)
                 .map_err(map_quic_error)?;
 
             let conn = QuicConn::new(conn, 0, None);
@@ -309,15 +311,16 @@ pub trait QuicConnect {
                         Some(Ok((read_size, from))) => (read_size, from),
                         Some(Err(err)) => return Err(err),
                         None => {
-                            return Err(Error::new(
-                                ErrorKind::TimedOut,
-                                "QuicConnect: read data from server timeout.",
-                            ))
+                            log::trace!("=============");
+                            conn.on_timeout().await;
+                            continue;
                         }
                     }
                 } else {
                     udp_socket.recv_from(&mut buf).await?
                 };
+
+                log::trace!("Connect: rx handshake len={}, from={}", read_size, from);
 
                 conn.recv(&mut buf[..read_size], RecvInfo { from, to: laddr })
                     .await?;
@@ -327,9 +330,50 @@ pub trait QuicConnect {
                 }
             }
 
+            spawn_ok(client_send_loop(udp_socket.clone(), conn.clone()));
+
+            spawn_ok(client_recv_loop(udp_socket, conn.clone()));
+
             Ok(conn)
         }
     }
 }
 
 impl QuicConnect for QuicConn {}
+
+async fn client_send_loop(udp_socket: UdpSocket, conn: QuicConn) {
+    if let Err(err) = client_send_loop_priv(udp_socket, conn).await {
+        log::error!(target: "QuicConn","stop recv loop by error: {}",err);
+    }
+}
+
+async fn client_send_loop_priv(udp_socket: UdpSocket, conn: QuicConn) -> Result<()> {
+    let mut buf = vec![0; 1500];
+    loop {
+        let (send_size, send_info) = conn.send(&mut buf).await?;
+
+        udp_socket.send_to(&buf[..send_size], send_info.to).await?;
+    }
+}
+async fn client_recv_loop(udp_socket: UdpSocket, conn: QuicConn) {
+    if let Err(err) = client_recv_loop_prev(udp_socket, conn).await {
+        log::error!(target: "QuicConn","stop recv loop by error: {}",err);
+    }
+}
+
+async fn client_recv_loop_prev(udp_socket: UdpSocket, conn: QuicConn) -> Result<()> {
+    let laddr = udp_socket.local_addr()?;
+    let mut buf = vec![0; 1500];
+    loop {
+        let (read_size, raddr) = udp_socket.recv_from(&mut buf).await?;
+
+        conn.recv(
+            &mut buf[..read_size],
+            RecvInfo {
+                from: raddr,
+                to: laddr,
+            },
+        )
+        .await?;
+    }
+}

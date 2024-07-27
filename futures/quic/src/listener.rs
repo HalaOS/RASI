@@ -155,29 +155,28 @@ impl QuicListenerState {
 
         let read_size = quiche_conn.recv(buf, recv_info).map_err(map_quic_error)?;
 
-        log::trace!(
-            "Create new incoming conn, scid={:?}, dcid={:?}, read_size={}",
-            quiche_conn.source_id(),
-            quiche_conn.destination_id(),
-            read_size,
-        );
-
-        let is_established = quiche_conn.is_established();
+        // let is_established = quiche_conn.is_established();
 
         let scid = quiche_conn.source_id().into_owned();
+        let dcid = quiche_conn.destination_id().into_owned();
 
         let conn = QuicConn::new(quiche_conn, 1, None);
 
-        if is_established {
-            self.established_conns.insert(scid, conn.clone());
-            self.incoming_conns.push_back(conn.clone());
-        } else {
-            self.handshaking_pool.insert(scid, conn.clone());
-        }
+        // if is_established {
+        //     self.established_conns.insert(scid, conn.clone());
+        //     self.incoming_conns.push_back(conn.clone());
+        // } else {
+        //     self.handshaking_pool.insert(scid, conn.clone());
+        // }
+
+        log::trace!("Create new incoming conn, scid={:?}, dcid={:?}", scid, dcid);
+
+        self.established_conns.insert(scid, conn.clone());
+        self.incoming_conns.push_back(conn.clone());
 
         Ok(QuicListenerHandshake::Connection {
             conn,
-            is_established,
+            is_established: true,
             read_size,
         })
     }
@@ -327,7 +326,7 @@ impl QuicListener {
         while let Some((conn, result)) = (&self.send_map).next().await {
             match result {
                 Ok((buf, send_info)) => {
-                    let send = conn.clone().into_send();
+                    let send = conn.clone().send_owned();
                     self.send_map.insert(conn, send);
 
                     return Ok((buf, send_info));
@@ -382,7 +381,7 @@ impl QuicListener {
 
                 drop(state);
 
-                let send = conn.clone().into_send();
+                let send = conn.clone().send_owned();
 
                 self.send_map.insert(conn, send);
             }
@@ -401,7 +400,7 @@ impl QuicListener {
                 if is_established {
                     self.event_map.insert(QuicListenerAccept, ()).await;
 
-                    let send = conn.clone().into_send();
+                    let send = conn.clone().send_owned();
 
                     self.send_map.insert(conn, send);
                 }
@@ -431,10 +430,10 @@ impl QuicListener {
     }
 
     /// Returns a stream of incoming connections.
-    pub fn incoming(&self) -> impl Stream<Item = Result<QuicConn>> + Send {
-        unfold(self.clone(), |listener| async {
+    pub fn incoming(&self) -> impl Stream<Item = Result<QuicConn>> + Send + Unpin {
+        Box::pin(unfold(self.clone(), |listener| async {
             let res = listener.accept().await;
             Some((res, listener))
-        })
+        }))
     }
 }

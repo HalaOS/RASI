@@ -94,10 +94,10 @@ async fn test_https() {
     let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
 
     acceptor
-        .set_private_key_file(root_path.join("../../../cert/server.key"), SslFiletype::PEM)
+        .set_private_key_file(root_path.join("../../cert/server.key"), SslFiletype::PEM)
         .unwrap();
     acceptor
-        .set_certificate_chain_file(root_path.join("../../../cert/server.crt"))
+        .set_certificate_chain_file(root_path.join("../../cert/server.crt"))
         .unwrap();
 
     acceptor.check_private_key().unwrap();
@@ -127,7 +127,7 @@ async fn test_https() {
 
     let root_path = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    let ca_file = root_path.join("../../../cert/rasi_ca.pem");
+    let ca_file = root_path.join("../../cert/rasi_ca.pem");
 
     let response = Request::get(format!("https://rasi.quic/hello"))
         .body("")

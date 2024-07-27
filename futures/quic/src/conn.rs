@@ -3,6 +3,7 @@ use std::{
     fmt::Debug,
     hash::Hash,
     io::{Error, ErrorKind, Result},
+    ops::Deref,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -270,8 +271,10 @@ impl QuicConn {
         }
     }
 
-    pub(crate) async fn into_send(self) -> Result<(Vec<u8>, SendInfo)> {
+    pub(crate) async fn send_owned(self) -> Result<(Vec<u8>, SendInfo)> {
         let mut buf = vec![0; self.max_send_udp_payload_size];
+
+        log::trace!("scid={:?} try send packet", self.id);
 
         let (send_size, send_info) = self.send(&mut buf).await?;
 
@@ -279,6 +282,10 @@ impl QuicConn {
         buf.resize(send_size, 0);
 
         Ok((buf, send_info))
+    }
+
+    pub(crate) async fn on_timeout(&self) {
+        self.state.lock().await.conn.on_timeout();
     }
 }
 
@@ -329,7 +336,7 @@ impl QuicConn {
                     Ok((send_size, send_info)) => {
                         log::trace!(
                             "{:?}, send data, len={}, elapsed={:?}",
-                            state,
+                            *state,
                             send_size,
                             send_info.at.elapsed()
                         );
@@ -383,7 +390,7 @@ impl QuicConn {
 
         match state.conn.recv(buf, info) {
             Ok(read_size) => {
-                log::trace!("{:?}, recv packet, len={}", state, read_size);
+                log::trace!("{:?}, recv packet, len={}", state.deref(), read_size);
 
                 self.after_recv(&mut state).await;
 
@@ -645,6 +652,15 @@ impl QuicStream {
                     return Err(map_quic_error(err));
                 }
             }
+        }
+    }
+
+    pub fn to_io(&self) -> QuicStreamIO {
+        QuicStreamIO {
+            stream: self.clone(),
+            close_fut: Default::default(),
+            send_fut: Default::default(),
+            read_fut: Default::default(),
         }
     }
 }
