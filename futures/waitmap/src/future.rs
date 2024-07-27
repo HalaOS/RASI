@@ -38,6 +38,12 @@ impl<K, R> Clone for FutureWaitMap<K, R> {
     }
 }
 
+impl<K, R> AsRef<FutureWaitMap<K, R>> for FutureWaitMap<K, R> {
+    fn as_ref(&self) -> &FutureWaitMap<K, R> {
+        self
+    }
+}
+
 impl<K, R> FutureWaitMap<K, R> {
     /// Create a new future `WaitMap` instance.
     pub fn new() -> Self {

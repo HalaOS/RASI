@@ -307,6 +307,16 @@ impl QuicConn {
         self.state.lock().await.conn.is_established()
     }
 
+    /// Returns when the next timeout event will occur.
+    ///
+    /// Once the timeout Instant has been reached, the [`on_timeout()`] method
+    /// should be called. A timeout of `None` means that the timer should be
+    /// disarmed.
+    ///
+    pub async fn timeout_instant(&self) -> Option<Instant> {
+        self.state.lock().await.conn.timeout_instant()
+    }
+
     /// Read sending data from the `QuicConn`.
     ///
     /// On success, returns the total number of bytes copied and the [`SendInfo`]
@@ -342,12 +352,15 @@ impl QuicConn {
 
                         use rasi::timer::TimeoutExt;
 
-                        if let Some(ack_eliciting_interval) = state.ack_eliciting_interval {
+                        if let Some(timeout_at) = state.conn.timeout_instant() {
                             drop(state);
-                            self.event_map
+                            if self
+                                .event_map
                                 .wait(&event)
-                                .timeout(ack_eliciting_interval)
-                                .await;
+                                .timeout_at(timeout_at)
+                                .await
+                                .is_none()
+                            {}
                         } else {
                             drop(state);
 

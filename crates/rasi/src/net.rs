@@ -462,8 +462,14 @@ impl UdpSocket {
     /// Sends data on the socket to the given `target` address.
     ///
     /// On success, returns the number of bytes written.
-    pub async fn send_to<A: ToSocketAddrs>(&self, buf: &[u8], target: A) -> Result<usize> {
+    pub async fn send_to<Buf: AsRef<[u8]>, A: ToSocketAddrs>(
+        &self,
+        buf: Buf,
+        target: A,
+    ) -> Result<usize> {
         let mut last_error = None;
+
+        let buf = buf.as_ref();
 
         for raddr in target.to_socket_addrs()? {
             match poll_fn(|cx| self.poll_send_to(cx, buf, raddr)).await {

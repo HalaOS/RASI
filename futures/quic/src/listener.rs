@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Error, ErrorKind, Result};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
 use futures::lock::Mutex;
@@ -166,7 +166,7 @@ impl QuicListenerState {
 
         let scid = quiche_conn.source_id().into_owned();
 
-        let conn = QuicConn::new(quiche_conn, 5, None);
+        let conn = QuicConn::new(quiche_conn, 1, None);
 
         if is_established {
             self.established_conns.insert(scid, conn.clone());
@@ -286,6 +286,7 @@ struct QuicListenerAccept;
 
 #[derive(Clone)]
 pub struct QuicListener {
+    laddrs: Arc<Vec<SocketAddr>>,
     state: Arc<Mutex<QuicListenerState>>,
     event_map: Arc<WaitMap<QuicListenerAccept, ()>>,
     send_map: FutureWaitMap<QuicConn, Result<(Vec<u8>, SendInfo)>>,
@@ -307,13 +308,21 @@ impl QuicListener {
 }
 
 impl QuicListener {
-    pub fn new(config: Config) -> Result<Self> {
+    /// Create a new `QuicListener` instance with provided `laddrs` and `config`.
+    pub fn new<A: ToSocketAddrs>(laddrs: A, config: Config) -> Result<Self> {
         Ok(QuicListener {
+            laddrs: Arc::new(laddrs.to_socket_addrs()?.collect()),
             state: Arc::new(Mutex::new(QuicListenerState::new(config)?)),
             event_map: Arc::new(WaitMap::new()),
             send_map: FutureWaitMap::new(),
         })
     }
+
+    /// Get the `QuicListener`'s local bound socket address iterator.
+    pub fn local_addrs(&self) -> impl Iterator<Item = &SocketAddr> {
+        self.laddrs.iter()
+    }
+
     pub async fn send(&self) -> Result<(Vec<u8>, SendInfo)> {
         while let Some((conn, result)) = (&self.send_map).next().await {
             match result {

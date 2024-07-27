@@ -13,6 +13,11 @@ futures-waitmap = { workspace = true }
 quiche = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
-rasi = { workspace = true }
+rasi = { workspace = true, optional = true }
 futures-boring = { workspace = true }
 ring = { workspace = true }
+rand = { workspace = true, optional = true }
+
+[features]
+default = ["with-rasi"]
+with-rasi = ["rasi", "rand"]
