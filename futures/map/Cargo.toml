@@ -1,5 +1,5 @@
 [package]
-description = "future-based concurrent event waiting hashmap"
+description = "Futures-based and hashmap-based alogrithms"
 documentation = "https://docs.rs/futures-map"
 edition.workspace = true
 license = "MIT"
