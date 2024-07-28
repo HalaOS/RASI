@@ -1,6 +1,7 @@
 use std::{
     borrow::Borrow,
     collections::HashMap,
+    fmt::Debug,
     future::Future,
     hash::Hash,
     task::{Poll, Waker},
@@ -25,16 +26,16 @@ struct RawMap<K, V> {
 
 /// A future-based concurrent event map with `wait` API.
 
-pub struct WaitMap<K, V> {
+pub struct KeyWaitMap<K, V> {
     inner: Mutex<RawMap<K, V>>,
 }
 
-impl<K, V> WaitMap<K, V>
+impl<K, V> KeyWaitMap<K, V>
 where
     K: Eq + Hash + Unpin,
 {
     pub fn new() -> Self {
-        WaitMap {
+        KeyWaitMap {
             inner: Mutex::new(RawMap {
                 kv: HashMap::new(),
                 wakers: HashMap::new(),
@@ -67,12 +68,16 @@ where
     pub async fn batch_insert<I>(&self, kv: I)
     where
         I: IntoIterator<Item = (K, V)>,
+        K: Debug,
     {
         let mut raw = self.inner.lock().await;
 
         for (k, v) in kv.into_iter() {
             if let Some(waker) = raw.wakers.remove(&k) {
+                log::trace!("wakeup: {:?}", k);
                 waker.wake();
+            } else {
+                log::trace!("wakeup: {:?}, without waiting task", k);
             }
 
             raw.kv.insert(k, Event::Value(v));
@@ -139,7 +144,7 @@ where
 }
 
 struct Wait<'a, K, V> {
-    event_map: &'a WaitMap<K, V>,
+    event_map: &'a KeyWaitMap<K, V>,
     lock: Option<MutexLockFuture<'a, RawMap<K, V>>>,
     k: &'a K,
 }
@@ -188,7 +193,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_event_map() {
-        let event_map = WaitMap::<usize, usize>::new();
+        let event_map = KeyWaitMap::<usize, usize>::new();
 
         event_map.insert(1, 1).await;
 

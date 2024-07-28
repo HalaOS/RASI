@@ -6,7 +6,7 @@ use std::sync::Arc;
 use futures::lock::Mutex;
 use futures::stream::unfold;
 use futures::{Stream, StreamExt};
-use futures_waitmap::{FutureWaitMap, WaitMap};
+use futures_map::{FuturesWaitMap, KeyWaitMap};
 use quiche::{Config, ConnectionId, RecvInfo, SendInfo};
 use ring::{hmac::Key, rand::SystemRandom};
 
@@ -287,8 +287,8 @@ struct QuicListenerAccept;
 pub struct QuicListener {
     laddrs: Arc<Vec<SocketAddr>>,
     state: Arc<Mutex<QuicListenerState>>,
-    event_map: Arc<WaitMap<QuicListenerAccept, ()>>,
-    send_map: FutureWaitMap<QuicConn, Result<(Vec<u8>, SendInfo)>>,
+    event_map: Arc<KeyWaitMap<QuicListenerAccept, ()>>,
+    send_map: FuturesWaitMap<QuicConn, Result<(Vec<u8>, SendInfo)>>,
 }
 
 impl QuicListener {
@@ -312,8 +312,8 @@ impl QuicListener {
         Ok(QuicListener {
             laddrs: Arc::new(laddrs.to_socket_addrs()?.collect()),
             state: Arc::new(Mutex::new(QuicListenerState::new(config)?)),
-            event_map: Arc::new(WaitMap::new()),
-            send_map: FutureWaitMap::new(),
+            event_map: Arc::new(KeyWaitMap::new()),
+            send_map: FuturesWaitMap::new(),
         })
     }
 

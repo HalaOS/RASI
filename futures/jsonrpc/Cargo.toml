@@ -14,7 +14,7 @@ futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-futures-waitmap = { workspace = true }
+futures-map = { workspace = true }
 rasi = { workspace = true, optional = true }
 futures-http = { workspace = true, optional = true }
 

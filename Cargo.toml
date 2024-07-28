@@ -43,6 +43,6 @@ rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }
 rasi-mio = { path = "crates/mio", version = "^0.2" }
 futures-boring = { path = "futures/boring", version = "^0.2" }
-futures-waitmap = { path = "futures/waitmap", version = "^0.2" }
+futures-map = { path = "futures/map", version = "^0.2" }
 futures-http = { path = "futures/http", version = "^0.2" }
 futures-jsonrpcv2 = { path = "futures/jsonrpc", version = "^0.2" }

@@ -12,7 +12,7 @@ use futures::{
     Future, Sink, SinkExt, Stream, StreamExt,
 };
 
-use futures_waitmap::WaitMap;
+use futures_map::KeyWaitMap;
 
 use crate::{Request, Response, Version};
 
@@ -72,7 +72,7 @@ pub struct JsonRpcClient {
     next_id: Arc<AtomicUsize>,
     send_sender: Sender<(usize, Vec<u8>)>,
     send_receiver: Arc<Mutex<Receiver<(usize, Vec<u8>)>>>,
-    wait_map: Arc<WaitMap<usize, Response<String, serde_json::Value, serde_json::Value>>>,
+    wait_map: Arc<KeyWaitMap<usize, Response<String, serde_json::Value, serde_json::Value>>>,
 }
 
 impl Default for JsonRpcClient {
@@ -90,7 +90,7 @@ impl JsonRpcClient {
             next_id: Default::default(),
             send_receiver: Arc::new(Mutex::new(send_receiver)),
             send_sender,
-            wait_map: Arc::new(WaitMap::new()),
+            wait_map: Arc::new(KeyWaitMap::new()),
         }
     }
 

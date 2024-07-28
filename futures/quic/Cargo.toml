@@ -9,7 +9,7 @@ version.workspace = true
 readme = "README.md"
 
 [dependencies]
-futures-waitmap = { workspace = true }
+futures-map = { workspace = true }
 quiche = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }

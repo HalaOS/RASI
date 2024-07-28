@@ -1,9 +1,9 @@
 [package]
 description = "future-based concurrent event waiting hashmap"
-documentation = "https://docs.rs/futures-waitmap"
+documentation = "https://docs.rs/futures-map"
 edition.workspace = true
 license = "MIT"
-name = "futures-waitmap"
+name = "futures-map"
 repository.workspace = true
 version.workspace = true
 readme = "README.md"

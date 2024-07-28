@@ -26,11 +26,11 @@ impl<K, R> Default for RawFutureWaitMap<K, R> {
 }
 
 /// A waitable map for futures.
-pub struct FutureWaitMap<K, R> {
+pub struct FuturesWaitMap<K, R> {
     inner: Arc<Mutex<RawFutureWaitMap<K, R>>>,
 }
 
-impl<K, R> Clone for FutureWaitMap<K, R> {
+impl<K, R> Clone for FuturesWaitMap<K, R> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -38,13 +38,13 @@ impl<K, R> Clone for FutureWaitMap<K, R> {
     }
 }
 
-impl<K, R> AsRef<FutureWaitMap<K, R>> for FutureWaitMap<K, R> {
-    fn as_ref(&self) -> &FutureWaitMap<K, R> {
+impl<K, R> AsRef<FuturesWaitMap<K, R>> for FuturesWaitMap<K, R> {
+    fn as_ref(&self) -> &FuturesWaitMap<K, R> {
         self
     }
 }
 
-impl<K, R> FutureWaitMap<K, R> {
+impl<K, R> FuturesWaitMap<K, R> {
     /// Create a new future `WaitMap` instance.
     pub fn new() -> Self {
         Self {
@@ -100,7 +100,7 @@ impl<K, R> FutureWaitMap<K, R> {
     }
 }
 
-impl<K, R> Stream for FutureWaitMap<K, R>
+impl<K, R> Stream for FuturesWaitMap<K, R>
 where
     K: Hash + Eq + Clone + Send + Sync + 'static,
     R: 'static,
@@ -108,11 +108,11 @@ where
     type Item = (K, R);
 
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        FutureWaitMap::poll_next(&self, cx).map(Some)
+        FuturesWaitMap::poll_next(&self, cx).map(Some)
     }
 }
 
-impl<K, R> Stream for &FutureWaitMap<K, R>
+impl<K, R> Stream for &FuturesWaitMap<K, R>
 where
     K: Hash + Eq + Clone + Send + Sync + 'static,
     R: 'static,
@@ -120,7 +120,7 @@ where
     type Item = (K, R);
 
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        FutureWaitMap::poll_next(&self, cx).map(Some)
+        FuturesWaitMap::poll_next(&self, cx).map(Some)
     }
 }
 
@@ -151,11 +151,11 @@ mod tests {
         poll, StreamExt,
     };
 
-    use super::FutureWaitMap;
+    use super::FuturesWaitMap;
 
     #[futures_test::test]
     async fn test_map() {
-        let map = FutureWaitMap::new();
+        let map = FuturesWaitMap::new();
 
         map.insert(1, pending::<i32>());
 

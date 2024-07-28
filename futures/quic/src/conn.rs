@@ -13,7 +13,7 @@ use std::{
 };
 
 use futures::{future::BoxFuture, lock::Mutex, AsyncRead, AsyncWrite, FutureExt, Stream};
-use futures_waitmap::WaitMap;
+use futures_map::KeyWaitMap;
 use quiche::{ConnectionId, RecvInfo, SendInfo};
 
 use crate::errors::map_quic_error;
@@ -120,7 +120,7 @@ pub struct QuicConn {
     max_send_udp_payload_size: usize,
     pub(crate) id: ConnectionId<'static>,
     state: Arc<Mutex<QuicConnState>>,
-    event_map: Arc<WaitMap<QuicConnStateEvent, ()>>,
+    event_map: Arc<KeyWaitMap<QuicConnStateEvent, ()>>,
     stream_drop_table: Arc<QuicStreamDropTable>,
 }
 
@@ -234,6 +234,11 @@ impl QuicConn {
 
                 log::trace!("{:?}, accept a new inbound stream id={}", state, stream_id);
 
+                raised_events.push((
+                    QuicConnStateEvent::StreamAccept(state.conn.source_id().into_owned()),
+                    (),
+                ));
+
                 continue;
             }
 
@@ -304,7 +309,7 @@ impl QuicConn {
                 init_stream_outbound_id,
                 ack_eliciting_interval,
             ))),
-            event_map: Arc::new(WaitMap::new()),
+            event_map: Arc::new(KeyWaitMap::new()),
             stream_drop_table: Default::default(),
         }
     }
@@ -424,7 +429,11 @@ impl QuicConn {
 
             drop(state);
 
+            log::trace!("accept new incoming stream -- waiting");
+
             self.event_map.wait(&event).await;
+
+            log::trace!("accept new incoming stream -- wakeup");
         }
     }
 
@@ -504,11 +513,11 @@ impl QuicStream {
         }
     }
 
-    async fn into_send(self, buf: Vec<u8>, fin: bool) -> Result<usize> {
+    async fn send_owned(self, buf: Vec<u8>, fin: bool) -> Result<usize> {
         self.send(buf, fin).await
     }
 
-    async fn into_recv(self, len: usize) -> Result<(Vec<u8>, bool)> {
+    async fn recv_owned(self, len: usize) -> Result<(Vec<u8>, bool)> {
         let mut buf = vec![0; len];
 
         let (recv_size, fin) = self.recv(&mut buf).await?;
@@ -655,50 +664,61 @@ impl QuicStream {
         }
     }
 
-    pub fn to_io(&self) -> QuicStreamIO {
-        QuicStreamIO {
+    pub fn to_io(&self) -> QuicIO {
+        QuicIO {
             stream: self.clone(),
-            close_fut: Default::default(),
-            send_fut: Default::default(),
-            read_fut: Default::default(),
+            pending_close: Default::default(),
+            pending_send: Default::default(),
+            pending_read: Default::default(),
+        }
+    }
+}
+
+impl From<&QuicStream> for QuicIO {
+    fn from(value: &QuicStream) -> Self {
+        Self {
+            stream: value.clone(),
+            pending_close: Default::default(),
+            pending_send: Default::default(),
+            pending_read: Default::default(),
         }
     }
 }
 
 /// A wrapper of [`QuicStream`] that implements [`AsyncWrite`] and [`AsyncRead`] traits.
-pub struct QuicStreamIO {
+pub struct QuicIO {
     stream: QuicStream,
-    close_fut: Option<BoxFuture<'static, Result<usize>>>,
-    send_fut: Option<BoxFuture<'static, Result<usize>>>,
-    read_fut: Option<BoxFuture<'static, Result<(Vec<u8>, bool)>>>,
+    pending_close: Option<BoxFuture<'static, Result<usize>>>,
+    pending_send: Option<BoxFuture<'static, Result<usize>>>,
+    pending_read: Option<BoxFuture<'static, Result<(Vec<u8>, bool)>>>,
 }
 
-impl From<QuicStream> for QuicStreamIO {
+impl From<QuicStream> for QuicIO {
     fn from(value: QuicStream) -> Self {
         Self {
             stream: value,
-            read_fut: None,
-            send_fut: None,
-            close_fut: None,
+            pending_read: None,
+            pending_send: None,
+            pending_close: None,
         }
     }
 }
 
-impl AsyncWrite for QuicStreamIO {
+impl AsyncWrite for QuicIO {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<Result<usize>> {
-        let mut fut = if let Some(fut) = self.send_fut.take() {
+        let mut fut = if let Some(fut) = self.pending_send.take() {
             fut
         } else {
-            Box::pin(self.stream.clone().into_send(buf.to_owned(), false))
+            Box::pin(self.stream.clone().send_owned(buf.to_owned(), false))
         };
 
         match fut.poll_unpin(cx) {
             Poll::Pending => {
-                self.send_fut = Some(fut);
+                self.pending_send = Some(fut);
 
                 Poll::Pending
             }
@@ -718,15 +738,15 @@ impl AsyncWrite for QuicStreamIO {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<()>> {
-        let mut fut = if let Some(fut) = self.close_fut.take() {
+        let mut fut = if let Some(fut) = self.pending_close.take() {
             fut
         } else {
-            Box::pin(self.stream.clone().into_send(vec![], true))
+            Box::pin(self.stream.clone().send_owned(vec![], true))
         };
 
         match fut.poll_unpin(cx) {
             Poll::Pending => {
-                self.close_fut = Some(fut);
+                self.pending_close = Some(fut);
 
                 Poll::Pending
             }
@@ -736,16 +756,16 @@ impl AsyncWrite for QuicStreamIO {
     }
 }
 
-impl AsyncRead for QuicStreamIO {
+impl AsyncRead for QuicIO {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<Result<usize>> {
-        let mut fut = if let Some(fut) = self.read_fut.take() {
+        let mut fut = if let Some(fut) = self.pending_read.take() {
             fut
         } else {
-            Box::pin(self.stream.clone().into_recv(buf.len()))
+            Box::pin(self.stream.clone().recv_owned(buf.len()))
         };
 
         match fut.poll_unpin(cx) {
@@ -756,7 +776,7 @@ impl AsyncRead for QuicStreamIO {
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => {
-                self.read_fut = Some(fut);
+                self.pending_read = Some(fut);
                 Poll::Pending
             }
         }

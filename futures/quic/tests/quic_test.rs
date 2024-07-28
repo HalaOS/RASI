@@ -72,7 +72,7 @@ fn mock_config(is_server: bool) -> Config {
 #[futures_test::test]
 async fn test_echo() {
     init();
-    pretty_env_logger::init();
+    // pretty_env_logger::init();
 
     let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))
         .await
@@ -109,13 +109,9 @@ async fn test_echo() {
     for _ in 0..100 {
         stream.write_all(b"hello world").await.unwrap();
 
-        log::trace!("write_all");
-
         let mut buf = vec![0; 100];
 
         let read_size = stream.read(&mut buf).await.unwrap();
-
-        log::trace!("read");
 
         assert_eq!(&buf[..read_size], b"hello world");
     }
