@@ -38,7 +38,7 @@ sqlite3-sys = "^0.17"
 quiche = { version = "^0.22", features = ["boringssl-boring-crate"] }
 ring = "^0.17"
 cooked-waker = "^5.0"
-uint = "^0.9"
+ethnum = "1.5.0"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }

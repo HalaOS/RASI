@@ -8,5 +8,5 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-uint = { workspace = true }
+ethnum = { workspace = true }
 thiserror = { workspace = true }

@@ -1,19 +1,35 @@
+use std::num::ParseIntError;
+
 use std::{
     fmt::{Debug, Display},
     str::FromStr,
 };
 
-use crate::errors::{Error, ParseDecimalError, Result};
+use super::U256;
 
-mod u256 {
-    use uint::construct_uint;
-    construct_uint! {
-        /// Unsigned int with 256 bits length.
-        pub struct U256(4);
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum ParseDecimalError {
+    #[error("Invalid ethereum unit type: {0}")]
+    ParseUnit(String),
+
+    #[error("Decimal base part is empty.")]
+    BasePartIsEmpty,
+
+    #[error("Exponent overflow when parsing {0}")]
+    ExponentOverflow(String),
+
+    #[error("Decimal unit part is empty.")]
+    UnitIsEmpty,
+
+    #[error("Decimal overflow when parsing {0}")]
+    OverFlow(String),
+
+    #[error(transparent)]
+    ParseIntError(#[from] ParseIntError),
 }
 
-pub use u256::U256;
+/// Result type for balance mod.
+pub type Result<T> = std::result::Result<T, ParseDecimalError>;
 
 /// Unit for ethereum account balance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -56,7 +72,7 @@ impl Display for Unit {
 }
 
 impl FromStr for Unit {
-    type Err = Error;
+    type Err = ParseDecimalError;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_ref() {
             "wei" => Ok(Self::Wei),
@@ -66,19 +82,19 @@ impl FromStr for Unit {
             "szabo" => Ok(Self::Szabo),
             "finney" => Ok(Self::Finney),
             "ether" => Ok(Self::Ether),
-            u => Err(Error::ParseUnit(u.to_owned())),
+            u => Err(ParseDecimalError::ParseUnit(u.to_owned())),
         }
     }
 }
 
 impl TryFrom<&str> for Unit {
-    type Error = Error;
+    type Error = ParseDecimalError;
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
         value.parse()
     }
 }
 
-fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimal> {
+fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimals> {
     let exp_separator: &[_] = &['e', 'E'];
 
     // split slice into base and exponent parts
@@ -95,7 +111,7 @@ fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimal> {
     };
 
     if base_part.is_empty() {
-        return Err(Error::ParseDecimalError(ParseDecimalError::BasePartIsEmpty));
+        return Err(ParseDecimalError::BasePartIsEmpty);
     }
 
     let mut digit_buffer = String::new();
@@ -137,43 +153,41 @@ fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimal> {
             }
         })
         .ok_or_else(|| {
-            Error::ParseDecimalError(ParseDecimalError::ExponentOverflow(format!(
+            ParseDecimalError::ExponentOverflow(format!(
                 "Exponent overflow when parsing '{}'",
                 value
-            )))
+            ))
         })?;
 
-    let mut bignumber = U256::from_str_radix(digits, 10)
-        .map_err(|err| Error::ParseDecimalError(ParseDecimalError::FromStrRadixErr(err)))?;
+    let mut bignumber =
+        U256::from_str_radix(digits, 10).map_err(|err| ParseDecimalError::ParseIntError(err))?;
 
     if scale > 18 || scale < -18 {
-        return Err(Error::ParseDecimalError(ParseDecimalError::OverFlow(
-            value.to_owned(),
-        )));
+        return Err(ParseDecimalError::OverFlow(value.to_owned()));
     }
 
     if scale > 0 {
-        bignumber = bignumber / U256::from(10).pow(scale.into());
+        bignumber = bignumber / U256::from(10u32).pow(scale as u32);
     } else {
-        bignumber = bignumber * U256::from(10).pow(scale.abs().into());
+        bignumber = bignumber * U256::from(10u32).pow(scale.abs() as u32);
     }
 
-    Ok(Decimal(bignumber))
+    Ok(Decimals(bignumber))
 }
 
 /// A Unit can be specified as a fixed decimals number,
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Decimal(U256);
+pub struct Decimals(U256);
 
-impl FromStr for Decimal {
-    type Err = Error;
+impl FromStr for Decimals {
+    type Err = ParseDecimalError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let unit_sep: &[_] = &['e', 'E'];
 
         let (base_part, unit) = match s.to_lowercase().find(unit_sep) {
             // exponent defaults to 0 if (e|E) not found
-            None => return Err(Error::ParseDecimalError(ParseDecimalError::Unit)),
+            None => return Err(ParseDecimalError::UnitIsEmpty),
 
             // split and parse exponent field
             Some(loc) => {
@@ -190,19 +204,19 @@ impl FromStr for Decimal {
     }
 }
 
-impl From<Decimal> for U256 {
-    fn from(value: Decimal) -> Self {
+impl From<Decimals> for U256 {
+    fn from(value: Decimals) -> Self {
         value.0
     }
 }
 
-impl From<&Decimal> for U256 {
-    fn from(value: &Decimal) -> Self {
+impl From<&Decimals> for U256 {
+    fn from(value: &Decimals) -> Self {
         value.0
     }
 }
 
-impl Decimal {
+impl Decimals {
     /// Parse string as `Decimal`
     pub fn parse<S: AsRef<str>, U: TryInto<Unit>>(value: S, unit: U) -> Result<Self>
     where
@@ -210,7 +224,7 @@ impl Decimal {
     {
         let unit: Unit = unit
             .try_into()
-            .map_err(|err| Error::ParseUnit(err.to_string()))?;
+            .map_err(|err| ParseDecimalError::ParseUnit(err.to_string()))?;
 
         parse_dec_str(value.as_ref(), unit)
     }
@@ -241,7 +255,7 @@ impl Decimal {
     }
 }
 
-impl Display for Decimal {
+impl Display for Decimals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} wei", self.0)
     }
@@ -250,53 +264,51 @@ impl Display for Decimal {
 #[cfg(test)]
 mod tests {
 
-    use crate::unit::{Decimal, Unit};
-
-    use super::U256;
+    use super::*;
 
     #[test]
     fn test_parse_str() {
         assert_eq!(
-            Decimal::parse("100.1", Unit::Ether).unwrap(),
-            Decimal::parse("100.1", "ether").unwrap(),
+            Decimals::parse("100.1", Unit::Ether).unwrap(),
+            Decimals::parse("100.1", "ether").unwrap(),
         );
 
         assert_eq!(
-            U256::from(Decimal::parse("100", Unit::Kwei).unwrap()),
-            U256::from(100000)
+            U256::from(Decimals::parse("100", Unit::Kwei).unwrap()),
+            U256::from(100000u32)
         );
 
         assert_eq!(
-            U256::from(Decimal::parse("100000", Unit::Kwei).unwrap()),
-            U256::from(Decimal::parse("100", Unit::Mwei).unwrap()),
+            U256::from(Decimals::parse("100000", Unit::Kwei).unwrap()),
+            U256::from(Decimals::parse("100", Unit::Mwei).unwrap()),
         );
 
         assert_eq!(
-            U256::from(Decimal::parse("100111", Unit::Kwei).unwrap()),
-            U256::from(Decimal::parse("100.111", Unit::Mwei).unwrap()),
+            U256::from(Decimals::parse("100111", Unit::Kwei).unwrap()),
+            U256::from(Decimals::parse("100.111", Unit::Mwei).unwrap()),
         );
 
         assert_eq!(
-            Decimal::parse("100.1", Unit::Kwei).unwrap().to_string(),
+            Decimals::parse("100.1", Unit::Kwei).unwrap().to_string(),
             "100100 wei"
         );
 
         assert_eq!(
-            Decimal::parse("100100", Unit::Wei)
+            Decimals::parse("100100", Unit::Wei)
                 .unwrap()
                 .format_unit(Unit::Kwei),
             "100.1 kwei"
         );
 
         assert_eq!(
-            Decimal::parse("00010", Unit::Wei)
+            Decimals::parse("00010", Unit::Wei)
                 .unwrap()
                 .format_unit(Unit::Kwei),
             "0.01 kwei"
         );
 
         assert_eq!(
-            Decimal::parse("100001", Unit::Wei)
+            Decimals::parse("100001", Unit::Wei)
                 .unwrap()
                 .format_unit(Unit::Kwei),
             "100.001 kwei"
