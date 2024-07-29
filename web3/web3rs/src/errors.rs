@@ -1,4 +1,6 @@
-use uint::{FromDecStrErr, FromHexError};
+use std::num::ParseIntError;
+
+use uint::{FromDecStrErr, FromHexError, FromStrRadixErr};
 
 /// web3rs error variants.
 #[derive(Debug, thiserror::Error)]
@@ -15,7 +17,29 @@ pub enum Error {
     #[error(transparent)]
     FromDecStrErr(#[from] FromDecStrErr),
 
-    
+    #[error(transparent)]
+    ParseIntError(#[from] ParseIntError),
+
+    #[error(transparent)]
+    ParseDecimalError(ParseDecimalError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseDecimalError {
+    #[error("Decimal base part is empty.")]
+    BasePartIsEmpty,
+
+    #[error("Exponent overflow when parsing {0}")]
+    ExponentOverflow(String),
+
+    #[error(transparent)]
+    FromStrRadixErr(#[from] FromStrRadixErr),
+
+    #[error("Decimal unit part is empty.")]
+    Unit,
+
+    #[error("Decimal overflow when parsing {0}")]
+    OverFlow(String),
 }
 
 /// Result type for web3rs.
