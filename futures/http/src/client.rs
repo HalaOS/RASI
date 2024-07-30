@@ -136,6 +136,7 @@ pub mod rasio {
 
             if scheme == &Scheme::HTTP {
                 let mut transport = TcpStream::connect(raddrs.as_slice()).await?;
+
                 let response =
                     super::HttpWithStreamBodyClient::send(request, &mut transport).await?;
 

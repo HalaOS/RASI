@@ -148,13 +148,13 @@ impl JsonRpcClient {
 #[cfg(feature = "with_rasi")]
 
 pub mod rasi {
-    use std::{any::Any, io, net::ToSocketAddrs, path::Path};
+    use std::{any::Any, io, net::ToSocketAddrs, path::Path, str::from_utf8};
 
     use futures_http::{
         client::rasio::{HttpClient, HttpClientOptions, HttpClientOptionsBuilder},
         types::{
-            request::Builder as RequestBuilder, Error as HttpError, HeaderName, HeaderValue,
-            Request, StatusCode, Uri,
+            header::CONTENT_LENGTH, request::Builder as RequestBuilder, Error as HttpError,
+            HeaderName, HeaderValue, Request, StatusCode, Uri,
         },
     };
     use rasi::task::spawn_ok;
@@ -246,7 +246,13 @@ pub mod rasi {
 
             spawn_ok(async move {
                 while let Some((id, packet)) = background.send().await {
-                    let request = Request::from_parts(parts.clone(), packet);
+                    let mut parts = parts.clone();
+
+                    parts
+                        .headers
+                        .append(CONTENT_LENGTH, packet.len().to_string().parse().unwrap());
+
+                    let request = Request::from_parts(parts, packet);
 
                     let resp = match request.send(&ops).await {
                         Ok(resp) => resp,
@@ -285,7 +291,9 @@ pub mod rasi {
                         continue;
                     }
 
-                    let (_, body) = resp.into_parts();
+                    let (parts, body) = resp.into_parts();
+
+                    log::trace!("rx: {:?}", parts);
 
                     let packet = match body.into_bytes(self.max_body_size).await {
                         Err(err) => {
@@ -315,8 +323,9 @@ pub mod rasi {
         }
 
         async fn handle_recv<P: AsRef<[u8]>>(client: &JsonRpcClient, packet: P) {
+            log::trace!("body: {}", from_utf8(packet.as_ref()).unwrap());
             if let Err(err) = client.recv(packet).await {
-                log::error!("handle http jsonrpc recv with error:: {}", err);
+                log::error!("handle http jsonrpc recv with error: {}", err);
             }
         }
     }

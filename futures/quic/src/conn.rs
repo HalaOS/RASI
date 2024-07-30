@@ -321,7 +321,7 @@ impl QuicConn {
 
     /// Returns when the next timeout event will occur.
     ///
-    /// Once the timeout Instant has been reached, the [`on_timeout()`] method
+    /// Once the timeout Instant has been reached, the `on_timeout()` method
     /// should be called. A timeout of `None` means that the timer should be
     /// disarmed.
     ///

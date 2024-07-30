@@ -11,3 +11,15 @@ version.workspace = true
 ethnum = { workspace = true }
 thiserror = { workspace = true }
 sha3 = { workspace = true }
+serde = { workspace = true }
+futures-jsonrpcv2 = { workspace = true }
+
+[dev-dependencies]
+futures-test = { workspace = true }
+futures-jsonrpcv2 = { workspace = true, features = ["with_rasi"] }
+rasi = { workspace = true, features = ["task-futures"] }
+rasi-mio = { workspace = true }
+pretty_env_logger = { workspace = true }
+
+[features]
+test-providers = []

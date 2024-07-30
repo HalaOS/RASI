@@ -4,7 +4,7 @@ use std::{fmt::Display, str::FromStr};
 
 use sha3::{Digest, Keccak256};
 
-use super::{Hex, HexError};
+use super::hex::{Hex, HexError};
 
 pub struct Address(Hex<[u8; 20]>);
 

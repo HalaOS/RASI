@@ -1,6 +1,6 @@
 //! Utilities to parse http packets from a stream of bytes.
 //!
-use std::io;
+use std::{io, str::from_utf8};
 
 use crate::read_buf::ReadBuf;
 use bytes::{Bytes, BytesMut};
@@ -137,6 +137,8 @@ where
             }
 
             read_buf.advance_mut(read_size);
+
+            println!("{}", from_utf8(read_buf.chunk()).unwrap());
         }
 
         Ok(read_buf.into_bytes_mut(None))

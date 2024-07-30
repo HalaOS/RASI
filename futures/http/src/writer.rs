@@ -20,17 +20,16 @@ pub trait RequestWithStreamBodyWriter: AsyncWrite + Unpin {
         T: AsyncRead + Unpin + 'static,
     {
         async move {
+            let status_line = format!(
+                "{} {} {:?}\r\n",
+                request.method(),
+                request.uri().path(),
+                request.version()
+            );
             // write status line.
-            self.write_all(
-                format!(
-                    "{} {} {:?}\r\n",
-                    request.method(),
-                    request.uri(),
-                    request.version()
-                )
-                .as_bytes(),
-            )
-            .await?;
+            self.write_all(status_line.as_bytes()).await?;
+
+            println!("{}", status_line);
 
             // write headers.
             for (name, value) in request.headers() {
