@@ -8,7 +8,7 @@ use std::{
 use super::u256::U256;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ParseDecimalError {
+pub enum ParseBalanceError {
     #[error("Invalid ethereum unit type: {0}")]
     ParseUnit(String),
 
@@ -29,7 +29,7 @@ pub enum ParseDecimalError {
 }
 
 /// Result type for balance mod.
-pub type Result<T> = std::result::Result<T, ParseDecimalError>;
+pub type Result<T> = std::result::Result<T, ParseBalanceError>;
 
 /// Unit for ethereum account balance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -72,7 +72,7 @@ impl Display for Unit {
 }
 
 impl FromStr for Unit {
-    type Err = ParseDecimalError;
+    type Err = ParseBalanceError;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_ascii_lowercase().as_ref() {
             "wei" => Ok(Self::Wei),
@@ -82,13 +82,13 @@ impl FromStr for Unit {
             "szabo" => Ok(Self::Szabo),
             "finney" => Ok(Self::Finney),
             "ether" => Ok(Self::Ether),
-            u => Err(ParseDecimalError::ParseUnit(u.to_owned())),
+            u => Err(ParseBalanceError::ParseUnit(u.to_owned())),
         }
     }
 }
 
 impl TryFrom<&str> for Unit {
-    type Error = ParseDecimalError;
+    type Error = ParseBalanceError;
     fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
         value.parse()
     }
@@ -111,7 +111,7 @@ fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimals> {
     };
 
     if base_part.is_empty() {
-        return Err(ParseDecimalError::BasePartIsEmpty);
+        return Err(ParseBalanceError::BasePartIsEmpty);
     }
 
     let mut digit_buffer = String::new();
@@ -153,17 +153,17 @@ fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimals> {
             }
         })
         .ok_or_else(|| {
-            ParseDecimalError::ExponentOverflow(format!(
+            ParseBalanceError::ExponentOverflow(format!(
                 "Exponent overflow when parsing '{}'",
                 value
             ))
         })?;
 
     let mut bignumber =
-        U256::from_str_radix(digits, 10).map_err(|err| ParseDecimalError::ParseIntError(err))?;
+        U256::from_str_radix(digits, 10).map_err(|err| ParseBalanceError::ParseIntError(err))?;
 
     if scale > 18 || scale < -18 {
-        return Err(ParseDecimalError::OverFlow(value.to_owned()));
+        return Err(ParseBalanceError::OverFlow(value.to_owned()));
     }
 
     if scale > 0 {
@@ -180,14 +180,14 @@ fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimals> {
 pub struct Decimals(U256);
 
 impl FromStr for Decimals {
-    type Err = ParseDecimalError;
+    type Err = ParseBalanceError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let unit_sep: &[_] = &['e', 'E'];
 
         let (base_part, unit) = match s.to_lowercase().find(unit_sep) {
             // exponent defaults to 0 if (e|E) not found
-            None => return Err(ParseDecimalError::UnitIsEmpty),
+            None => return Err(ParseBalanceError::UnitIsEmpty),
 
             // split and parse exponent field
             Some(loc) => {
@@ -224,7 +224,7 @@ impl Decimals {
     {
         let unit: Unit = unit
             .try_into()
-            .map_err(|err| ParseDecimalError::ParseUnit(err.to_string()))?;
+            .map_err(|err| ParseBalanceError::ParseUnit(err.to_string()))?;
 
         parse_dec_str(value.as_ref(), unit)
     }

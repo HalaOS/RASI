@@ -1,10 +1,10 @@
-use crate::primitives::{balance::ParseDecimalError, hex::HexError};
+use crate::primitives::{balance::ParseBalanceError, HexError};
 
 /// web3rs error variants.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    ParseDecimalError(ParseDecimalError),
+    ParseDecimalError(ParseBalanceError),
 
     #[error(transparent)]
     HexError(HexError),

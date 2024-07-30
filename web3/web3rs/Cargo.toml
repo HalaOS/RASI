@@ -10,3 +10,4 @@ version.workspace = true
 [dependencies]
 ethnum = { workspace = true }
 thiserror = { workspace = true }
+sha3 = { workspace = true }
