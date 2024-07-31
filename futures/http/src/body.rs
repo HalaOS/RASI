@@ -67,6 +67,9 @@ impl From<String> for BodyReader {
 }
 
 impl BodyReader {
+    pub fn empty() -> Self {
+        BodyReader::from(vec![])
+    }
     /// Create a new `BodySender` instance from `stream`
     pub fn from_stream<S>(stream: S) -> Self
     where
