@@ -155,14 +155,18 @@ async fn test_echo_per_stream() {
         .await
         .unwrap();
 
-    for _ in 0..100 {
+    for i in 0..100 {
         let mut stream = client.open(false).await.unwrap().to_io();
 
         stream.write_all(b"hello world").await.unwrap();
 
+        println!("write_all {}", i);
+
         let mut buf = vec![0; 100];
 
         let read_size = stream.read(&mut buf).await.unwrap();
+
+        println!("read {}", i);
 
         assert_eq!(&buf[..read_size], b"hello world");
     }
