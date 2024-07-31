@@ -34,7 +34,10 @@ impl JsonRpcProvider {
 
     /// Returns the chain ID of the current network
     pub async fn eth_chain_id(&self) -> Result<u64, Error> {
-        Ok(self.0.clone().call("eth_chainId", ()).await?)
+        let value: String = self.0.clone().call("eth_chainId", ()).await?;
+        let value = U256::from_str_hex(&value)?;
+
+        Ok(value.as_u64())
     }
 }
 
@@ -51,7 +54,7 @@ mod tests {
         static INIT: Once = Once::new();
 
         INIT.call_once(|| {
-            pretty_env_logger::init_timed();
+            // pretty_env_logger::init_timed();
             register_mio_network();
             register_mio_timer();
         });
@@ -67,5 +70,12 @@ mod tests {
         let provider = init();
 
         provider.eth_block_number().await.unwrap();
+    }
+
+    #[futures_test::test]
+    async fn test_eth_chain_id() {
+        let provider = init();
+
+        provider.eth_chain_id().await.unwrap();
     }
 }

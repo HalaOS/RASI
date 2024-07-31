@@ -148,18 +148,18 @@ impl JsonRpcClient {
 #[cfg(feature = "with_rasi")]
 
 pub mod rasi {
-    use std::{any::Any, io, net::ToSocketAddrs, path::Path, str::from_utf8};
+    use std::{any::Any, io, net::ToSocketAddrs, path::Path, time::Duration};
 
-    use futures::StreamExt;
+    use futures::TryStreamExt;
     use futures_http::{
         body::BodyReader,
         client::rasio::{HttpClient, HttpClientOptions, HttpClientOptionsBuilder},
         types::{
-            request::Builder as RequestBuilder, Error as HttpError, HeaderName, HeaderValue,
-            Request, StatusCode, Uri,
+            request::{Builder as RequestBuilder, Parts},
+            Error as HttpError, HeaderName, HeaderValue, Request, StatusCode, Uri,
         },
     };
-    use rasi::task::spawn_ok;
+    use rasi::{task::spawn_ok, timer::TimeoutExt};
     use serde_json::json;
 
     use crate::{Error, ErrorCode};
@@ -170,6 +170,7 @@ pub mod rasi {
     pub struct HttpJsonRpcClient {
         max_body_size: usize,
         send_cached_len: usize,
+        timeout: Duration,
         builder: RequestBuilder,
         send_ops: HttpClientOptionsBuilder,
     }
@@ -184,6 +185,7 @@ pub mod rasi {
             HttpJsonRpcClient {
                 max_body_size: 2048,
                 send_cached_len: 0,
+                timeout: Duration::from_secs(5),
                 builder: RequestBuilder::new().method("POST").uri(uri),
                 send_ops: HttpClientOptions::new(),
             }
@@ -231,6 +233,12 @@ pub mod rasi {
             self
         }
 
+        /// Set the timeout duration of the jsonrpc call via http request.
+        pub fn timeout(mut self, duration: Duration) -> Self {
+            self.timeout = duration;
+            self
+        }
+
         /// Consume builder and create a new `JsonRpcClient` instance.
         pub fn create(self) -> io::Result<JsonRpcClient> {
             let request = self
@@ -247,91 +255,46 @@ pub mod rasi {
             let ops: HttpClientOptions = self.send_ops.try_into()?;
 
             spawn_ok(async move {
-                'outer: while let Some((id, packet)) = background.send().await {
-                    let request = Request::from_parts(parts.clone(), BodyReader::from(packet));
+                while let Some((id, packet)) = background.send().await {
+                    let call = Self::send_request(&ops, self.max_body_size, parts.clone(), packet)
+                        .timeout(self.timeout)
+                        .await;
 
-                    let resp = match request.send(&ops).await {
-                        Ok(resp) => resp,
-                        Err(err) => {
-                            Self::handle_recv(
-                                &background,
-                                json!({
-                                     "id":id,"jsonrpc":"2.0","error": Error {
-                                        code: ErrorCode::InternalError,
-                                        message: err.to_string(),
-                                        data: None::<()>
-                                     }
-                                })
-                                .to_string(),
-                            )
-                            .await;
+                    let buf = match call {
+                        Some(Ok(buf)) => buf,
+                        Some(Err(err)) => {
+                            _ = background
+                                .recv(
+                                    json!({
+                                    "id":id,"jsonrpc":"2.0","error": Error {
+                                                 code: ErrorCode::InternalError,
+                                                 message: err.to_string(),
+                                                 data: None::<()>
+                                              }
+                                     })
+                                    .to_string(),
+                                )
+                                .await;
+
+                            continue;
+                        }
+                        None => {
+                            _ = background
+                                .recv(
+                                    json!({
+                                    "id":id,"jsonrpc":"2.0","error": Error {
+                                                 code: ErrorCode::InternalError,
+                                                 message: "Timeout",
+                                                 data: None::<()>
+                                              }
+                                     })
+                                    .to_string(),
+                                )
+                                .await;
 
                             continue;
                         }
                     };
-
-                    if StatusCode::OK != resp.status() {
-                        Self::handle_recv(
-                            &background,
-                            json!({
-                                 "id":id,"jsonrpc":"2.0","error": Error {
-                                    code: ErrorCode::InternalError,
-                                    message: resp.status().to_string(),
-                                    data: None::<()>
-                                 }
-                            })
-                            .to_string(),
-                        )
-                        .await;
-
-                        continue;
-                    }
-
-                    let (parts, mut body) = resp.into_parts();
-
-                    log::trace!("rx: {:?}", parts);
-
-                    let mut buf = vec![];
-
-                    while let Some(chunk) = body.next().await {
-                        let mut chunk = match chunk {
-                            Ok(chunk) => chunk,
-                            Err(err) => {
-                                Self::handle_recv(
-                                    &background,
-                                    json!({
-                                         "id":id,"jsonrpc":"2.0","error": Error {
-                                            code: ErrorCode::InternalError,
-                                            message: err.to_string(),
-                                            data: None::<()>
-                                         }
-                                    })
-                                    .to_string(),
-                                )
-                                .await;
-                                continue 'outer;
-                            }
-                        };
-
-                        buf.append(&mut chunk);
-
-                        if buf.len() > self.max_body_size {
-                            Self::handle_recv(
-                                &background,
-                                json!({
-                                     "id":id,"jsonrpc":"2.0","error": Error {
-                                        code: ErrorCode::InternalError,
-                                        message: format!("body too long to receive."),
-                                        data: None::<()>
-                                     }
-                                })
-                                .to_string(),
-                            )
-                            .await;
-
-                            continue 'outer;
-                        }
-                    }
 
                     Self::handle_recv(&background, buf).await;
                 }
@@ -341,10 +304,41 @@ pub mod rasi {
         }
 
         async fn handle_recv<P: AsRef<[u8]>>(client: &JsonRpcClient, packet: P) {
-            log::trace!("body: {}", from_utf8(packet.as_ref()).unwrap());
             if let Err(err) = client.recv(packet).await {
                 log::error!("handle http jsonrpc recv with error: {}", err);
             }
+        }
+
+        async fn send_request(
+            ops: &HttpClientOptions,
+            max_body_size: usize,
+            parts: Parts,
+            packet: Vec<u8>,
+        ) -> io::Result<Vec<u8>> {
+            let request = Request::from_parts(parts, BodyReader::from(packet));
+
+            let resp = request.send(ops).await?;
+
+            if StatusCode::OK != resp.status() {
+                return Err(io::Error::new(io::ErrorKind::Other, resp.status().as_str()));
+            }
+
+            let (_, mut body) = resp.into_parts();
+
+            let mut buf = vec![];
+
+            while let Some(mut chunk) = body.try_next().await? {
+                buf.append(&mut chunk);
+
+                if buf.len() > max_body_size {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Body length too long: {}", max_body_size),
+                    ));
+                }
+            }
+
+            Ok(buf)
         }
     }
 }
