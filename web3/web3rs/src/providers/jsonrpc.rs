@@ -45,7 +45,7 @@ impl JsonRpcProvider {
 mod tests {
     use std::sync::Once;
 
-    use futures_jsonrpcv2::client::rasi::HttpJsonRpcClient;
+    use futures_jsonrpcv2::rasi::http::HttpJsonRpcClient;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
 
     use super::*;
