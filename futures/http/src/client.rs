@@ -1,67 +1,27 @@
-//! Utilities for http client-side application.
-
 use std::{future::Future, io::Result};
 
 use futures::{AsyncRead, AsyncWrite};
 use http::{Request, Response};
 
-use crate::{
-    parse::{BodyReader, Responser},
-    writer::{RequestWithStreamBodyWriter, RequestWriter},
-};
+use crate::body::BodyReader;
+use crate::reader::HttpReader;
+use crate::writer::HttpWriter;
 
-/// An extension trait for [`Request`] with addition `send` method.
-pub trait HttpWithStreamBodyClient {
-    /// Consume self and send [`Request`] via `stream` to peer.
-    ///
-    /// On success, returns [`Response`] from peer.
-    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
-    where
-        S: AsyncRead + AsyncWrite + Unpin;
-}
-
-impl<T> HttpWithStreamBodyClient for Request<T>
-where
-    T: AsyncRead + Unpin + 'static,
-{
-    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
-    where
-        S: AsyncRead + AsyncWrite + Unpin,
-    {
-        async move {
-            RequestWithStreamBodyWriter::write_http_request(stream, self).await?;
-
-            let response = Responser::new(stream).parse().await?;
-
-            Ok(response)
-        }
-    }
-}
-
-/// An extension trait for [`Request`] with addition `send` method.
 pub trait HttpClient {
-    /// Consume self and send [`Request`] via `stream` to peer.
-    ///
-    /// On success, returns [`Response`] from peer.
-    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
+    fn send<S>(self, stream: S) -> impl Future<Output = Result<Response<BodyReader>>>
     where
-        S: AsyncRead + AsyncWrite + Unpin;
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static;
 }
 
-impl<T> HttpClient for Request<T>
-where
-    T: AsRef<[u8]>,
-{
-    fn send<S>(self, stream: &mut S) -> impl Future<Output = Result<Response<BodyReader<&mut S>>>>
+impl HttpClient for Request<BodyReader> {
+    fn send<S>(self, mut stream: S) -> impl Future<Output = Result<Response<BodyReader>>>
     where
-        S: AsyncRead + AsyncWrite + Unpin,
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         async move {
-            RequestWriter::write_http_request(stream, self).await?;
+            stream.write_request(self).await?;
 
-            let response = Responser::new(stream).parse().await?;
-
-            Ok(response)
+            stream.read_response().await
         }
     }
 }
@@ -75,7 +35,6 @@ pub mod rasio {
         path::{Path, PathBuf},
     };
 
-    use futures::{io::Cursor, AsyncRead};
     use futures_boring::{
         connect,
         ssl::{SslConnector, SslMethod},
@@ -83,7 +42,7 @@ pub mod rasio {
     use http::{uri::Scheme, Request, Response};
     use rasi::net::TcpStream;
 
-    use crate::parse::BodyReader;
+    use crate::body::BodyReader;
 
     /// Options and flags which can be used to configure how a http client is opened.
     #[derive(Default, Debug, Clone)]
@@ -101,13 +60,7 @@ pub mod rasio {
             }
         }
 
-        async fn send<T>(
-            self,
-            request: Request<T>,
-        ) -> Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>
-        where
-            T: AsyncRead + Unpin + 'static,
-        {
+        async fn send(self, request: Request<BodyReader>) -> Result<Response<BodyReader>> {
             let scheme = request.uri().scheme().ok_or(Error::new(
                 ErrorKind::InvalidInput,
                 "Unspecified request scheme",
@@ -135,21 +88,9 @@ pub mod rasio {
             };
 
             if scheme == &Scheme::HTTP {
-                let mut transport = TcpStream::connect(raddrs.as_slice()).await?;
+                let transport = TcpStream::connect(raddrs.as_slice()).await?;
 
-                let response =
-                    super::HttpWithStreamBodyClient::send(request, &mut transport).await?;
-
-                let (parts, body) = response.into_parts();
-
-                let (bytes, _) = body.into_parts();
-
-                let body: BodyReader<Box<dyn AsyncRead + Send + Unpin>> =
-                    BodyReader::new(bytes, Box::new(transport));
-
-                let response = Response::from_parts(parts, body);
-
-                return Ok(response);
+                return super::HttpClient::send(request, transport).await;
             } else {
                 let stream = TcpStream::connect(raddrs.as_slice()).await?;
 
@@ -166,23 +107,11 @@ pub mod rasio {
 
                 let config = config.build().configure().unwrap();
 
-                let mut transport = connect(config, host, stream)
+                let transport = connect(config, host, stream)
                     .await
                     .map_err(|err| Error::new(ErrorKind::ConnectionRefused, err))?;
 
-                let response =
-                    super::HttpWithStreamBodyClient::send(request, &mut transport).await?;
-
-                let (parts, body) = response.into_parts();
-
-                let (bytes, _) = body.into_parts();
-
-                let body: BodyReader<Box<dyn AsyncRead + Send + Unpin>> =
-                    BodyReader::new(bytes, Box::new(transport));
-
-                let response = Response::from_parts(parts, body);
-
-                return Ok(response);
+                return super::HttpClient::send(request, transport).await;
             }
         }
     }
@@ -248,26 +177,17 @@ pub mod rasio {
     }
 
     /// An extension trait for [`Request`] with addition `send` method.
-    pub trait HttpWithStreamBodyClient {
+    pub trait HttpClient {
         /// Consume self and send [`Request`] via `stream` to peer.
         ///
         /// On success, returns [`Response`] from peer.
-        fn send<Op>(
-            self,
-            ops: Op,
-        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
+        fn send<Op>(self, ops: Op) -> impl Future<Output = Result<Response<BodyReader>>>
         where
             Op: TryInto<HttpClientOptions, Error = std::io::Error>;
     }
 
-    impl<T> HttpWithStreamBodyClient for Request<T>
-    where
-        T: AsyncRead + Unpin + 'static,
-    {
-        fn send<Op>(
-            self,
-            ops: Op,
-        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
+    impl HttpClient for Request<BodyReader> {
+        fn send<Op>(self, ops: Op) -> impl Future<Output = Result<Response<BodyReader>>>
         where
             Op: TryInto<HttpClientOptions, Error = std::io::Error>,
         {
@@ -275,42 +195,6 @@ pub mod rasio {
                 let ops: HttpClientOptions = ops.try_into()?;
 
                 ops.send(self).await
-            }
-        }
-    }
-
-    /// An extension trait for [`Request`] with addition `send` method.
-    pub trait HttpClient {
-        /// Consume self and send [`Request`] via `stream` to peer.
-        ///
-        /// On success, returns [`Response`] from peer.
-        fn send<Op>(
-            self,
-            ops: Op,
-        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
-        where
-            Op: TryInto<HttpClientOptions, Error = std::io::Error>;
-    }
-
-    impl<T> HttpClient for Request<T>
-    where
-        T: AsRef<[u8]>,
-    {
-        fn send<Op>(
-            self,
-            ops: Op,
-        ) -> impl Future<Output = Result<Response<BodyReader<Box<dyn AsyncRead + Send + Unpin>>>>>
-        where
-            Op: TryInto<HttpClientOptions, Error = std::io::Error>,
-        {
-            async move {
-                let ops: HttpClientOptions = ops.try_into()?;
-
-                let (parts, body) = self.into_parts();
-
-                let body = Cursor::new(body.as_ref().to_owned());
-
-                ops.send(Request::from_parts(parts, body)).await
             }
         }
     }

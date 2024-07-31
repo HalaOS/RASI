@@ -150,11 +150,13 @@ impl JsonRpcClient {
 pub mod rasi {
     use std::{any::Any, io, net::ToSocketAddrs, path::Path, str::from_utf8};
 
+    use futures::StreamExt;
     use futures_http::{
+        body::BodyReader,
         client::rasio::{HttpClient, HttpClientOptions, HttpClientOptionsBuilder},
         types::{
-            header::CONTENT_LENGTH, request::Builder as RequestBuilder, Error as HttpError,
-            HeaderName, HeaderValue, Request, StatusCode, Uri,
+            request::Builder as RequestBuilder, Error as HttpError, HeaderName, HeaderValue,
+            Request, StatusCode, Uri,
         },
     };
     use rasi::task::spawn_ok;
@@ -245,14 +247,8 @@ pub mod rasi {
             let ops: HttpClientOptions = self.send_ops.try_into()?;
 
             spawn_ok(async move {
-                while let Some((id, packet)) = background.send().await {
-                    let mut parts = parts.clone();
-
-                    parts
-                        .headers
-                        .append(CONTENT_LENGTH, packet.len().to_string().parse().unwrap());
-
-                    let request = Request::from_parts(parts, packet);
+                'outer: while let Some((id, packet)) = background.send().await {
+                    let request = Request::from_parts(parts.clone(), BodyReader::from(packet));
 
                     let resp = match request.send(&ops).await {
                         Ok(resp) => resp,
@@ -291,18 +287,41 @@ pub mod rasi {
                         continue;
                     }
 
-                    let (parts, body) = resp.into_parts();
+                    let (parts, mut body) = resp.into_parts();
 
                     log::trace!("rx: {:?}", parts);
 
-                    let packet = match body.into_bytes(self.max_body_size).await {
-                        Err(err) => {
+                    let mut buf = vec![];
+
+                    while let Some(chunk) = body.next().await {
+                        let mut chunk = match chunk {
+                            Ok(chunk) => chunk,
+                            Err(err) => {
+                                Self::handle_recv(
+                                    &background,
+                                    json!({
+                                         "id":id,"jsonrpc":"2.0","error": Error {
+                                            code: ErrorCode::InternalError,
+                                            message: err.to_string(),
+                                            data: None::<()>
+                                         }
+                                    })
+                                    .to_string(),
+                                )
+                                .await;
+                                continue 'outer;
+                            }
+                        };
+
+                        buf.append(&mut chunk);
+
+                        if buf.len() > self.max_body_size {
                             Self::handle_recv(
                                 &background,
                                 json!({
                                      "id":id,"jsonrpc":"2.0","error": Error {
                                         code: ErrorCode::InternalError,
-                                        message: err.to_string(),
+                                        message: format!("body too long to receive."),
                                         data: None::<()>
                                      }
                                 })
@@ -310,12 +329,11 @@ pub mod rasi {
                             )
                             .await;
 
-                            continue;
+                            continue 'outer;
                         }
-                        Ok(buf) => buf,
-                    };
+                    }
 
-                    Self::handle_recv(&background, packet).await;
+                    Self::handle_recv(&background, buf).await;
                 }
             });
 

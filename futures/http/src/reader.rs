@@ -1,13 +1,17 @@
 //! Utilities to parse http packets from a stream of bytes.
 //!
-use std::{io, str::from_utf8};
+use std::{future::Future, io};
 
-use crate::read_buf::ReadBuf;
+use crate::{
+    body::{BodyReader, BodyReaderError},
+    read_buf::ReadBuf,
+};
 use bytes::{Bytes, BytesMut};
 use futures::{io::Cursor, AsyncRead, AsyncReadExt};
 use http::{
     header::{InvalidHeaderName, InvalidHeaderValue},
     method::InvalidMethod,
+    response::Parts,
     status::InvalidStatusCode,
     uri::InvalidUri,
     HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version,
@@ -54,7 +58,13 @@ pub enum ParseError {
 
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    BodyReaderError(#[from] BodyReaderError),
 }
+
+/// Type alias for parser result.
+pub type ParseResult<T> = Result<T, ParseError>;
 
 impl From<ParseError> for io::Error {
     fn from(value: ParseError) -> Self {
@@ -64,9 +74,6 @@ impl From<ParseError> for io::Error {
         }
     }
 }
-
-/// Type alias for parser result.
-pub type ParseResult<T> = Result<T, ParseError>;
 
 /// Http packet parse config.
 #[derive(Debug)]
@@ -83,90 +90,6 @@ impl Default for Config {
     }
 }
 
-/// Http body reader created by http parsers, see mod [`parse`](super::parse)  for more information.
-#[derive(Debug)]
-pub struct BodyReader<S> {
-    /// Unparsed data cached by the parser when parsing http headers
-    cached: Bytes,
-
-    /// The underlying transport layer data stream
-    stream: S,
-}
-
-impl<S> BodyReader<S> {
-    /// Create new `BodyReader` instance from `(Bytes,S)`
-    pub fn new(cached: Bytes, stream: S) -> Self {
-        Self { cached, stream }
-    }
-}
-
-impl<S> BodyReader<S>
-where
-    S: AsyncRead + Send + Unpin,
-{
-    /// Consumes the `BodyReader` returning the cached bytes and body stream.
-    pub fn into_parts(self) -> (Bytes, S) {
-        (self.cached, self.stream)
-    }
-
-    /// Consume `BodyReader` and create an [`AsyncRead`] instance.
-    pub fn into_read(self) -> impl AsyncRead {
-        Cursor::new(self.cached).chain(self.stream)
-    }
-
-    /// Consume `BodyReader` into [`BytesMut`].
-    ///
-    /// Use `max_body_len` to limit memory buf usage, which may be useful for server-side code.
-    pub async fn into_bytes(self, max_body_len: usize) -> ParseResult<BytesMut> {
-        let mut stream = self.into_read();
-
-        let mut read_buf = ReadBuf::with_capacity(max_body_len);
-
-        loop {
-            let chunk_mut = read_buf.chunk_mut();
-
-            // Checks if the parsing buf is overflowing.
-            if chunk_mut.len() == 0 {
-                return Err(ParseError::ParseBufOverflow(max_body_len));
-            }
-
-            let read_size = stream.read(chunk_mut).await?;
-
-            if read_size == 0 {
-                break;
-            }
-
-            read_buf.advance_mut(read_size);
-
-            println!("{}", from_utf8(read_buf.chunk()).unwrap());
-        }
-
-        Ok(read_buf.into_bytes_mut(None))
-    }
-
-    /// Deserialize an instance of type `T` from http json format body.
-    ///
-    /// The maximum body length is limited to `4096` bytes,
-    /// use [`from_json_with`](Self::from_json_with) instead if you want to use other values.
-    pub async fn from_json<T>(self) -> ParseResult<T>
-    where
-        for<'a> T: serde::de::Deserialize<'a>,
-    {
-        self.from_json_with(4096).await
-    }
-
-    /// Deserialize an instance of type `T` from http json format body.
-    ///
-    /// Use `max_body_len` to limit memory buf usage, which may be useful for server-side code.
-    pub async fn from_json_with<T>(self, max_body_len: usize) -> ParseResult<T>
-    where
-        for<'a> T: serde::de::Deserialize<'a>,
-    {
-        let buf = self.into_bytes(max_body_len).await?;
-
-        Ok(serde_json::from_slice(&buf)?)
-    }
-}
 /// Http request packet parser.
 ///
 /// In general, please do not create [`Requester`] directly but use
@@ -204,10 +127,9 @@ impl<S> Requester<S> {
 
 impl<S> Requester<S>
 where
-    S: AsyncRead + Unpin,
+    S: AsyncRead + Unpin + Send + 'static,
 {
-    /// Try parse http request header parts and generate [`Request`] object.
-    pub async fn parse(mut self) -> ParseResult<Request<BodyReader<S>>> {
+    pub async fn parse_parts(mut self) -> ParseResult<(http::request::Parts, Bytes, S)> {
         // create header parts parse buffer with capacity to `config.parsing_headers_max_buf`
         let mut read_buf = ReadBuf::with_capacity(self.config.parsing_headers_max_buf);
 
@@ -263,11 +185,21 @@ where
 
         let cached = read_buf.into_bytes(None);
 
+        let (parts, _) = self.builder.unwrap().body(())?.into_parts();
+
+        Ok((parts, cached, self.stream))
+    }
+
+    /// Try parse http request header parts and generate [`Request`] object.
+    pub async fn parse(self) -> ParseResult<Request<BodyReader>> {
+        let (parts, cached, stream) = self.parse_parts().await?;
+
+        let stream = Cursor::new(cached).chain(stream);
+
+        let body_reader = BodyReader::parse(&parts.headers, stream).await?;
+
         // construct [`Request`]
-        Ok(self
-            .builder
-            .unwrap()
-            .body(BodyReader::new(cached, self.stream))?)
+        Ok(Request::from_parts(parts, body_reader))
     }
 
     #[inline]
@@ -389,21 +321,21 @@ where
 /// Helper function to help parsing stream into [`Request`] instance.
 ///
 /// See [`new_with`](Requester::new) for more information.
-pub async fn parse_request<S>(stream: S) -> io::Result<Request<BodyReader<S>>>
+pub async fn parse_request<S>(stream: S) -> ParseResult<Request<BodyReader>>
 where
-    S: AsyncRead + Unpin,
+    S: AsyncRead + Unpin + Send + 'static,
 {
-    Ok(Requester::new(stream).parse().await?)
+    Requester::new(stream).parse().await
 }
 
 /// Helper function to help parsing stream into [`Request`] instance.
 ///
 /// See [`new_with`](Requester::new_with) for more information.
-pub async fn parse_request_with<S>(stream: S, config: Config) -> io::Result<Request<BodyReader<S>>>
+pub async fn parse_request_with<S>(stream: S, config: Config) -> ParseResult<Request<BodyReader>>
 where
-    S: AsyncRead + Unpin,
+    S: AsyncRead + Send + Unpin + 'static,
 {
-    Ok(Requester::new_with(stream, config).parse().await?)
+    Requester::new_with(stream, config).parse().await
 }
 
 /// Http response packet parser.
@@ -447,10 +379,9 @@ impl<S> Responser<S> {
 
 impl<S> Responser<S>
 where
-    S: AsyncRead + Unpin,
+    S: AsyncRead + Unpin + Send + 'static,
 {
-    /// Try parse http request header parts and generate [`Request`] object.
-    pub async fn parse(mut self) -> ParseResult<Response<BodyReader<S>>> {
+    pub async fn parse_parts(mut self) -> ParseResult<(Parts, Bytes, S)> {
         // create header parts parse buffer with capacity to `config.parsing_headers_max_buf`
         let mut read_buf = ReadBuf::with_capacity(self.config.parsing_headers_max_buf);
 
@@ -506,11 +437,20 @@ where
 
         let cached = read_buf.into_bytes(None);
 
-        // construct [`Request`]
-        Ok(self
-            .builder
-            .unwrap()
-            .body(BodyReader::new(cached, self.stream))?)
+        let (parts, _) = self.builder.unwrap().body(())?.into_parts();
+
+        Ok((parts, cached, self.stream))
+    }
+
+    /// Try parse http request header parts and generate [`Request`] object.
+    pub async fn parse(self) -> ParseResult<Response<BodyReader>> {
+        let (parts, cached, stream) = self.parse_parts().await?;
+
+        let stream = Cursor::new(cached).chain(stream);
+
+        let body_reader = BodyReader::parse(&parts.headers, stream).await?;
+
+        Ok(Response::from_parts(parts, body_reader))
     }
 
     #[inline]
@@ -624,24 +564,21 @@ where
 /// Helper function to help parsing stream into [`Response`] instance.
 ///
 /// See [`new_with`](Response::new) for more information.
-pub async fn parse_response<S>(stream: S) -> io::Result<Response<BodyReader<S>>>
+pub async fn parse_response<S>(stream: S) -> ParseResult<Response<BodyReader>>
 where
-    S: AsyncRead + Unpin,
+    S: AsyncRead + Send + Unpin + 'static,
 {
-    Ok(Responser::new(stream).parse().await?)
+    Responser::new(stream).parse().await
 }
 
 /// Helper function to help parsing stream into [`Response`] instance.
 ///
 /// See [`new_with`](Responser::new_with) for more information.
-pub async fn parse_response_with<S>(
-    stream: S,
-    config: Config,
-) -> io::Result<Response<BodyReader<S>>>
+pub async fn parse_response_with<S>(stream: S, config: Config) -> ParseResult<Response<BodyReader>>
 where
-    S: AsyncRead + Unpin,
+    S: AsyncRead + Send + Unpin + 'static,
 {
-    Ok(Responser::new_with(stream, config).parse().await?)
+    Responser::new_with(stream, config).parse().await
 }
 
 /// The statemachine of [`Requester`].
@@ -904,6 +841,24 @@ fn parse_header(read_buf: &mut ReadBuf) -> ParseResult<Option<(HeaderName, Heade
     Ok(Some((header_name, header_value)))
 }
 
+pub trait HttpReader: AsyncRead + Unpin + Send + 'static {
+    fn read_request(self) -> impl Future<Output = io::Result<Request<BodyReader>>>
+    where
+        Self: Sized,
+    {
+        async { Ok(Requester::new(self).parse().await?) }
+    }
+
+    fn read_response(self) -> impl Future<Output = io::Result<Response<BodyReader>>>
+    where
+        Self: Sized,
+    {
+        async { Ok(Responser::new(self).parse().await?) }
+    }
+}
+
+impl<T: AsyncRead + Send + Unpin + 'static> HttpReader for T {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -936,15 +891,18 @@ mod tests {
     use futures::io::Cursor;
 
     use http::{Method, Request, Version};
-    use serde::{Deserialize, Serialize};
 
-    async fn parse_request(buf: &[u8]) -> ParseResult<Request<BodyReader<Cursor<Vec<u8>>>>> {
-        Requester::new(Cursor::new(buf.to_vec())).parse().await
+    async fn parse_request(buf: &[u8]) -> ParseResult<Request<()>> {
+        let (parts, _, _) = Requester::new(Cursor::new(buf.to_vec()))
+            .parse_parts()
+            .await?;
+
+        Ok(Request::from_parts(parts, ()))
     }
 
     async fn parse_request_test<F>(buf: &[u8], f: F)
     where
-        F: FnOnce(Request<BodyReader<Cursor<Vec<u8>>>>),
+        F: FnOnce(Request<()>),
     {
         let request = parse_request(buf).await.expect("parse request failed.");
 
@@ -975,13 +933,17 @@ mod tests {
         }
     }
 
-    async fn parse_response(buf: &[u8]) -> ParseResult<Response<BodyReader<Cursor<Vec<u8>>>>> {
-        Responser::new(Cursor::new(buf.to_vec())).parse().await
+    async fn parse_response(buf: &[u8]) -> ParseResult<Response<()>> {
+        let (parts, _, _) = Responser::new(Cursor::new(buf.to_vec()))
+            .parse_parts()
+            .await?;
+
+        Ok(Response::from_parts(parts, ()))
     }
 
     async fn parse_response_test<F>(buf: &[u8], f: F)
     where
-        F: FnOnce(Response<BodyReader<Cursor<Vec<u8>>>>),
+        F: FnOnce(Response<()>),
     {
         let request = parse_response(buf).await.expect("parse request failed.");
 
@@ -1238,30 +1200,5 @@ mod tests {
         expect_request_empty_method(b"  HTTP/1.1\r\n\r\n").await;
 
         expect_request_empty_method(b" / HTTP/1.1\r\n\r\n").await;
-    }
-
-    #[derive(Serialize, Deserialize, PartialEq, Debug)]
-    struct Mock {
-        a: i32,
-        b: String,
-    }
-
-    #[futures_test::test]
-    async fn test_from_json() {
-        let mock = Mock {
-            a: 10,
-            b: "hello".to_string(),
-        };
-
-        let mut json_data = Bytes::from(serde_json::to_string_pretty(&mock).unwrap());
-
-        let body_reader = BodyReader::new(
-            json_data.split_to(json_data.len() / 2),
-            Cursor::new(json_data),
-        );
-
-        let mock2 = body_reader.from_json::<Mock>().await.unwrap();
-
-        assert_eq!(mock, mock2);
     }
 }

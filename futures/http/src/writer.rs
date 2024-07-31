@@ -1,38 +1,98 @@
-//! Utilities to serialize http packets into a stream of bytes.
-//!
-use std::{future::Future, io};
+use std::{
+    fmt::Write,
+    future::Future,
+    io::{Error, ErrorKind, Result},
+    str::from_utf8,
+};
 
-use futures::io::{copy, AsyncRead, AsyncWrite, AsyncWriteExt, Cursor};
-use http::{header::ToStrError, Request, Response};
+use futures::{AsyncWrite, AsyncWriteExt, TryStreamExt};
+use http::{
+    header::{ToStrError, CONTENT_LENGTH, TRANSFER_ENCODING},
+    Request, Response,
+};
 
-fn map_to_str_error(err: ToStrError) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, err)
+use crate::body::BodyReader;
+
+fn map_to_str_error(err: ToStrError) -> Error {
+    Error::new(ErrorKind::InvalidData, err)
 }
 
-/// Writer for http request with stream body
-pub trait RequestWithStreamBodyWriter: AsyncWrite + Unpin {
-    /// write request packet into output stream.
-    fn write_http_request<T>(
-        &mut self,
-        mut request: Request<T>,
-    ) -> impl Future<Output = io::Result<()>>
-    where
-        T: AsyncRead + Unpin + 'static,
-    {
+pub trait HttpWriter: AsyncWrite + Unpin {
+    fn write_request(&mut self, request: Request<BodyReader>) -> impl Future<Output = Result<()>> {
         async move {
-            let status_line = format!(
+            let (parts, mut body) = request.into_parts();
+
+            let mut buf = String::new();
+
+            write!(
+                &mut buf,
                 "{} {} {:?}\r\n",
-                request.method(),
-                request.uri().path(),
-                request.version()
-            );
+                parts.method,
+                parts.uri.path(),
+                parts.version
+            )
+            .unwrap();
+
             // write status line.
-            self.write_all(status_line.as_bytes()).await?;
+            // self.write_all(status_line.as_bytes()).await?;
 
-            println!("{}", status_line);
+            for (name, value) in &parts.headers {
+                write!(
+                    &mut buf,
+                    "{}: {}\r\n",
+                    name,
+                    value.to_str().map_err(map_to_str_error)?
+                )
+                .unwrap();
+            }
 
-            // write headers.
-            for (name, value) in request.headers() {
+            if let Some(len) = body.len() {
+                write!(&mut buf, "{}: {}\r\n", CONTENT_LENGTH, len).unwrap();
+
+                write!(&mut buf, "\r\n").unwrap();
+
+                let body = body
+                    .try_next()
+                    .await?
+                    .expect("Ready fixed length body error");
+
+                let buf = buf + from_utf8(&body).unwrap();
+
+                self.write_all(buf.as_bytes()).await?;
+
+                println!("{}", buf);
+            } else {
+                self.write_all(format!("{}: chunked\r\n", TRANSFER_ENCODING).as_bytes())
+                    .await?;
+
+                self.write_all(b"\r\n").await?;
+
+                while let Some(chunk) = body.try_next().await? {
+                    self.write_all(format!("{:x}\r\n", chunk.len()).as_bytes())
+                        .await?;
+
+                    self.write_all(&chunk).await?;
+                }
+
+                self.write_all(b"0\r\n\r\n").await?;
+            }
+
+            Ok(())
+        }
+    }
+
+    fn write_response(
+        &mut self,
+        response: Response<BodyReader>,
+    ) -> impl Future<Output = Result<()>> {
+        async move {
+            let (parts, mut body) = response.into_parts();
+
+            // write status line.
+            self.write_all(format!("{:?} {}\r\n", parts.version, parts.status).as_bytes())
+                .await?;
+
+            for (name, value) in &parts.headers {
                 self.write_all(
                     format!(
                         "{}: {}\r\n",
@@ -44,175 +104,37 @@ pub trait RequestWithStreamBodyWriter: AsyncWrite + Unpin {
                 .await?;
             }
 
-            self.write_all(b"\r\n").await?;
+            if let Some(len) = body.len() {
+                self.write_all(format!("{}: {}\r\n", CONTENT_LENGTH, len).as_bytes())
+                    .await?;
 
-            // write body.
-            copy(request.body_mut(), self).await?;
+                self.write_all(b"\r\n").await?;
 
-            Ok(())
-        }
-    }
-}
+                let body = body
+                    .try_next()
+                    .await?
+                    .expect("Ready fixed length body error");
 
-impl<T: AsyncWrite + Unpin> RequestWithStreamBodyWriter for T {}
+                self.write_all(&body).await?;
+            } else {
+                self.write_all(format!("{}: chunked\r\n", TRANSFER_ENCODING).as_bytes())
+                    .await?;
 
-/// Writer for http request with stream body
-pub trait RequestWriter: AsyncWrite + Unpin {
-    /// write request packet into output stream.
-    fn write_http_request<T>(&mut self, request: Request<T>) -> impl Future<Output = io::Result<()>>
-    where
-        T: AsRef<[u8]>,
-        Self: Sized,
-    {
-        async move {
-            let (parts, body) = request.into_parts();
+                self.write_all(b"\r\n").await?;
 
-            let body = Cursor::new(body.as_ref().to_owned());
+                while let Some(chunk) = body.try_next().await? {
+                    self.write_all(format!("{:x}\r\n", chunk.len()).as_bytes())
+                        .await?;
 
-            RequestWithStreamBodyWriter::write_http_request(self, Request::from_parts(parts, body))
-                .await
-        }
-    }
-}
+                    self.write_all(&chunk).await?;
+                }
 
-impl<T: AsyncWrite + Unpin> RequestWriter for T {}
-
-/// Writer for http response with stream body
-pub trait ResponseWithStreamBodyWriter: AsyncWrite + Unpin {
-    /// write request packet into output stream.
-    fn write_http_response<T>(
-        &mut self,
-        mut response: Response<T>,
-    ) -> impl Future<Output = io::Result<()>>
-    where
-        T: AsyncRead + Unpin + 'static,
-    {
-        async move {
-            // write status line.
-            self.write_all(
-                format!("{:?} {}\r\n", response.version(), response.status()).as_bytes(),
-            )
-            .await?;
-
-            // write headers.
-            for (name, value) in response.headers() {
-                self.write_all(
-                    format!(
-                        "{}: {}\r\n",
-                        name,
-                        value.to_str().map_err(map_to_str_error)?
-                    )
-                    .as_bytes(),
-                )
-                .await?;
+                self.write_all(b"0\r\n\r\n").await?;
             }
 
-            self.write_all(b"\r\n").await?;
-
-            // write body.
-            copy(response.body_mut(), self).await?;
-
             Ok(())
         }
     }
 }
 
-impl<T: AsyncWrite + Unpin> ResponseWithStreamBodyWriter for T {}
-
-/// Writer for http request with stream body
-pub trait ResponseWriter: AsyncWrite + Unpin {
-    /// write request packet into output stream.
-    fn write_http_response<T>(
-        &mut self,
-        response: Response<T>,
-    ) -> impl Future<Output = io::Result<()>>
-    where
-        T: AsRef<[u8]>,
-        Self: Sized,
-    {
-        async move {
-            let (parts, body) = response.into_parts();
-
-            let body = Cursor::new(body.as_ref().to_owned());
-
-            ResponseWithStreamBodyWriter::write_http_response(
-                self,
-                Response::from_parts(parts, body),
-            )
-            .await
-        }
-    }
-}
-
-impl<T: AsyncWrite + Unpin> ResponseWriter for T {}
-#[cfg(test)]
-mod tests {
-
-    use futures::io::Cursor;
-    use http::{Request, Response, StatusCode};
-
-    use super::*;
-
-    async fn write_request_test(request: Request<&str>, expect: &[u8]) {
-        let mut output = Cursor::new(Vec::new());
-
-        RequestWriter::write_http_request(&mut output, request)
-            .await
-            .unwrap();
-
-        let buf = output.into_inner();
-
-        // use std::str::from_utf8;
-        // println!("{}", from_utf8(&buf).unwrap());
-
-        assert_eq!(&buf, expect);
-    }
-
-    async fn write_response_test(response: Response<&str>, expect: &[u8]) {
-        let mut output = Cursor::new(Vec::new());
-
-        ResponseWriter::write_http_response(&mut output, response)
-            .await
-            .unwrap();
-
-        let buf = output.into_inner();
-
-        // use std::str::from_utf8;
-        // println!("{}", from_utf8(&buf).unwrap());
-
-        assert_eq!(&buf, expect);
-    }
-
-    #[futures_test::test]
-    async fn test_request() {
-        write_request_test(
-            Request::get("http://rasi.com").body("").unwrap(),
-            b"GET http://rasi.com/ HTTP/1.1\r\n\r\n",
-        )
-        .await;
-
-        write_request_test(
-            Request::get("http://rasi.com").body("hello world").unwrap(),
-            b"GET http://rasi.com/ HTTP/1.1\r\n\r\nhello world",
-        )
-        .await;
-    }
-
-    #[futures_test::test]
-    async fn test_response() {
-        write_response_test(
-            Response::builder().status(StatusCode::OK).body("").unwrap(),
-            b"HTTP/1.1 200 OK\r\n\r\n",
-        )
-        .await;
-
-        write_response_test(
-            Response::builder()
-                .status(StatusCode::OK)
-                .body("hello world")
-                .unwrap(),
-            b"HTTP/1.1 200 OK\r\n\r\nhello world",
-        )
-        .await;
-    }
-}
+impl<T: AsyncWrite + Unpin> HttpWriter for T {}

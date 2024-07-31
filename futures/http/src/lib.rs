@@ -1,6 +1,7 @@
-pub mod parse;
-pub mod server;
+mod read_buf;
+
+pub mod reader;
 pub mod writer;
 pub use http as types;
+pub mod body;
 pub mod client;
-mod read_buf;
