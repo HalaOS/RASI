@@ -421,6 +421,8 @@ impl QuicConn {
 
             self.check_conn_status(&mut state)?;
 
+            self.handle_stream_drop(&mut state).await;
+
             if let Some(stream_id) = state.incoming_streams.pop_front() {
                 return Ok(QuicStream::new(stream_id, self.clone()));
             }
@@ -458,6 +460,8 @@ impl QuicConn {
     pub async fn open(&self, nonblocking: bool) -> Result<QuicStream> {
         loop {
             let mut state = self.state.lock().await;
+
+            self.handle_stream_drop(&mut state).await;
 
             let peer_streams_left_bidi = self.peer_streams_left_bidi_priv(&state);
 
