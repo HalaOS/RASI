@@ -4,8 +4,9 @@ members = [
     "crates/mio",
     "crates/spec",
     "crates/sqlite3",
-    "futures/*"
-, "web3/web3rs"]
+    "futures/*",
+    "web3/*"
+]
 resolver = "2"
 
 [workspace.package]
@@ -25,7 +26,7 @@ rand = { version = "^0.8", features = ["getrandom"] }
 mio = { version = "^1", features = ["os-poll", "net", "os-ext"] }
 dashmap = "^6.0"
 boxcar = "^0.2.4"
-windows-sys = "^0.52"
+windows-sys = "^0.59"
 boring = "^4.4.0"
 http = "^1.0"
 httparse = "^1.8"
