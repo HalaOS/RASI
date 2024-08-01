@@ -2,11 +2,13 @@
 
 use std::fmt::Display;
 
+use serde::{Deserialize, Serialize};
+
 use crate::primitives::hex::Hex;
 
 use super::u256::U256;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Eip1559Signature {
     pub v: u8,
     pub r: U256,

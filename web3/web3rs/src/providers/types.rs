@@ -1,38 +1,11 @@
 use ethnum::U256;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::primitives::{address::Address, h256::H256, hex::Hex};
-
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct AccessList(pub Vec<Access>);
-
-impl Serialize for AccessList {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for AccessList {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let accesses = Vec::<Access>::deserialize(deserializer)?;
-
-        Ok(Self(accesses))
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Access {
-    pub address: Address,
-
-    pub storage_keys: Vec<H256>,
-}
+use crate::{
+    eip::eip2718::AccessList,
+    errors::Error,
+    primitives::{Address, Bytes, Hex, H256},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -205,4 +178,278 @@ pub struct Block {
 
     /// Uncles
     pub uncles: Vec<H256>,
+}
+
+/// eth_getBlockByNumber parameter `Block`
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[serde(untagged)]
+pub enum BlockNumberOrTag {
+    U256(U256),
+    Tag(BlockTag),
+}
+
+impl From<U256> for BlockNumberOrTag {
+    fn from(v: U256) -> Self {
+        BlockNumberOrTag::U256(v)
+    }
+}
+
+impl TryFrom<&str> for BlockNumberOrTag {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(BlockNumberOrTag::U256(U256::from_str_prefixed(value)?))
+    }
+}
+
+impl TryFrom<String> for BlockNumberOrTag {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(BlockNumberOrTag::U256(U256::from_str_prefixed(&value)?))
+    }
+}
+
+impl TryFrom<BlockTag> for BlockNumberOrTag {
+    type Error = Error;
+
+    fn try_from(value: BlockTag) -> Result<Self, Self::Error> {
+        Ok(BlockNumberOrTag::Tag(value))
+    }
+}
+
+impl Default for BlockNumberOrTag {
+    fn default() -> Self {
+        BlockNumberOrTag::Tag(BlockTag::Latest)
+    }
+}
+
+/// eth_getBlockByNumber parameter `Block` valid tag enum
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum BlockTag {
+    Earliest,
+    Finalized,
+    Safe,
+    Latest,
+    Pending,
+}
+
+/// When a Contract creates a log, it can include up to 4 pieces of data to be indexed by.
+/// The indexed data is hashed and included in a Bloom Filter, which is a data structure
+/// that allows for efficient filtering.
+///
+/// So, a filter may correspondingly have up to 4 topic-sets, where each topic-set refers
+/// to a condition that must match the indexed log topic in that position
+/// (i.e. each condition is AND-ed together).
+///
+/// If a topic-set is null, a log topic in that position is not filtered at all and any
+/// value matches.
+///
+/// If a topic-set is a single topic, a log topic in that position must match that topic.
+///
+/// If a topic-set is an array of topics, a log topic in that position must match any one
+/// of the topics (i.e. the topic in this position are OR-ed).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TopicFilter(Topic, Topic, Topic, Topic);
+
+/// Topic filter expr
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum Topic {
+    /// Not filtered at all and any value matches
+    Unset,
+    /// Match any of the hashes.
+    OneOf(Vec<H256>),
+    /// Match only this hash.
+    This(H256),
+}
+
+impl Default for Topic {
+    fn default() -> Self {
+        Self::Unset
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum AddressFilter {
+    Address(Address),
+    Addresses(Vec<Address>),
+}
+
+impl From<Address> for AddressFilter {
+    fn from(value: Address) -> Self {
+        AddressFilter::Address(value)
+    }
+}
+
+impl From<Vec<Address>> for AddressFilter {
+    fn from(value: Vec<Address>) -> Self {
+        AddressFilter::Addresses(value)
+    }
+}
+
+/// Filter argument for events
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub struct Filter {
+    /// The lowest number block of returned range.
+    pub from_block: Option<U256>,
+    /// The highest number block of returned range.
+    pub to_block: Option<U256>,
+
+    pub address: Option<AddressFilter>,
+
+    pub topics: Option<TopicFilter>,
+}
+
+impl From<(Address, TopicFilter)> for Filter {
+    fn from(value: (Address, TopicFilter)) -> Self {
+        Filter {
+            from_block: None,
+            to_block: None,
+            address: Some(AddressFilter::Address(value.0)),
+            topics: Some(value.1),
+        }
+    }
+}
+
+impl From<(Vec<Address>, TopicFilter)> for Filter {
+    fn from(value: (Vec<Address>, TopicFilter)) -> Self {
+        Filter {
+            from_block: None,
+            to_block: None,
+            address: Some(AddressFilter::Addresses(value.0)),
+            topics: Some(value.1),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeeHistory {
+    /// The lowest number block of returned range.
+    pub oldest_block: U256,
+
+    pub base_fee_per_gas: Vec<U256>,
+
+    pub reward: Vec<Vec<U256>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Log {
+    pub removed: bool,
+
+    pub log_index: U256,
+
+    pub transaction_index: U256,
+
+    pub transaction_hash: U256,
+
+    pub block_hash: H256,
+
+    pub block_number: U256,
+
+    pub address: Address,
+
+    pub data: Bytes,
+
+    pub topics: Vec<H256>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum FilterEvents {
+    BlocksOrTransactions(Vec<H256>),
+
+    Logs(Vec<Log>),
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum SyncingStatus {
+    Syncing(Syncing),
+
+    #[serde(deserialize_with = "from_bool", serialize_with = "as_bool")]
+    False,
+}
+
+impl Default for SyncingStatus {
+    fn default() -> Self {
+        SyncingStatus::False
+    }
+}
+
+fn from_bool<'de, D>(d: D) -> std::result::Result<(), D::Error>
+where
+    D: Deserializer<'de>,
+{
+    bool::deserialize(d).and_then(|flag| {
+        if !flag {
+            Ok(())
+        } else {
+            Err("Parse syncing status err, should always return false if not syncing")
+                .map_err(serde::de::Error::custom)
+        }
+    })
+}
+
+fn as_bool<S>(serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_bool(false)
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Syncing {
+    /// Starting block
+    starting_block: U256,
+
+    /// Current block
+    current_block: U256,
+
+    /// Highest block
+    highest_block: U256,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionReceipt {
+    /// From address
+    pub from: Address,
+    /// To address
+    pub to: Option<Address>,
+    /// Contract address created by this transaction.
+    pub contract_address: Option<Address>,
+    /// Gas used
+    pub gas_used: U256,
+    /// Gas used
+    pub cumulative_gas_used: U256,
+
+    pub effective_gas_price: U256,
+
+    transaction_index: U256,
+    /// Block hash
+    pub block_hash: H256,
+    /// Block number
+    pub block_number: U256,
+    /// 1 for success, 0 for failure.
+    pub status: Option<Status>,
+    /// Logs
+    pub logs: Vec<Log>,
+    /// Logs bloom filter string
+    pub logs_bloom: Bytes,
+    /// Only include before the Byzantium upgrade
+    pub root: Option<H256>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Status {
+    // 0x00
+    #[serde(rename = "0x1")]
+    Success,
+    // 0x01
+    #[serde(rename = "0x0")]
+    Failure,
 }

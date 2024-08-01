@@ -1,6 +1,6 @@
 use std::num::ParseIntError;
 
-use crate::primitives::{balance::ParseBalanceError, hex::HexError};
+use crate::primitives::{balance::ParseBalanceError, HexError};
 
 /// web3rs error variants.
 #[derive(Debug, thiserror::Error)]
@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error(transparent)]
     ParseIntError(#[from] ParseIntError),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 /// Result type for web3rs.

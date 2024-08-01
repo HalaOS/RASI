@@ -7,7 +7,7 @@ use sha3::{Digest, Keccak256};
 
 use super::hex::{Hex, HexError};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address(Hex<[u8; 20]>);
 
 impl From<[u8; 20]> for Address {

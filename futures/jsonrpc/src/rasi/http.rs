@@ -1,4 +1,4 @@
-use std::{any::Any, io, net::ToSocketAddrs, path::Path, time::Duration};
+use std::{any::Any, io, net::ToSocketAddrs, path::Path, str::from_utf8, time::Duration};
 
 use futures::TryStreamExt;
 use futures_http::{
@@ -31,7 +31,7 @@ impl HttpJsonRpcClient {
         <Uri as TryFrom<T>>::Error: Into<HttpError>,
     {
         HttpJsonRpcClient {
-            max_body_size: 2048,
+            max_body_size: 1024 * 1024,
             send_cached_len: 0,
             timeout: Duration::from_secs(5),
             builder: RequestBuilder::new().method("POST").uri(uri),
@@ -111,6 +111,8 @@ impl HttpJsonRpcClient {
 
         spawn_ok(async move {
             while let Some((id, packet)) = background.send().await {
+                log::trace!("send jsonrpc: {}", from_utf8(&packet).unwrap());
+
                 let call = Self::send_request(&ops, self.max_body_size, parts.clone(), packet)
                     .timeout(self.timeout)
                     .await;
@@ -159,6 +161,8 @@ impl HttpJsonRpcClient {
     }
 
     async fn handle_recv<P: AsRef<[u8]>>(client: &JsonRpcClient, packet: P) {
+        log::trace!("recv jsonrpc: {}", from_utf8(packet.as_ref()).unwrap());
+
         if let Err(err) = client.recv(packet).await {
             log::error!("handle http jsonrpc recv with error: {}", err);
         }

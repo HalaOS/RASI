@@ -18,7 +18,7 @@ pub enum HexError {
 }
 
 /// Represent a ethereum hex string type.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hex<T>(pub T);
 
 impl<T> LowerHex for Hex<T>
@@ -102,6 +102,12 @@ impl FromStr for Hex<Vec<u8>> {
                 return Ok(Hex(vec![0x0]));
             }
         }
+
+        let s = if s.len() % 2 != 0 {
+            "0".to_string() + s
+        } else {
+            s.to_owned()
+        };
 
         let buf: Result<Vec<u8>, ParseIntError> = (0..s.len())
             .step_by(2)
