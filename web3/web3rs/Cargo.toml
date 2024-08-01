@@ -8,7 +8,7 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-ethnum = { workspace = true }
+ethnum = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true }
 sha3 = { workspace = true }
 serde = { workspace = true }
@@ -20,6 +20,7 @@ futures-jsonrpcv2 = { workspace = true, features = ["with_rasi"] }
 rasi = { workspace = true, features = ["task-futures"] }
 rasi-mio = { workspace = true }
 pretty_env_logger = { workspace = true }
+serde_json = { workspace = true }
 
 [features]
 test-providers = []

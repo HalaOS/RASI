@@ -87,6 +87,13 @@ impl HttpJsonRpcClient {
         self
     }
 
+    /// Configures the use of Server Name Indication (SNI) when connecting.
+    /// Defaults to true.
+    pub fn set_use_server_name_indication(mut self, value: bool) -> Self {
+        self.send_ops = self.send_ops.set_use_server_name_indication(value);
+        self
+    }
+
     /// Consume builder and create a new `JsonRpcClient` instance.
     pub fn create(self) -> io::Result<JsonRpcClient> {
         let request = self

@@ -50,13 +50,17 @@ pub mod rasio {
         raddrs: Option<Vec<SocketAddr>>,
         server_name: Option<String>,
         ca_file: Option<PathBuf>,
+        use_server_name_indication: bool,
     }
 
     impl HttpClientOptions {
         /// Create a `HttpClientOptionsBuilder` instance to build `HttpClientOptions`.
         pub fn new() -> HttpClientOptionsBuilder {
             HttpClientOptionsBuilder {
-                ops: Ok(HttpClientOptions::default()),
+                ops: Ok(HttpClientOptions {
+                    use_server_name_indication: true,
+                    ..Default::default()
+                }),
             }
         }
 
@@ -75,16 +79,16 @@ pub mod rasio {
                 if scheme == &Scheme::HTTP {
                     80
                 } else {
-                    440
+                    443
                 }
             });
 
             let raddrs = if let Some(raddrs) = &self.raddrs {
                 raddrs.to_owned()
             } else {
-                vec![format!("{}:{}", host, port,)
-                    .parse()
-                    .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?]
+                format!("{}:{}", host, port)
+                    .to_socket_addrs()?
+                    .collect::<Vec<_>>()
             };
 
             if scheme == &Scheme::HTTP {
@@ -94,7 +98,7 @@ pub mod rasio {
             } else {
                 let stream = TcpStream::connect(raddrs.as_slice()).await?;
 
-                let mut config = SslConnector::builder(SslMethod::tls())
+                let mut config = SslConnector::builder(SslMethod::tls_client())
                     .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
 
                 if let Some(ca_file) = self.ca_file.to_owned() {
@@ -105,11 +109,14 @@ pub mod rasio {
                         .map_err(|err| Error::new(ErrorKind::InvalidInput, err))?;
                 }
 
-                let config = config.build().configure().unwrap();
+                let mut config = config.build().configure().unwrap();
 
-                let transport = connect(config, host, stream)
-                    .await
-                    .map_err(|err| Error::new(ErrorKind::ConnectionRefused, err))?;
+                config.set_use_server_name_indication(self.use_server_name_indication);
+
+                let transport = connect(config, host, stream).await.map_err(|err| {
+                    println!("{}", err);
+                    Error::new(ErrorKind::ConnectionRefused, err)
+                })?;
 
                 return super::HttpClient::send(request, transport).await;
             }
@@ -154,6 +161,16 @@ pub mod rasio {
         pub fn with_ca_file<P: AsRef<Path>>(self, ca_file: P) -> Self {
             self.and_then(|mut ops| {
                 ops.ca_file = Some(ca_file.as_ref().to_path_buf());
+
+                Ok(ops)
+            })
+        }
+
+        /// Configures the use of Server Name Indication (SNI) when connecting.
+        /// Defaults to true.
+        pub fn set_use_server_name_indication(self, value: bool) -> Self {
+            self.and_then(|mut ops| {
+                ops.use_server_name_indication = value;
 
                 Ok(ops)
             })

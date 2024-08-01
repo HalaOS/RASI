@@ -6,6 +6,8 @@ use std::{
     str::FromStr,
 };
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, thiserror::Error)]
 pub enum HexError {
     #[error(transparent)]
@@ -95,6 +97,12 @@ impl FromStr for Hex<Vec<u8>> {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = if s.starts_with("0x") { &s[2..] } else { s };
 
+        if s.len() < 2 {
+            if s == "0" {
+                return Ok(Hex(vec![0x0]));
+            }
+        }
+
         let buf: Result<Vec<u8>, ParseIntError> = (0..s.len())
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
@@ -143,6 +151,91 @@ impl TryFrom<String> for Hex<Vec<u8>> {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse()
+    }
+}
+
+impl<const N: usize> TryFrom<&str> for Hex<[u8; N]> {
+    type Error = HexError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl<const N: usize> TryFrom<String> for Hex<[u8; N]> {
+    type Error = HexError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl Serialize for Hex<Vec<u8>> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            format!("{:#x}", self).serialize(serializer)
+        } else {
+            serializer.serialize_newtype_struct("bytes", &self.0)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Hex<Vec<u8>> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let data = String::deserialize(deserializer)?;
+
+            Hex::<Vec<u8>>::from_str(&data).map_err(serde::de::Error::custom)
+        } else {
+            let hex = Vec::<u8>::deserialize(deserializer)?;
+
+            Ok(Hex(hex))
+        }
+    }
+}
+
+impl<const N: usize> Serialize for Hex<[u8; N]> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            format!("{:#x}", self).serialize(serializer)
+        } else {
+            serializer.serialize_newtype_struct("bytesN", self.0.as_slice())
+        }
+    }
+}
+
+impl<'de, const N: usize> Deserialize<'de> for Hex<[u8; N]> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let data = String::deserialize(deserializer)?;
+
+            Hex::<[u8; N]>::from_str(&data).map_err(serde::de::Error::custom)
+        } else {
+            let buf = Vec::<u8>::deserialize(deserializer)?;
+
+            if buf.len() != N {
+                return Err(HexError::InvalidHexLength(buf.len()))
+                    .map_err(serde::de::Error::custom);
+            }
+
+            let mut hex = [0u8; N];
+
+            hex.copy_from_slice(&buf);
+
+            Ok(Hex(hex))
+        }
     }
 }
 

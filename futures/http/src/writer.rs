@@ -5,13 +5,17 @@ use std::{
 
 use futures::{AsyncWrite, AsyncWriteExt, TryStreamExt};
 use http::{
-    header::{ToStrError, CONTENT_LENGTH, TRANSFER_ENCODING},
+    header::{InvalidHeaderValue, ToStrError, CONTENT_LENGTH, HOST, TRANSFER_ENCODING},
     HeaderValue, Request, Response,
 };
 
 use crate::body::BodyReader;
 
 fn map_to_str_error(err: ToStrError) -> Error {
+    Error::new(ErrorKind::InvalidData, err)
+}
+
+fn map_invalid_header_value_error(err: InvalidHeaderValue) -> Error {
     Error::new(ErrorKind::InvalidData, err)
 }
 
@@ -30,6 +34,15 @@ pub trait HttpWriter: AsyncWrite + Unpin {
                 .as_bytes(),
             )
             .await?;
+
+            if parts.headers.get(HOST).is_none() {
+                if let Some(host) = parts.uri.host() {
+                    parts.headers.insert(
+                        HOST,
+                        HeaderValue::from_str(host).map_err(map_invalid_header_value_error)?,
+                    );
+                }
+            }
 
             if parts.headers.get(CONTENT_LENGTH).is_none()
                 && parts.headers.get(TRANSFER_ENCODING).is_none()

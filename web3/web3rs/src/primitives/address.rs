@@ -2,10 +2,12 @@
 
 use std::{fmt::Display, str::FromStr};
 
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
 use super::hex::{Hex, HexError};
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Address(Hex<[u8; 20]>);
 
 impl From<[u8; 20]> for Address {
@@ -27,6 +29,22 @@ impl FromStr for Address {
         let hex: Hex<[u8; 20]> = s.parse()?;
 
         Ok(Self(hex))
+    }
+}
+
+impl TryFrom<&str> for Address {
+    type Error = HexError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl TryFrom<String> for Address {
+    type Error = HexError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
     }
 }
 
@@ -56,6 +74,44 @@ impl Address {
 impl Display for Address {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_checksum_string())
+    }
+}
+
+impl Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if serializer.is_human_readable() {
+            self.to_checksum_string().serialize(serializer)
+        } else {
+            let mut buff = [0u8; 32];
+
+            buff[12..].copy_from_slice(&self.0 .0);
+
+            serializer.serialize_newtype_struct("address", &buff)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Address {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            let data = String::deserialize(deserializer)?;
+
+            Address::from_str(&data).map_err(serde::de::Error::custom)
+        } else {
+            let hex = Hex::<[u8; 32]>::deserialize(deserializer)?;
+
+            let mut buff = [0u8; 20];
+
+            buff.copy_from_slice(&hex.0[12..]);
+
+            Ok(Self(Hex(buff)))
+        }
     }
 }
 
