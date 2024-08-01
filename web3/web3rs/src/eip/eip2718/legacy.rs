@@ -40,7 +40,7 @@ impl LegacyTransactionRequest {
     }
 
     /// Returns signed tx rlp encoding stream.
-    pub fn rlp_signed(&self, signature: Eip1559Signature) -> Result<Bytes> {
+    pub fn rlp_signed(&self, _: Eip1559Signature) -> Result<Bytes> {
         todo!()
     }
 }

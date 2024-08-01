@@ -44,7 +44,7 @@ impl Eip1559TransactionRequest {
     }
 
     /// Returns signed tx rlp encoding stream.
-    pub fn rlp_signed(&self, signature: Eip1559Signature) -> Result<Bytes> {
+    pub fn rlp_signed(&self, _signature: Eip1559Signature) -> Result<Bytes> {
         todo!()
     }
 }
