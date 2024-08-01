@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::u256::U256;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct U64(U256);
 
 impl From<u64> for U64 {

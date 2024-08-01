@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::errors::Result;
-use crate::primitives::{Address, Bytes, Eip1559Signature, H256, U256};
+use crate::primitives::{Address, Bytes, Eip1559Signature, H256, U256, U64};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -26,7 +26,7 @@ pub struct LegacyTransactionRequest {
     pub data: Option<Bytes>,
     /// Chain id for EIP-155
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub chain_id: Option<U256>,
+    pub chain_id: Option<U64>,
 }
 
 impl LegacyTransactionRequest {
