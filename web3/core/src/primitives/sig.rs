@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::primitives::hex::Hex;
 
-use super::u256::U256;
+use super::U256;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Eip1559Signature {

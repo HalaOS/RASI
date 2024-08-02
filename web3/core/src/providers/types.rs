@@ -1,10 +1,9 @@
-use ethnum::U256;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     eip::eip2718::AccessList,
     errors::Error,
-    primitives::{Address, Bytes, Hex, H256},
+    primitives::{Address, Bytes, Hex, H256, U256},
 };
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -41,6 +41,7 @@ ring = "^0.17"
 cooked-waker = "^5.0"
 ethnum = "1.5.0"
 sha3 = "^0.10"
+regex = "^1.10"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }

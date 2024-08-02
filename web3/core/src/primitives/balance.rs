@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use super::u256::U256;
+use super::U256;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseBalanceError {
