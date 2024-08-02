@@ -85,11 +85,7 @@ impl Serialize for Address {
         if serializer.is_human_readable() {
             self.to_checksum_string().serialize(serializer)
         } else {
-            let mut buff = [0u8; 32];
-
-            buff[12..].copy_from_slice(&self.0 .0);
-
-            serializer.serialize_newtype_struct("address", &buff)
+            serializer.serialize_newtype_struct("address", &self.0 .0)
         }
     }
 }

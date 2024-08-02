@@ -1,29 +1,9 @@
 //! Implements ethereum H256 type.
 //!
 
-use std::fmt::Display;
-
 use super::hex::Hex;
 
 pub type H256 = Hex<[u8; 32]>;
-
-impl Display for H256 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#066x}", self)
-    }
-}
-
-impl From<H256> for [u8; 32] {
-    fn from(value: H256) -> Self {
-        value.0
-    }
-}
-
-impl From<[u8; 32]> for H256 {
-    fn from(value: [u8; 32]) -> Self {
-        Self(value)
-    }
-}
 
 #[cfg(test)]
 mod tests {

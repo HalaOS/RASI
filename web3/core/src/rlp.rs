@@ -1,4 +1,4 @@
-use regex::Regex;
+use ethnum::U256;
 use serde::{ser, Serialize};
 
 use thiserror::Error;
@@ -255,7 +255,7 @@ impl<'a> ser::Serializer for &'a mut RlpEncoder {
         T: serde::Serialize,
     {
         match name {
-            "bytes" => {
+            "bytes" | "bytesN" => {
                 let bytes = unsafe { (value as *const T).cast::<Vec<u8>>().as_ref().unwrap() };
 
                 self.append_string(bytes)
@@ -266,36 +266,6 @@ impl<'a> ser::Serializer for &'a mut RlpEncoder {
                 return self.append_string(bytes.as_slice());
             }
             _ => {
-                let bytes_regex = Regex::new(r"^bytes(\d{1,2})$").unwrap();
-                let int_regex = Regex::new(r"^uint(\d{1,3})$").unwrap();
-
-                if let Some(caps) = bytes_regex.captures(name) {
-                    let len: usize = caps[1].parse().unwrap();
-                    if len <= 32 {
-                        let bytes =
-                            unsafe { (value as *const T).cast::<[u8; 32]>().as_ref().unwrap() };
-
-                        return self.append_string(&bytes[..len]);
-                    }
-                }
-
-                if let Some(caps) = int_regex.captures(name) {
-                    let len: usize = caps[1].parse().unwrap();
-                    if len <= 256 {
-                        let bytes =
-                            unsafe { (value as *const T).cast::<[u8; 32]>().as_ref().unwrap() };
-
-                        if caps.get(1).is_some() {
-                            let lead_zeros = bytes.iter().take_while(|c| **c == 0).count();
-                            let buff = &bytes[lead_zeros..];
-
-                            return self.append_string(buff);
-                        } else {
-                            return self.append_string(signed_to_buff(bytes));
-                        }
-                    }
-                }
-
                 self.begin_list()?;
 
                 value.serialize(&mut *self)?;
@@ -338,7 +308,15 @@ impl<'a> ser::Serializer for &'a mut RlpEncoder {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        self.append_string(v.as_bytes())
+        if v.starts_with("0x") {
+            let value = U256::from_str_hex(v).map_err(ser::Error::custom)?;
+
+            let lead_zeros = (value.leading_zeros() / 8) as usize;
+
+            self.append_string(&value.to_be_bytes()[lead_zeros..])
+        } else {
+            self.append_string(v.as_bytes())
+        }
     }
 
     fn serialize_struct(

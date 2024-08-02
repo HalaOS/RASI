@@ -1,7 +1,7 @@
 //! Utility to convert u8 slice to and from hexadecimal strings.
 
 use std::{
-    fmt::{LowerHex, UpperHex, Write},
+    fmt::{Display, LowerHex, UpperHex, Write},
     num::ParseIntError,
     str::FromStr,
 };
@@ -20,6 +20,16 @@ pub enum HexError {
 /// Represent a ethereum hex string type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hex<T>(pub T);
+
+impl<T> Hex<T>
+where
+    T: AsRef<[u8]>,
+{
+    /// Returns the hex bytes length.
+    pub fn len(&self) -> usize {
+        self.0.as_ref().len()
+    }
+}
 
 impl<T> LowerHex for Hex<T>
 where
@@ -176,6 +186,28 @@ impl<const N: usize> TryFrom<String> for Hex<[u8; N]> {
     }
 }
 
+impl From<Vec<u8>> for Hex<Vec<u8>> {
+    fn from(value: Vec<u8>) -> Self {
+        Self(value)
+    }
+}
+impl From<Hex<Vec<u8>>> for Vec<u8> {
+    fn from(value: Hex<Vec<u8>>) -> Self {
+        value.0
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for Hex<[u8; N]> {
+    fn from(value: [u8; N]) -> Self {
+        Self(value)
+    }
+}
+impl<const N: usize> From<Hex<[u8; N]>> for [u8; N] {
+    fn from(value: Hex<[u8; N]>) -> Self {
+        value.0
+    }
+}
+
 impl Serialize for Hex<Vec<u8>> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -214,7 +246,7 @@ impl<const N: usize> Serialize for Hex<[u8; N]> {
         if serializer.is_human_readable() {
             format!("{:#x}", self).serialize(serializer)
         } else {
-            serializer.serialize_newtype_struct("bytesN", self.0.as_slice())
+            serializer.serialize_newtype_struct("bytesN", &self.0.to_vec())
         }
     }
 }
@@ -242,6 +274,12 @@ impl<'de, const N: usize> Deserialize<'de> for Hex<[u8; N]> {
 
             Ok(Hex(hex))
         }
+    }
+}
+
+impl<T: AsRef<[u8]>> Display for Hex<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#x}", self)
     }
 }
 
