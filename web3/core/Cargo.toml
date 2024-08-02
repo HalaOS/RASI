@@ -1,9 +1,9 @@
 [package]
 description = "web3(Ethereum and other EVM-based chains) client-side framework for rust language."
-documentation = "https://docs.rs/web3rs"
+documentation = "https://docs.rs/web3rs-core"
 edition.workspace = true
 license = "MIT"
-name = "web3rs"
+name = "web3rs-core"
 repository.workspace = true
 version.workspace = true
 

@@ -1,0 +1,20 @@
+{
+  "bytes": "Vec<u8>",
+  "bool": "bool",
+  "uint_m": "mock::Int<false,$m>",
+  "int_m": "mock::Int<true,$m>",
+  "fixed_m_n": "mock::Fixed<true,$m,$n>",
+  "ufixed_m_n": "mock::Fixed<true,$m,$n>",
+  "array_m": "[$el;$m]",
+  "array": "Vec<$el>",
+  "bytes_m": "[u8;$m]",
+  "address": "mock::Address",
+  "rt_client": "mock::Client",
+  "rt_error": "anyhow::Error",
+  "rt_opts": "mock::Ops",
+  "rt_receipt": "mock::TransactionReceipt",
+  "rt_serialize_derive": "mock::Serialize",
+  "rt_deserialize_derive": "mock::Deserialize",
+  "rt_abi_serialize": "mock::abi_encode",
+  "rt_abi_deserialize": "mock::abi_decode"
+}

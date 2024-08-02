@@ -42,6 +42,11 @@ cooked-waker = "^5.0"
 ethnum = "1.5.0"
 sha3 = "^0.10"
 regex = "^1.10"
+quote = "^1"
+proc-macro2 = "^1"
+heck = "^0.5"
+anyhow = "^1"
+syn = "^2"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }
@@ -50,3 +55,5 @@ futures-boring = { path = "futures/boring", version = "^0.2" }
 futures-map = { path = "futures/map", version = "^0.2" }
 futures-http = { path = "futures/http", version = "^0.2" }
 futures-jsonrpcv2 = { path = "futures/jsonrpc", version = "^0.2" }
+ethbind = { path = "web3/bind", version = "^0.2" }
+web3rs-core = { path = "web3/core", version = "^0.2" }
