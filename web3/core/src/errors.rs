@@ -1,6 +1,7 @@
 use std::num::ParseIntError;
 
 use crate::{
+    contract::{AbiDeError, AbiSerError},
     eip::eip712::serde::{EncodeDataError, EncodeTypeError, TypeDefinitionError},
     primitives::{balance::ParseBalanceError, HexError},
     rlp::RlpError,
@@ -35,6 +36,12 @@ pub enum Error {
 
     #[error(transparent)]
     Eip712TypeDefinitionError(#[from] TypeDefinitionError),
+
+    #[error(transparent)]
+    ContractAbiSerError(#[from] AbiSerError),
+
+    #[error(transparent)]
+    ContractAbiDeError(#[from] AbiDeError),
 }
 
 /// Result type for web3rs.

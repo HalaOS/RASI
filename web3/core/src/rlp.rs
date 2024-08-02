@@ -255,15 +255,10 @@ impl<'a> ser::Serializer for &'a mut RlpEncoder {
         T: serde::Serialize,
     {
         match name {
-            "bytes" | "bytesN" => {
+            "bytes" | "bytesN" | "address" => {
                 let bytes = unsafe { (value as *const T).cast::<Vec<u8>>().as_ref().unwrap() };
 
                 self.append_string(bytes)
-            }
-            "address" => {
-                let bytes = unsafe { (value as *const T).cast::<[u8; 20]>().as_ref().unwrap() };
-
-                return self.append_string(bytes.as_slice());
             }
             _ => {
                 self.begin_list()?;

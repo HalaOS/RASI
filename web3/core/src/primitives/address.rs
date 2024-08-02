@@ -2,10 +2,13 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
-use super::hex::{Hex, HexError};
+use super::{
+    hex::{Hex, HexError},
+    serde::BytesVisitor,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address(Hex<[u8; 20]>);
@@ -91,7 +94,7 @@ impl Serialize for Address {
         if serializer.is_human_readable() {
             self.to_checksum_string().serialize(serializer)
         } else {
-            serializer.serialize_newtype_struct("address", &self.0 .0)
+            serializer.serialize_newtype_struct("address", &self.0 .0.to_vec())
         }
     }
 }
@@ -106,11 +109,15 @@ impl<'de> Deserialize<'de> for Address {
 
             Address::from_str(&data).map_err(serde::de::Error::custom)
         } else {
-            let hex = Hex::<[u8; 32]>::deserialize(deserializer)?;
+            let bytes = deserializer.deserialize_newtype_struct("address", BytesVisitor)?;
+
+            if bytes.len() < 20 {
+                return Err(de::Error::custom(HexError::InvalidHexLength(bytes.len())));
+            }
 
             let mut buff = [0u8; 20];
 
-            buff.copy_from_slice(&hex.0[12..]);
+            buff.copy_from_slice(&bytes[12..]);
 
             Ok(Self(Hex(buff)))
         }

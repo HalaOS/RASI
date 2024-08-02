@@ -32,7 +32,7 @@ pub struct EIP712Domain {
     /// the current major version of the signing domain. Signatures from different versions are not compatible.
     pub version: String,
     /// the EIP-155 chain id. The user-agent should refuse signing if it does not match the currently active chain.
-    #[serde(with = "crate::primitives::num_serde_with_prefixed")]
+    #[serde(with = "crate::primitives::serde::u_i_256")]
     pub chain_id: U256,
     /// the address of the contract that will verify the signature. The user-agent may do contract specific phishing prevention
     pub verifying_contract: Address,

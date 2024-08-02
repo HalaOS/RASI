@@ -374,11 +374,20 @@ impl<'a, 'b> Serializer for &'a mut EIP712StructHasher<'b> {
                 return self.append_element(Keccak256::new().chain_update(bytes).finalize().into());
             }
             "address" => {
-                let bytes = unsafe { (value as *const T).cast::<[u8; 20]>().as_ref().unwrap() };
+                let bytes = unsafe { (value as *const T).cast::<Vec<u8>>().as_ref().unwrap() };
 
                 let mut buf = [0u8; 32];
 
                 buf[12..].copy_from_slice(bytes.as_ref());
+
+                return self.append_element(buf);
+            }
+            "uint256" | "int256" => {
+                let bytes = unsafe { (value as *const T).cast::<Vec<u8>>().as_ref().unwrap() };
+
+                let mut buf = [0u8; 32];
+
+                buf.copy_from_slice(bytes.as_ref());
 
                 return self.append_element(buf);
             }

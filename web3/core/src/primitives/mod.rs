@@ -1,4 +1,5 @@
 pub mod balance;
+pub mod serde;
 
 mod address;
 mod bytes;

@@ -258,6 +258,8 @@ impl<'a> Serializer for &'a mut EIP712TypeDefinition {
                 self.append_field_type(format!("bytes{}", bytes.len()).as_str())
             }
             "address" => self.append_field_type("address"),
+            "uint256" => self.append_field_type("uint256"),
+            "int256" => self.append_field_type("int256"),
             _ => {
                 return Err(TypeDefinitionError::UnsupportType(name.to_owned()));
             }
@@ -295,12 +297,8 @@ impl<'a> Serializer for &'a mut EIP712TypeDefinition {
         value.serialize(self)
     }
 
-    fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        if v.starts_with("0x") {
-            self.append_field_type("uint256")
-        } else {
-            self.append_field_type("string")
-        }
+    fn serialize_str(self, _v: &str) -> Result<Self::Ok, Self::Error> {
+        self.append_field_type("string")
     }
 
     fn serialize_struct(

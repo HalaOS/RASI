@@ -8,6 +8,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use super::serde::BytesVisitor;
+
 #[derive(Debug, thiserror::Error)]
 pub enum HexError {
     #[error(transparent)]
@@ -270,16 +272,16 @@ impl<'de, const N: usize> Deserialize<'de> for Hex<[u8; N]> {
 
             Hex::<[u8; N]>::from_str(&data).map_err(serde::de::Error::custom)
         } else {
-            let buf = Vec::<u8>::deserialize(deserializer)?;
+            let buf = deserializer.deserialize_newtype_struct("bytesN", BytesVisitor)?;
 
-            if buf.len() != N {
+            if buf.len() < N {
                 return Err(HexError::InvalidHexLength(buf.len()))
                     .map_err(serde::de::Error::custom);
             }
 
             let mut hex = [0u8; N];
 
-            hex.copy_from_slice(&buf);
+            hex.copy_from_slice(&buf[(buf.len() - N)..]);
 
             Ok(Hex(hex))
         }
