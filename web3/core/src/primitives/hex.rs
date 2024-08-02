@@ -21,6 +21,15 @@ pub enum HexError {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hex<T>(pub T);
 
+impl<T> AsRef<[u8]> for Hex<T>
+where
+    T: AsRef<[u8]>,
+{
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 impl<T> Hex<T>
 where
     T: AsRef<[u8]>,

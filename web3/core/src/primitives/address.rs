@@ -10,6 +10,12 @@ use super::hex::{Hex, HexError};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address(Hex<[u8; 20]>);
 
+impl AsRef<[u8]> for Address {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
 impl From<[u8; 20]> for Address {
     fn from(value: [u8; 20]) -> Self {
         Self(Hex(value))

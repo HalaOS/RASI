@@ -15,6 +15,7 @@ serde = { workspace = true }
 futures-jsonrpcv2 = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }
@@ -22,7 +23,6 @@ futures-jsonrpcv2 = { workspace = true, features = ["with_rasi"] }
 rasi = { workspace = true, features = ["task-futures"] }
 rasi-mio = { workspace = true }
 pretty_env_logger = { workspace = true }
-serde_json = { workspace = true }
 
 [features]
 test-providers = []

@@ -167,9 +167,9 @@ fn parse_dec_str(value: &str, unit: Unit) -> Result<Decimals> {
     }
 
     if scale > 0 {
-        bignumber = bignumber / U256::from(10u32).pow(scale as u32);
+        bignumber = bignumber / U256::new(10).pow(scale as u32);
     } else {
-        bignumber = bignumber * U256::from(10u32).pow(scale.abs() as u32);
+        bignumber = bignumber * U256::new(10).pow(scale.abs() as u32);
     }
 
     Ok(Decimals(bignumber))
