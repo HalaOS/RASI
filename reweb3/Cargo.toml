@@ -1,5 +1,5 @@
 [package]
-description = "Rust Ethereum and other EVM-based chains client-side framework(Web3)"
+description = "Client-side framework(Web3) for ethereum and other EVM-based chains rewritten in rust."
 documentation = "https://docs.rs/reweb3"
 edition.workspace = true
 license = "MIT"
