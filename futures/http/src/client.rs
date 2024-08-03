@@ -7,13 +7,15 @@ use crate::body::BodyReader;
 use crate::reader::HttpReader;
 use crate::writer::HttpWriter;
 
-pub trait HttpClient {
+/// An asynchronous *Client* to make http *Requests* with.
+pub trait HttpSend {
+    /// Sends the **Request** via `stream` and returns a future of [`Response`]
     fn send<S>(self, stream: S) -> impl Future<Output = Result<Response<BodyReader>>>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static;
 }
 
-impl HttpClient for Request<BodyReader> {
+impl HttpSend for Request<BodyReader> {
     fn send<S>(self, mut stream: S) -> impl Future<Output = Result<Response<BodyReader>>>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -94,7 +96,7 @@ pub mod rasio {
             if scheme == &Scheme::HTTP {
                 let transport = TcpStream::connect(raddrs.as_slice()).await?;
 
-                return super::HttpClient::send(request, transport).await;
+                return super::HttpSend::send(request, transport).await;
             } else {
                 let stream = TcpStream::connect(raddrs.as_slice()).await?;
 
@@ -118,7 +120,7 @@ pub mod rasio {
                     Error::new(ErrorKind::ConnectionRefused, err)
                 })?;
 
-                return super::HttpClient::send(request, transport).await;
+                return super::HttpSend::send(request, transport).await;
             }
         }
     }
