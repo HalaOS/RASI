@@ -163,60 +163,6 @@ macro_rules! endian {
                     Some(Self::from_bits($BUint::from_digits(out_digits)))
                 }
             }
-
-            #[cfg(feature = "nightly")]
-            #[doc = doc::endian::to_be_bytes!(I)]
-            #[doc = doc::requires_feature!("nightly")]
-            #[must_use = doc::must_use_op!()]
-            #[inline]
-            pub const fn to_be_bytes(self) -> [u8; N * digit::$Digit::BYTES as usize] {
-                self.bits.to_be_bytes()
-            }
-
-            #[cfg(feature = "nightly")]
-            #[doc = doc::endian::to_le_bytes!(I)]
-            #[doc = doc::requires_feature!("nightly")]
-            #[must_use = doc::must_use_op!()]
-            #[inline]
-            pub const fn to_le_bytes(self) -> [u8; N * digit::$Digit::BYTES as usize] {
-                self.bits.to_le_bytes()
-            }
-
-            #[cfg(feature = "nightly")]
-            #[doc = doc::endian::to_ne_bytes!(I)]
-            #[doc = doc::requires_feature!("nightly")]
-            #[must_use = doc::must_use_op!()]
-            #[inline]
-            pub const fn to_ne_bytes(self) -> [u8; N * digit::$Digit::BYTES as usize] {
-                self.bits.to_ne_bytes()
-            }
-
-            #[cfg(feature = "nightly")]
-            #[doc = doc::endian::from_be_bytes!(I)]
-            #[doc = doc::requires_feature!("nightly")]
-            #[must_use]
-            #[inline]
-            pub const fn from_be_bytes(bytes: [u8; N * digit::$Digit::BYTES as usize]) -> Self {
-                Self::from_bits($BUint::from_be_bytes(bytes))
-            }
-
-            #[cfg(feature = "nightly")]
-            #[doc = doc::endian::from_le_bytes!(I)]
-            #[doc = doc::requires_feature!("nightly")]
-            #[must_use]
-            #[inline]
-            pub const fn from_le_bytes(bytes: [u8; N * digit::$Digit::BYTES as usize]) -> Self {
-                Self::from_bits($BUint::from_le_bytes(bytes))
-            }
-
-            #[cfg(feature = "nightly")]
-            #[doc = doc::endian::from_ne_bytes!(I)]
-            #[doc = doc::requires_feature!("nightly")]
-            #[must_use]
-            #[inline]
-            pub const fn from_ne_bytes(bytes: [u8; N * digit::$Digit::BYTES as usize]) -> Self {
-                Self::from_bits($BUint::from_ne_bytes(bytes))
-            }
         }
 
         #[cfg(test)]

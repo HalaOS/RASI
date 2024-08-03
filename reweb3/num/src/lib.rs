@@ -1,8 +1,3 @@
-#![cfg_attr(feature = "nightly", allow(incomplete_features))]
-#![cfg_attr(
-    feature = "nightly",
-    feature(generic_const_exprs, const_trait_impl, const_option_ext)
-)]
 #![cfg_attr(
     test,
     feature(
@@ -11,13 +6,10 @@
         float_minimum_maximum,
         wrapping_next_power_of_two,
         float_next_up_down,
-        unchecked_math,
         unchecked_shifts,
     )
 )]
 #![doc = include_str!("../README.md")]
-#![cfg_attr(not(any(feature = "arbitrary", feature = "quickcheck")), no_std)]
-// TODO: MAKE SURE NO_STD IS ENABLED WHEN PUBLISHING NEW VERSION
 
 #[macro_use]
 extern crate alloc;
@@ -27,14 +19,11 @@ mod buint;
 
 pub mod cast;
 mod digit;
-mod doc;
+pub mod doc;
 pub mod errors;
 mod int;
 mod nightly;
 pub mod prelude;
-
-#[cfg(feature = "rand")]
-pub mod random;
 
 pub mod types;
 

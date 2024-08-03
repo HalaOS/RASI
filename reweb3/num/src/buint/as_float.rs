@@ -1,8 +1,8 @@
-use crate::ExpType;
 use crate::cast::CastFrom;
+use crate::ExpType;
 
-#[cfg_attr(feature = "nightly", const_trait)]
 pub trait CastToFloatHelper: Copy {
+    #[allow(unused)]
     const ZERO: Self;
     const BITS: ExpType;
 
@@ -93,7 +93,6 @@ pub(crate) use impl_helper_buint;
 
 crate::macro_impl!(impl_helper_buint);
 
-#[cfg_attr(feature = "nightly", const_trait)]
 pub trait CastToFloatConsts {
     type M: Mantissa;
 
@@ -131,10 +130,10 @@ macro_rules! cast_to_float_consts {
 
 cast_to_float_consts!(f32; u32, f64; u64);
 
-#[cfg_attr(feature = "nightly", const_trait)]
 pub trait Mantissa {
     const ONE: Self;
     const TWO: Self;
+    #[allow(unused)]
     const MAX: Self;
     const BITS: ExpType;
 
@@ -144,6 +143,7 @@ pub trait Mantissa {
     fn add(self, rhs: Self) -> Self;
     fn sub(self, rhs: Self) -> Self;
     fn leading_zeros(self) -> ExpType;
+    #[allow(unused)]
     fn bitand(self, rhs: Self) -> Self;
     fn gt(&self, rhs: &Self) -> bool;
 }
@@ -209,7 +209,7 @@ pub fn cast_float_from_uint<F, U>(from: U) -> F
 where
     F: CastToFloatConsts,
     U: CastToFloatHelper,
-    F::M: CastFrom<U> + CastFrom<ExpType> + Copy
+    F::M: CastFrom<U> + CastFrom<ExpType> + Copy,
 {
     if from.is_zero() {
         return F::ZERO;
@@ -229,8 +229,7 @@ where
     let mut round_up = true;
     if bits <= F::MANTISSA_DIGITS
         || !from.bit(bits - (F::MANTISSA_DIGITS + 1))
-        || (!mant.bit(0)
-            && from.trailing_zeros() == bits - (F::MANTISSA_DIGITS + 1))
+        || (!mant.bit(0) && from.trailing_zeros() == bits - (F::MANTISSA_DIGITS + 1))
     {
         round_up = false;
     }

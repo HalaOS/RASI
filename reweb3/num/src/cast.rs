@@ -2,13 +2,11 @@
 
 /// Backend implementation trait for panic-free casting between numeric types.
 
-#[cfg_attr(feature = "nightly", const_trait)]
 pub trait CastFrom<T> {
     fn cast_from(from: T) -> Self;
 }
 
-#[cfg_attr(feature = "nightly", const_trait)]
-pub(crate) trait CastTo<U> {
+pub trait CastTo<U> {
     fn cast_to(self) -> U;
 }
 
@@ -51,42 +49,6 @@ assert_eq!(b, f.as_());
     };
 }
 
-#[cfg(feature = "nightly")]
-macro_rules! as_trait {
-    () => {
-        impl<T, U> const CastTo<U> for T
-        where
-            U: ~const CastFrom<T>,
-        {
-            fn cast_to(self) -> U {
-                U::cast_from(self)
-            }
-        }
-
-        #[doc = as_trait_doc!()]
-        #[const_trait]
-        pub trait As {
-            #[doc = as_method_doc!()]
-            fn as_<T>(self) -> T
-            where
-                T: CastFrom<Self>,
-                Self: Sized;
-        }
-
-        impl<U> const As for U {
-            #[inline]
-            fn as_<T>(self) -> T
-            where
-                T: ~const CastFrom<Self>,
-                Self: Sized,
-            {
-                T::cast_from(self)
-            }
-        }
-    };
-}
-
-#[cfg(not(feature = "nightly"))]
 macro_rules! as_trait {
     () => {
         impl<T, U> CastTo<U> for T

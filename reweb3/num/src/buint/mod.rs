@@ -29,16 +29,12 @@ macro_rules! mod_impl {
 
         #[derive(Clone, Copy, Hash, PartialEq, Eq)]
         #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-        #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-        #[cfg_attr(feature = "valuable", derive(valuable::Valuable))]
         #[repr(transparent)]
         pub struct $BUint<const N: usize> {
             #[cfg_attr(feature = "serde", serde(with = "BigArray"))]
             pub(crate) digits: [$Digit; N],
         }
 
-        #[cfg(feature = "zeroize")]
-        impl<const N: usize> zeroize::DefaultIsZeroes for $BUint<N> {}
 
         impl<const N: usize> $BUint<N> {
             #[doc = doc::count_ones!(U 1024)]
@@ -588,7 +584,7 @@ macro_rules! mod_impl {
             }
         }
 
-        #[cfg(any(test, feature = "quickcheck"))]
+        #[cfg(any(test))]
         impl<const N: usize> quickcheck::Arbitrary for $BUint<N> {
             fn arbitrary(g: &mut quickcheck::Gen) -> Self {
                 let mut out = Self::ZERO;
