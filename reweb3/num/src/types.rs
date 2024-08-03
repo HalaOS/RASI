@@ -36,6 +36,38 @@ macro_rules! call_types_macro {
 
 call_types_macro!(int_types);
 
+impl U256 {
+    pub fn to_be_bytes(self) -> [u8; 32] {
+        let buf = self.to_radix_be(256);
+
+        let mut target = [0u8; 32];
+
+        target[(32 - buf.len())..].copy_from_slice(&buf);
+
+        target
+    }
+
+    pub fn from_be_bytes(buf: [u8; 32]) -> Self {
+        Self::from_radix_be(&buf, 256).unwrap()
+    }
+}
+
+impl I256 {
+    pub fn to_be_bytes(self) -> [u8; 32] {
+        let buf = self.to_radix_be(256);
+
+        let mut target = [0xffu8; 32];
+
+        target[(32 - buf.len())..].copy_from_slice(&buf);
+
+        target
+    }
+
+    pub fn from_be_bytes(buf: [u8; 32]) -> Self {
+        Self::from_radix_be(&buf, 256).unwrap()
+    }
+}
+
 #[cfg(feature = "serde")]
 pub mod reweb3_serde {
     use super::*;
