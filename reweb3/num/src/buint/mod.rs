@@ -5,12 +5,6 @@ use crate::doc;
 use crate::ExpType;
 // use core::mem::MaybeUninit;
 
-#[cfg(feature = "serde")]
-use ::{
-    serde::{Deserialize, Serialize},
-    serde_big_array::BigArray,
-};
-
 use core::default::Default;
 
 use core::iter::{Iterator, Product, Sum};
@@ -28,10 +22,8 @@ macro_rules! mod_impl {
         #[doc = doc::arithmetic_doc!($BUint)]
 
         #[derive(Clone, Copy, Hash, PartialEq, Eq)]
-        #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
         #[repr(transparent)]
         pub struct $BUint<const N: usize> {
-            #[cfg_attr(feature = "serde", serde(with = "BigArray"))]
             pub(crate) digits: [$Digit; N],
         }
 

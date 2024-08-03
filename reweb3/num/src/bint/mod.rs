@@ -25,9 +25,6 @@ use crate::digit;
 use crate::ExpType;
 use crate::{doc, errors};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 use core::default::Default;
 
 use core::iter::{Iterator, Product, Sum};
@@ -45,13 +42,10 @@ macro_rules! mod_impl {
         #[doc = doc::arithmetic_doc!($BInt)]
 
         #[derive(Clone, Copy, Hash, PartialEq, Eq)]
-        #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
         #[repr(transparent)]
         pub struct $BInt<const N: usize> {
             pub(crate) bits: $BUint<N>,
         }
-
-
 
         impl<const N: usize> $BInt<N> {
             #[doc = doc::count_ones!(I 256)]

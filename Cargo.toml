@@ -60,3 +60,4 @@ futures-boring = { path = "futures/boring", version = "^0.2" }
 futures-map = { path = "futures/map", version = "^0.2" }
 futures-http = { path = "futures/http", version = "^0.2" }
 futures-jsonrpcv2 = { path = "futures/jsonrpc", version = "^0.2" }
+reweb3-num = { path = "reweb3/num", version = "^0.2" }

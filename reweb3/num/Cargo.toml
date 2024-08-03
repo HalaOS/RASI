@@ -1,5 +1,5 @@
 [package]
-description = "Arbitrary precision, fixed-size signed and unsigned integer types for ethereum."
+description = "Arbitrary precision, fixed-size signed and unsigned integer types for ethereum, this a fork of bnum crate."
 documentation = "https://docs.rs/reweb3-num"
 edition.workspace = true
 license = "MIT"
@@ -29,3 +29,10 @@ unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(has_reverse_bits)',
     'cfg(test_int_bits,values("64"))',
 ] }
+
+[profile.release]
+lto = true # enable link-time optimisation for faster runtime, but slower compile time
+opt-level = 3 # maximum optimisation level for faster runtime, but slower compile time
+
+[package.metadata.docs.rs]
+all-features = true

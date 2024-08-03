@@ -1,0 +1,13 @@
+[package]
+description = "Client-side framework(Web3) for ethereum and other EVM-based chains rewritten in rust "
+documentation = "https://docs.rs/reweb3"
+edition.workspace = true
+license = "MIT"
+name = "reweb3"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+reweb3-num = { workspace = true, features = ["serde"] }
+serde_json = { workspace = true }
+serde = { workspace = true }
