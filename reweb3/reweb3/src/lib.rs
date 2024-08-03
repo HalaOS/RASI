@@ -1,4 +1,4 @@
-pub mod contract;
+pub mod abi;
 pub mod eip;
 pub mod errors;
 pub mod primitives;

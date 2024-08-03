@@ -1,7 +1,7 @@
 use std::num::ParseIntError;
 
 use crate::{
-    contract::{AbiDeError, AbiSerError},
+    abi::{AbiDeError, AbiSerError},
     eip::eip712::serde::{EncodeDataError, EncodeTypeError, TypeDefinitionError},
     primitives::{balance::ParseBalanceError, HexError},
     rlp::RlpError,
