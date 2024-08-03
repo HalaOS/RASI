@@ -642,6 +642,7 @@ impl QuicStream {
                     drop(state);
 
                     self.state.conn.event_map.wait(&event).await;
+                    log::trace!("stream wakeup: {:?}", event);
                     continue;
                 }
                 Err(quiche::Error::InvalidStreamState(_)) => {

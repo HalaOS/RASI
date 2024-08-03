@@ -179,7 +179,7 @@ async fn listener_send_loop_priv(group: UdpGroup, listener: QuicListener) -> Res
         let (buf, send_info) = listener.send().await?;
 
         log::trace!(
-            "tx len={}, from={}, to={}",
+            "server_send: tx len={}, from={}, to={}",
             buf.len(),
             send_info.from,
             send_info.to
@@ -207,6 +207,13 @@ async fn listener_recv_loop_priv(group: UdpGroup, listener: QuicListener) -> Res
     loop {
         let (buf, path_info) = group.recv_from().await?;
 
+        log::trace!(
+            "server_recv: tx len={}, from={}, to={}",
+            buf.len(),
+            path_info.from,
+            path_info.to
+        );
+
         let (_, handshake) = listener
             .recv(
                 buf,
@@ -223,7 +230,7 @@ async fn listener_recv_loop_priv(group: UdpGroup, listener: QuicListener) -> Res
                 to: path_info.from,
             };
             log::trace!(
-                "tx handshake len={} from={}, to={}",
+                "server: tx handshake len={} from={}, to={}",
                 buf.len(),
                 send_info.from,
                 send_info.to
@@ -351,6 +358,13 @@ async fn client_send_loop_priv(udp_socket: UdpSocket, conn: QuicConn) -> Result<
     loop {
         let (send_size, send_info) = conn.send(&mut buf).await?;
 
+        log::trace!(
+            "client_send: tx len={}, from={}, to={}",
+            buf.len(),
+            send_info.from,
+            send_info.to
+        );
+
         udp_socket.send_to(&buf[..send_size], send_info.to).await?;
     }
 }
@@ -365,6 +379,13 @@ async fn client_recv_loop_prev(udp_socket: UdpSocket, conn: QuicConn) -> Result<
     let mut buf = vec![0; 1500];
     loop {
         let (read_size, raddr) = udp_socket.recv_from(&mut buf).await?;
+
+        log::trace!(
+            "client_recv: tx len={}, from={}, to={}",
+            buf.len(),
+            raddr,
+            laddr
+        );
 
         conn.recv(
             &mut buf[..read_size],

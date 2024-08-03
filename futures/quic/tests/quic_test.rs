@@ -10,6 +10,7 @@ fn init() {
     static INIT: Once = Once::new();
 
     INIT.call_once(|| {
+        pretty_env_logger::init();
         register_mio_network();
         register_mio_timer();
     })
@@ -61,7 +62,7 @@ fn mock_config(is_server: bool) -> Config {
 
     config.set_application_protos(&[b"test"]).unwrap();
 
-    config.set_max_idle_timeout(50000);
+    config.set_max_idle_timeout(5000);
 
     config.set_initial_max_data(10_000_000);
     config.set_disable_active_migration(false);
@@ -86,6 +87,7 @@ async fn test_echo() {
                 let mut stream = stream.to_io();
                 loop {
                     let mut buf = vec![0; 100];
+
                     let read_size = stream.read(&mut buf).await.unwrap();
 
                     if read_size == 0 {
