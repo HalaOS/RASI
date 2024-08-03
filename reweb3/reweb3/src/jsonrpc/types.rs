@@ -197,7 +197,7 @@ impl TryFrom<&str> for BlockNumberOrTag {
     type Error = Error;
     fn try_from(v: &str) -> Result<Self, Self::Error> {
         if v.starts_with("0x") {
-            U256::from_str_radix(&v[2..], 16).map_err(de::Error::custom)
+            U256::from_str_radix(&v[2..], 16)
         } else {
             U256::from_str_radix(v, 10).map_err(de::Error::custom)
         }
