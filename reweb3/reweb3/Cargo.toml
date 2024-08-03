@@ -11,3 +11,4 @@ version.workspace = true
 reweb3-num = { workspace = true, features = ["serde"] }
 serde_json = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
