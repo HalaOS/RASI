@@ -13,3 +13,16 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 sha3 = { workspace = true }
+futures-jsonrpcv2 = { workspace = true }
+regex = { workspace = true }
+log = { workspace = true }
+bytes = { workspace = true }
+
+[dev-dependencies]
+pretty_env_logger = { workspace = true }
+rasi = { workspace = true }
+rasi-mio = { workspace = true }
+futures-test = { workspace = true }
+
+[features]
+test-providers = []

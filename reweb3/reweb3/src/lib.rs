@@ -1,3 +1,6 @@
+pub mod contract;
+pub mod eip;
 pub mod errors;
-pub mod jsonrpc;
 pub mod primitives;
+pub mod providers;
+pub mod rlp;

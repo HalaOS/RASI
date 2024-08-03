@@ -82,7 +82,9 @@ pub mod reweb3_serde {
             if serializer.is_human_readable() {
                 serializer.serialize_str(self.to_str_radix(16).as_str())
             } else {
-                serializer.serialize_newtype_struct("uint256", &self.to_radix_be(256))
+                let buf = self.to_be_bytes()[(self.leading_zeros() / 8) as usize..].to_vec();
+
+                serializer.serialize_newtype_struct("uint256", &buf)
             }
         }
     }
@@ -110,7 +112,8 @@ pub mod reweb3_serde {
             if serializer.is_human_readable() {
                 serializer.serialize_str(self.to_str_radix(16).as_str())
             } else {
-                serializer.serialize_newtype_struct("int256", &self.to_radix_be(256))
+                let buf = self.to_be_bytes()[(self.leading_ones() / 8 - 1) as usize..].to_vec();
+                serializer.serialize_newtype_struct("int256", &buf)
             }
         }
     }
