@@ -1,0 +1,26 @@
+[package]
+description = "Arbitrary precision, fixed-size signed and unsigned integer types for ethereum."
+documentation = "https://docs.rs/reweb3-num"
+edition.workspace = true
+license = "MIT"
+name = "reweb3-num"
+repository.workspace = true
+version.workspace = true
+exclude = ["src/float/*", "src/tests", "TODO.txt", "lit-parser/*"]
+
+[dependencies]
+num-integer = { workspace = true, optional = true, default-features = false }
+num-traits = { workspace = true, optional = true, default-features = false }
+serde = { workspace = true, features = [
+    "derive"
+], optional = true, default-features = false }
+serde-big-array = { workspace = true, optional = true, default-features = false }
+
+[dev-dependencies]
+quickcheck = { workspace = true }
+paste = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde", "serde-big-array"]
+numtraits = ["num-integer", "num-traits"]

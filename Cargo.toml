@@ -5,7 +5,7 @@ members = [
     "crates/spec",
     "crates/sqlite3",
     "futures/*",
-    "reweb3",
+    "reweb3/*",
 ]
 resolver = "2"
 
@@ -47,6 +47,11 @@ proc-macro2 = "^1"
 heck = "^0.5"
 anyhow = "^1"
 syn = "^2"
+quickcheck = "1.0"
+paste = "1.0"
+num-integer = { version = "0.1" }
+num-traits = { version = "0.2" }
+serde-big-array = { version = "0.5" }
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }

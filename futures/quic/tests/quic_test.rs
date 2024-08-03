@@ -10,7 +10,7 @@ fn init() {
     static INIT: Once = Once::new();
 
     INIT.call_once(|| {
-        pretty_env_logger::init();
+        // pretty_env_logger::init();
         register_mio_network();
         register_mio_timer();
     })
