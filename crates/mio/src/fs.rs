@@ -162,7 +162,10 @@ impl rasi::fs::syscall::Driver for MioFileSystemDriver {
         &self,
         addr: &std::ffi::OsStr,
     ) -> std::io::Result<rasi::fs::windows::NamedPipeStream> {
-        use std::{os::windows::io::FromRawHandle, ptr::null};
+        use std::{
+            os::windows::io::FromRawHandle,
+            ptr::{null, null_mut},
+        };
 
         use mio::{Interest, Token};
         use windows_sys::Win32::{
@@ -186,7 +189,7 @@ impl rasi::fs::syscall::Driver for MioFileSystemDriver {
                 null(),
                 OPEN_EXISTING,
                 flag,
-                0,
+                std::ptr::null_mut(),
             );
 
             if handle == INVALID_HANDLE_VALUE {
