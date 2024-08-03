@@ -1,3 +1,5 @@
+//! This mod defines primitive types for ethereum client.
+
 pub mod balance;
 
 mod serde;
