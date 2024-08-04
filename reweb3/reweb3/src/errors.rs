@@ -1,11 +1,15 @@
 use std::num::ParseIntError;
 
 use crate::{
-    abi::{AbiDeError, AbiSerError},
     eip::eip712::serde::{EncodeDataError, EncodeTypeError, TypeDefinitionError},
     primitives::{balance::ParseBalanceError, HexError},
-    rlp::RlpError,
 };
+
+#[cfg(feature = "abi")]
+use crate::abi::{AbiDeError, AbiSerError};
+
+#[cfg(feature = "rlp")]
+use crate::rlp::RlpError;
 
 /// web3rs error variants.
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +26,7 @@ pub enum Error {
     #[error(transparent)]
     ParseIntError(#[from] ParseIntError),
 
+    #[cfg(feature = "rlp")]
     #[error(transparent)]
     RlpError(#[from] RlpError),
 
@@ -37,9 +42,11 @@ pub enum Error {
     #[error(transparent)]
     Eip712TypeDefinitionError(#[from] TypeDefinitionError),
 
+    #[cfg(feature = "abi")]
     #[error(transparent)]
     ContractAbiSerError(#[from] AbiSerError),
 
+    #[cfg(feature = "abi")]
     #[error(transparent)]
     ContractAbiDeError(#[from] AbiDeError),
 }

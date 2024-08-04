@@ -656,7 +656,7 @@ mod tests {
 
     #[test]
     fn test_option() {
-        _ = pretty_env_logger::try_init();
+        // _ = pretty_env_logger::try_init();
 
         assert_eq!([0x80u8].as_slice(), rlp_encode("").unwrap());
     }

@@ -1,13 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-use super::{keccak256, AccessList, H256};
+use super::AccessList;
 
+use crate::primitives::{Address, Bytes, U256};
+
+#[cfg(feature = "rlp")]
 use crate::{
     errors::Result,
-    primitives::{Address, Bytes, Eip1559Signature, U256},
+    primitives::{Eip1559Signature, H256},
     rlp::RlpEncoder,
 };
 
+#[cfg(feature = "rlp")]
+use super::keccak256;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Eip1559TransactionRequest {
@@ -34,6 +39,7 @@ pub struct Eip1559TransactionRequest {
     pub access_list: AccessList,
 }
 
+#[cfg(feature = "rlp")]
 impl Eip1559TransactionRequest {
     /// Generate legacy transaction sign hash.
     pub fn sign_hash(&self) -> Result<H256> {
@@ -94,6 +100,7 @@ impl Eip1559TransactionRequest {
     }
 }
 
+#[cfg(feature = "rlp")]
 #[cfg(test)]
 mod tests {
 

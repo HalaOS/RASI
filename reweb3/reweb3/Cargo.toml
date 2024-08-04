@@ -20,9 +20,15 @@ bytes = { workspace = true }
 
 [dev-dependencies]
 pretty_env_logger = { workspace = true }
-rasi = { workspace = true }
+rasi = { workspace = true, features = ["task-futures"] }
 rasi-mio = { workspace = true }
 futures-test = { workspace = true }
 
 [features]
+default = ["rlp", "providers", "eip712", "abi", "abi-json"]
 test-providers = []
+rlp = []
+providers = []
+eip712 = []
+abi = []
+abi-json = []

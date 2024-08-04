@@ -70,6 +70,7 @@ impl I256 {
 
 #[cfg(feature = "serde")]
 pub mod reweb3_serde {
+
     use super::*;
 
     use serde::{de, Deserialize, Serialize};
@@ -80,7 +81,7 @@ pub mod reweb3_serde {
             S: serde::Serializer,
         {
             if serializer.is_human_readable() {
-                serializer.serialize_str(self.to_str_radix(16).as_str())
+                serializer.serialize_str(format!("{:#x}", self).as_str())
             } else {
                 let buf = self.to_be_bytes()[(self.leading_zeros() / 8) as usize..].to_vec();
 

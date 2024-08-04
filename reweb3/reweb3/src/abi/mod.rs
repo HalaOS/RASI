@@ -1,7 +1,6 @@
-pub mod de;
-pub mod ser;
+mod de;
+
+mod ser;
 
 pub use de::*;
 pub use ser::*;
-
-pub mod json;

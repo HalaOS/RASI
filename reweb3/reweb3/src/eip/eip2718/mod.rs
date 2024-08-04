@@ -1,6 +1,9 @@
+use crate::primitives::Address;
+
+#[cfg(feature = "rlp")]
 use crate::{
     errors::Result,
-    primitives::{Address, Bytes, Eip1559Signature, H256},
+    primitives::{Bytes, Eip1559Signature, H256},
 };
 
 pub fn keccak256<S>(bytes: S) -> [u8; 32]
@@ -56,6 +59,7 @@ impl From<Eip1559TransactionRequest> for TypedTransactionRequest {
     }
 }
 
+#[cfg(feature = "rlp")]
 impl TypedTransactionRequest {
     pub fn sign_hash(&self) -> Result<H256> {
         match self {

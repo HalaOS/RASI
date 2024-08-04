@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn test_mail() {
-        _ = pretty_env_logger::try_init();
+        // _ = pretty_env_logger::try_init();
 
         let domain = json!({
             "name": "Ether Mail",

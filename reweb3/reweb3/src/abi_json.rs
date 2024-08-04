@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_fixed_regex() {
-        _ = pretty_env_logger::try_init();
+        // _ = pretty_env_logger::try_init();
         let re = fixed_regex();
 
         assert!(re.is_match("ufixed100x18"));
@@ -721,7 +721,7 @@ mod tests {
 
     #[test]
     fn test_type_serde() {
-        _ = pretty_env_logger::try_init();
+        // _ = pretty_env_logger::try_init();
         fn check(expect: &str) {
             let t: Type = expect.parse().expect("Parse type string");
 
