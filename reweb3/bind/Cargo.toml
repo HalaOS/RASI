@@ -1,0 +1,19 @@
+[package]
+description = "This is a code generation framework for Solidity(Contract) ABI."
+documentation = "https://docs.rs/ethbind"
+edition.workspace = true
+license = "MIT"
+name = "ethbind"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+regex = { workspace = true }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+heck = { workspace = true }
+log = { workspace = true }
+anyhow = { workspace = true }

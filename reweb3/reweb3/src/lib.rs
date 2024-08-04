@@ -4,10 +4,6 @@
 #[cfg_attr(docsrs, doc(cfg(feature = "abi")))]
 pub mod abi;
 
-#[cfg(feature = "abi-json")]
-#[cfg_attr(docsrs, doc(cfg(feature = "abi-json")))]
-pub mod abi_json;
-
 pub mod eip;
 
 pub mod errors;
