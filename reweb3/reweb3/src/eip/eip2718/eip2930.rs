@@ -12,6 +12,7 @@ use super::{AccessList, LegacyTransactionRequest};
 #[cfg(feature = "rlp")]
 use super::keccak256;
 
+/// Represents ethereum transaction type defined in eip2930.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Eip2930TransactionRequest {
@@ -22,6 +23,7 @@ pub struct Eip2930TransactionRequest {
 }
 
 #[cfg(feature = "rlp")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rlp")))]
 impl Eip2930TransactionRequest {
     /// Generate legacy transaction sign hash.
     pub fn sign_hash(&self) -> Result<H256> {

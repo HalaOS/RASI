@@ -3,7 +3,6 @@
 //! [`eip2930`](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2930.md) and `Legacy`.
 //!
 //! The signature method is only valid when the `rlp` feature is enabled.
-use crate::primitives::Address;
 
 #[cfg(feature = "rlp")]
 use crate::{
@@ -22,16 +21,11 @@ where
     hasher.finalize().into()
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum NameOrAddress {
-    Name(String),
-    Address(Address),
-}
-
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
+/// Represents the various request types for Ethernet transactions.
+/// The jsonrpc api uses it to deserialize transactions..
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum TypedTransactionRequest {

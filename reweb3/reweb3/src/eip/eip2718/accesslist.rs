@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::primitives::{Address, H256};
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct AccessList(pub Vec<Access>);
 
@@ -25,6 +26,7 @@ impl<'de> Deserialize<'de> for AccessList {
     }
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Access {

@@ -13,6 +13,8 @@ use crate::{
 
 #[cfg(feature = "rlp")]
 use super::keccak256;
+
+/// Represents ethereum transaction type defined in eip1559.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Eip1559TransactionRequest {
@@ -40,6 +42,7 @@ pub struct Eip1559TransactionRequest {
 }
 
 #[cfg(feature = "rlp")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rlp")))]
 impl Eip1559TransactionRequest {
     /// Generate legacy transaction sign hash.
     pub fn sign_hash(&self) -> Result<H256> {

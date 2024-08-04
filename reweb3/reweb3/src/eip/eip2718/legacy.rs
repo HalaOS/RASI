@@ -11,6 +11,7 @@ use crate::{
     rlp::RlpEncoder,
 };
 
+/// Represents legacy ethereum transaction.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LegacyTransactionRequest {
@@ -38,6 +39,7 @@ pub struct LegacyTransactionRequest {
 }
 
 #[cfg(feature = "rlp")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rlp")))]
 impl LegacyTransactionRequest {
     /// Generate legacy transaction sign hash.
     pub fn sign_hash(&self) -> Result<H256> {
