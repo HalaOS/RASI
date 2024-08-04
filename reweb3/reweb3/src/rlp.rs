@@ -1,3 +1,7 @@
+//! The encoding/decoding support for
+//! [`Recursive-length prefix (RLP) serialization`](https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/)
+//! format
+
 use serde::{ser, Serialize};
 
 use thiserror::Error;

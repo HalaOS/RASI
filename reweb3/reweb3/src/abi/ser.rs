@@ -384,17 +384,6 @@ impl<'a> ser::Serializer for &'a mut AbiSerializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        // if v.starts_with("0x") {
-        //     let value = U256::from_str_prefixed(v).map_err(ser::Error::custom)?;
-
-        //     self.encode_bytes32(value.to_be_bytes().as_slice())
-        // } else if v.starts_with("-0x") {
-        //     let value = I256::from_str_prefixed(v).map_err(ser::Error::custom)?;
-
-        //     self.encode_bytes32(value.to_be_bytes().as_slice())
-        // } else {
-        // }
-
         self.encode_bytes(v.as_bytes().to_vec())
     }
 
@@ -403,6 +392,7 @@ impl<'a> ser::Serializer for &'a mut AbiSerializer {
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
+        self.start_tuple(false)?;
         Ok(self)
     }
 

@@ -1,3 +1,5 @@
+//! Error types and utilities.
+
 use std::num::ParseIntError;
 
 use crate::{

@@ -440,7 +440,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut AbiDeserializer {
             .start_read_tuple(true)?
             .ok_or(AbiDeError::NextIsStatic("deserialize seq".to_owned()))?;
 
-        visitor.visit_seq(TupleAccess { de: self, len })
+        visitor.visit_seq(TupleAccess {
+            de: self,
+            len,
+            dynamic: true,
+        })
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -462,13 +466,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut AbiDeserializer {
     fn deserialize_struct<V>(
         self,
         _name: &'static str,
-        fields: &'static [&'static str],
+        _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
     {
-        self.deserialize_tuple(fields.len(), visitor)
+        self.deserialize_tuple(_fields.len(), visitor)
     }
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
@@ -477,7 +481,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut AbiDeserializer {
     {
         self.start_read_tuple(false)?;
 
-        visitor.visit_seq(TupleAccess { de: self, len })
+        visitor.visit_seq(TupleAccess {
+            de: self,
+            len,
+            dynamic: false,
+        })
     }
 
     fn deserialize_tuple_struct<V>(
@@ -569,6 +577,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut AbiDeserializer {
 struct TupleAccess<'a> {
     de: &'a mut AbiDeserializer,
     len: usize,
+    dynamic: bool,
 }
 
 impl<'de, 'a> de::SeqAccess<'de> for TupleAccess<'a> {
@@ -580,11 +589,16 @@ impl<'de, 'a> de::SeqAccess<'de> for TupleAccess<'a> {
     {
         if self.len > 0 {
             self.len -= 1;
-            seed.deserialize(&mut *self.de).map(|c| Some(c))
+            let result = seed.deserialize(&mut *self.de).map(|c| Some(c))?;
+
+            if self.len == 0 && !self.dynamic {
+                self.de.end_read_tuple()?;
+            }
+
+            Ok(result)
         } else {
             self.de.end_read_tuple()?;
-
-            Ok(None)
+            return Ok(None);
         }
     }
 }

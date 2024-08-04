@@ -1,3 +1,8 @@
+//! This module implements the transaction types and signature methods
+//! required by [`eip1559`](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1559.md),
+//! [`eip2930`](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2930.md) and `Legacy`.
+//!
+//! The signature method is only valid when the `rlp` feature is enabled.
 use crate::primitives::Address;
 
 #[cfg(feature = "rlp")]
@@ -6,7 +11,7 @@ use crate::{
     primitives::{Bytes, Eip1559Signature, H256},
 };
 
-pub fn keccak256<S>(bytes: S) -> [u8; 32]
+fn keccak256<S>(bytes: S) -> [u8; 32]
 where
     S: AsRef<[u8]>,
 {

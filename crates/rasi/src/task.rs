@@ -67,7 +67,7 @@ pub fn register_futures_spawn(pool_size: usize) {
 /// Get the globally registered instance of [`syscall::Driver`].
 ///
 /// If the feature "futures-spawn" is enabled, this function will create a default
-/// instance of "SpawnDriver" based on the [`futures::executor::ThreadPool`] implementation,
+/// instance of "SpawnDriver" based on the `futures::executor::ThreadPool` implementation,
 /// otherwise you should call [`register_ spawn_driver`] to register your own implementation
 /// instance.
 pub fn get_spawn_driver() -> &'static dyn syscall::Driver {
