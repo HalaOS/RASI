@@ -1,4 +1,4 @@
-//! This module providers various implementations of ethereum jsonrpc client.
+//! This module providers various implementations of ethereum rpc client.
 
 mod client;
 pub use client::*;

@@ -468,14 +468,14 @@ impl Client for JsonRpcProvider {
     }
 }
 
-#[cfg(all(test, feature = "test-providers"))]
+#[cfg(all(test, feature = "test-clients"))]
 mod tests {
     use std::sync::{Once, OnceLock};
 
     use futures_jsonrpcv2::rasi::http::HttpJsonRpcClient;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
 
-    use crate::providers::BlockTag;
+    use crate::clients::BlockTag;
 
     use super::*;
 

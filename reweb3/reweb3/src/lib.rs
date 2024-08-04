@@ -14,9 +14,13 @@ pub mod errors;
 
 pub mod primitives;
 
-#[cfg(feature = "providers")]
-#[cfg_attr(docsrs, doc(cfg(feature = "providers")))]
-pub mod providers;
+#[cfg(feature = "signer")]
+#[cfg_attr(docsrs, doc(cfg(feature = "signer")))]
+pub mod signer;
+
+#[cfg(feature = "clients")]
+#[cfg_attr(docsrs, doc(cfg(feature = "clients")))]
+pub mod clients;
 
 #[cfg(feature = "rlp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rlp")))]

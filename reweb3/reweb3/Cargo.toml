@@ -27,10 +27,12 @@ rasi-mio = { workspace = true }
 futures-test = { workspace = true }
 
 [features]
-default = ["rlp", "providers", "eip712", "abi", "abi-json"]
-test-providers = []
+default = ["rlp", "clients", "eip712", "abi", "abi-json", "signer"]
+contract = ["rlp", "clients", "abi", "signer"]
+test-clients = []
 rlp = []
-providers = []
+clients = []
 eip712 = []
 abi = []
 abi-json = []
+signer = []
