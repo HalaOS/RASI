@@ -8,6 +8,7 @@ use crate::primitives::hex::Hex;
 
 use super::{Bytes, HexError, U256};
 
+/// Represents a [`eip1559`](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1559.md) signature data.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Eip1559Signature {
     pub v: u8,

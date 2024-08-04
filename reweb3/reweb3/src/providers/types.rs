@@ -6,6 +6,7 @@ use crate::{
     primitives::{Address, Bytes, Hex, H256, U256},
 };
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TransactionOrHash {
@@ -14,6 +15,7 @@ pub enum TransactionOrHash {
     Transaction(Transaction),
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransactionType {
     // 0x00
@@ -27,6 +29,7 @@ pub enum TransactionType {
     Eip1559,
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Transaction {
     /// transaction type
@@ -96,6 +99,7 @@ pub struct Transaction {
     pub s: Option<U256>,
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
@@ -179,7 +183,7 @@ pub struct Block {
     pub uncles: Vec<H256>,
 }
 
-/// eth_getBlockByNumber parameter `Block`
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(untagged)]
 pub enum BlockNumberOrTag {
@@ -229,7 +233,7 @@ impl Default for BlockNumberOrTag {
     }
 }
 
-/// eth_getBlockByNumber parameter `Block` valid tag enum
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockTag {
@@ -275,6 +279,7 @@ impl Default for Topic {
     }
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum AddressFilter {
@@ -294,7 +299,7 @@ impl From<Vec<Address>> for AddressFilter {
     }
 }
 
-/// Filter argument for events
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Filter {
@@ -330,6 +335,7 @@ impl From<(Vec<Address>, TopicFilter)> for Filter {
     }
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeeHistory {
@@ -341,6 +347,7 @@ pub struct FeeHistory {
     pub reward: Vec<Vec<U256>>,
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Log {
@@ -363,6 +370,7 @@ pub struct Log {
     pub topics: Vec<H256>,
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum FilterEvents {
@@ -371,6 +379,7 @@ pub enum FilterEvents {
     Logs(Vec<Log>),
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum SyncingStatus {
@@ -407,6 +416,7 @@ where
     serializer.serialize_bool(false)
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Syncing {
@@ -420,6 +430,7 @@ pub struct Syncing {
     highest_block: U256,
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionReceipt {
@@ -451,6 +462,7 @@ pub struct TransactionReceipt {
     pub root: Option<H256>,
 }
 
+/// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Status {
     // 0x00

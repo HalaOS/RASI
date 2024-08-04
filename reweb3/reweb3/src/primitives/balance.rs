@@ -1,3 +1,5 @@
+//! Utility tools for parse/format ethereum balance.
+
 use std::num::ParseIntError;
 
 use std::{

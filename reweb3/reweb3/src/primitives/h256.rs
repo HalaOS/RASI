@@ -3,6 +3,7 @@
 
 use super::hex::Hex;
 
+/// Represents solidity/jsonrpc type H256.
 pub type H256 = Hex<[u8; 32]>;
 
 #[cfg(test)]

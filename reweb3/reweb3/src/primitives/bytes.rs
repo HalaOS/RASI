@@ -1,39 +1,22 @@
 use super::hex::Hex;
 
 pub type Bytes = Hex<Vec<u8>>;
-pub type Bytes1 = Hex<[u8; 1]>;
-pub type Bytes2 = Hex<[u8; 2]>;
-pub type Bytes3 = Hex<[u8; 3]>;
-pub type Bytes4 = Hex<[u8; 4]>;
-pub type Bytes5 = Hex<[u8; 5]>;
-pub type Bytes6 = Hex<[u8; 6]>;
-pub type Bytes7 = Hex<[u8; 7]>;
-pub type Bytes8 = Hex<[u8; 8]>;
-pub type Bytes9 = Hex<[u8; 9]>;
-pub type Bytes10 = Hex<[u8; 10]>;
 
-pub type Bytes11 = Hex<[u8; 11]>;
-pub type Bytes12 = Hex<[u8; 12]>;
-pub type Bytes13 = Hex<[u8; 13]>;
-pub type Bytes14 = Hex<[u8; 14]>;
-pub type Bytes15 = Hex<[u8; 15]>;
-pub type Bytes16 = Hex<[u8; 16]>;
-pub type Bytes17 = Hex<[u8; 17]>;
-pub type Bytes18 = Hex<[u8; 18]>;
-pub type Bytes19 = Hex<[u8; 19]>;
+macro_rules! define_bytes_n {
+    ($ident: ident, $len: expr) => {
+        #[doc = concat!("Represents solidity type ",stringify!($ident))]
+        pub type $ident = Hex<[u8; $len]>;
+    };
+    ($ident: ident, $len: expr, $($ident_next: ident, $len_next: expr),+) => {
+        define_bytes_n!($ident,$len);
+        define_bytes_n!($($ident_next, $len_next),+);
+    };
+}
 
-pub type Bytes20 = Hex<[u8; 20]>;
-
-pub type Bytes21 = Hex<[u8; 21]>;
-pub type Bytes22 = Hex<[u8; 22]>;
-pub type Bytes23 = Hex<[u8; 23]>;
-pub type Bytes24 = Hex<[u8; 24]>;
-pub type Bytes25 = Hex<[u8; 25]>;
-pub type Bytes26 = Hex<[u8; 26]>;
-pub type Bytes27 = Hex<[u8; 27]>;
-pub type Bytes28 = Hex<[u8; 28]>;
-pub type Bytes29 = Hex<[u8; 29]>;
-
-pub type Bytes30 = Hex<[u8; 30]>;
-pub type Bytes31 = Hex<[u8; 31]>;
-pub type Bytes32 = Hex<[u8; 32]>;
+define_bytes_n!(
+    Bytes1, 1, Bytes2, 2, Byte3, 3, Bytes4, 4, Bytes5, 5, Bytes6, 6, Bytes7, 7, Byte8, 8, Bytes9,
+    9, Bytes10, 10, Bytes11, 11, Bytes12, 12, Byte13, 13, Bytes14, 14, Bytes15, 15, Bytes16, 16,
+    Bytes17, 17, Byte18, 18, Bytes19, 19, Bytes20, 20, Bytes21, 21, Bytes22, 22, Byte23, 23,
+    Bytes24, 24, Bytes25, 25, Bytes26, 26, Bytes27, 27, Byte28, 28, Bytes29, 29, Bytes30, 30,
+    Bytes31, 31, Bytes32, 32
+);

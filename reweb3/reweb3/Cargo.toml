@@ -17,6 +17,8 @@ futures-jsonrpcv2 = { workspace = true }
 regex = { workspace = true }
 log = { workspace = true }
 bytes = { workspace = true }
+async-trait = { workspace = true }
+concat-idents = { workspace = true }
 
 [dev-dependencies]
 pretty_env_logger = { workspace = true }

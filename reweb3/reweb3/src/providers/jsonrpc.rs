@@ -10,11 +10,12 @@ use crate::{
     primitives::{Address, Bytes, H256, U256},
 };
 
+use async_trait::async_trait;
 use futures_jsonrpcv2::client::JsonRpcClient;
 use reweb3_num::cast::As;
 
 use super::{
-    Block, BlockNumberOrTag, FeeHistory, Filter, FilterEvents, SyncingStatus, Transaction,
+    Block, BlockNumberOrTag, Client, FeeHistory, Filter, FilterEvents, SyncingStatus, Transaction,
     TransactionReceipt,
 };
 
@@ -36,9 +37,10 @@ impl From<JsonRpcClient> for JsonRpcProvider {
     }
 }
 
-impl JsonRpcProvider {
+#[async_trait]
+impl Client for JsonRpcProvider {
     /// Returns the number of most recent block.
-    pub async fn eth_blocknumber(&self) -> Result<U256> {
+    async fn eth_blocknumber(&self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -47,20 +49,17 @@ impl JsonRpcProvider {
     }
 
     /// Returns the chain ID of the current network
-    pub async fn eth_chainid(&self) -> Result<u64> {
+    async fn eth_chainid(&self) -> Result<u64> {
         let value: U256 = self.0.clone().call("eth_chainId", ()).await?;
 
         Ok(value.as_())
     }
 
     /// Returns information about a block by hash.
-    pub async fn eth_getblockbyhash<H: TryInto<H256>>(
-        &self,
-        hash: H,
-        hydrated: bool,
-    ) -> Result<Option<Block>>
+    async fn eth_getblockbyhash<H>(&self, hash: H, hydrated: bool) -> Result<Option<Block>>
     where
-        H::Error: Debug,
+        H: TryInto<H256> + Send,
+        H::Error: Debug + Send,
     {
         let hash: H256 = hash.try_into().map_err(map_error)?;
 
@@ -71,14 +70,14 @@ impl JsonRpcProvider {
             .await?)
     }
     /// Returns information about a block by number.
-    pub async fn eth_getblockbynumber<N>(
+    async fn eth_getblockbynumber<N>(
         &self,
         number_or_tag: N,
         hydrated: bool,
     ) -> Result<Option<Block>>
     where
-        N: TryInto<BlockNumberOrTag>,
-        N::Error: Debug,
+        N: TryInto<BlockNumberOrTag> + Send,
+        N::Error: Debug + Send,
     {
         let number_or_tag: BlockNumberOrTag = number_or_tag.try_into().map_err(map_error)?;
 
@@ -90,10 +89,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns transaction count number of block by block hash.
-    pub async fn eth_get_block_transaction_count_by_hash<H>(&self, hash: H) -> Result<u64>
+    async fn eth_get_block_transaction_count_by_hash<H>(&self, hash: H) -> Result<u64>
     where
-        H: TryInto<H256>,
-        H::Error: Debug,
+        H: TryInto<H256> + Send,
+        H::Error: Debug + Send,
     {
         let hash: H256 = hash.try_into().map_err(map_error)?;
 
@@ -107,10 +106,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns the number of uncles in a block from a block matching the given block hash
-    pub async fn eth_get_uncle_count_by_block_hash<H>(&self, hash: H) -> Result<u64>
+    async fn eth_get_uncle_count_by_block_hash<H>(&self, hash: H) -> Result<u64>
     where
-        H: TryInto<H256>,
-        H::Error: Debug,
+        H: TryInto<H256> + Send,
+        H::Error: Debug + Send,
     {
         let hash: H256 = hash.try_into().map_err(map_error)?;
 
@@ -124,10 +123,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns the number of uncles in a block from a block matching the given block hash
-    pub async fn eth_get_uncle_count_by_block_number<N>(&self, number_or_tag: N) -> Result<u64>
+    async fn eth_get_uncle_count_by_block_number<N>(&self, number_or_tag: N) -> Result<u64>
     where
-        N: TryInto<BlockNumberOrTag>,
-        N::Error: Debug,
+        N: TryInto<BlockNumberOrTag> + Send,
+        N::Error: Debug + Send,
     {
         let number_or_tag: BlockNumberOrTag = number_or_tag.try_into().map_err(map_error)?;
 
@@ -141,7 +140,7 @@ impl JsonRpcProvider {
     }
 
     /// Returns an object with data about the sync status or false
-    pub async fn eth_syncing(&mut self) -> Result<SyncingStatus> {
+    async fn eth_syncing(&mut self) -> Result<SyncingStatus> {
         Ok(self
             .0
             .clone()
@@ -150,7 +149,7 @@ impl JsonRpcProvider {
     }
 
     /// Returns the client coinbase address.
-    pub async fn eth_coinbase(&mut self) -> Result<Address> {
+    async fn eth_coinbase(&mut self) -> Result<Address> {
         Ok(self
             .0
             .clone()
@@ -159,7 +158,7 @@ impl JsonRpcProvider {
     }
 
     /// Returns a list of addresses owned by client.
-    pub async fn eth_accounts(&mut self) -> Result<Vec<Address>> {
+    async fn eth_accounts(&mut self) -> Result<Vec<Address>> {
         Ok(self
             .0
             .clone()
@@ -168,16 +167,16 @@ impl JsonRpcProvider {
     }
 
     /// Executes a new message call immediately without creating a transaction on the block chain.
-    pub async fn eth_call<TX, BT>(
+    async fn eth_call<TX, BT>(
         &mut self,
         transaction: TX,
         block_number_or_tag: Option<BT>,
     ) -> Result<Bytes>
     where
-        TX: TryInto<TypedTransactionRequest>,
-        TX::Error: Debug,
-        BT: TryInto<BlockNumberOrTag>,
-        BT::Error: Debug,
+        TX: TryInto<TypedTransactionRequest> + Send,
+        TX::Error: Debug + Send,
+        BT: TryInto<BlockNumberOrTag> + Send,
+        BT::Error: Debug + Send,
     {
         let transaction = transaction.try_into().map_err(map_error)?;
 
@@ -195,16 +194,16 @@ impl JsonRpcProvider {
     }
 
     /// Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.
-    pub async fn eth_estimate_gas<TX, BT>(
+    async fn eth_estimate_gas<TX, BT>(
         &mut self,
         transaction: TX,
         block_number_or_tag: Option<BT>,
     ) -> Result<U256>
     where
-        TX: TryInto<TypedTransactionRequest>,
-        TX::Error: Debug,
-        BT: TryInto<BlockNumberOrTag>,
-        BT::Error: Debug,
+        TX: TryInto<TypedTransactionRequest> + Send,
+        TX::Error: Debug + Send,
+        BT: TryInto<BlockNumberOrTag> + Send,
+        BT::Error: Debug + Send,
     {
         let transaction = transaction.try_into().map_err(map_error)?;
 
@@ -226,16 +225,16 @@ impl JsonRpcProvider {
     }
 
     /// Generates an access list for a transaction
-    pub async fn eth_create_accesslist<TX, BT>(
+    async fn eth_create_accesslist<TX, BT>(
         &mut self,
         transaction: TX,
         block_number_or_tag: Option<BT>,
     ) -> Result<U256>
     where
-        TX: TryInto<Transaction>,
-        TX::Error: Debug,
-        BT: TryInto<BlockNumberOrTag>,
-        BT::Error: Debug,
+        TX: TryInto<Transaction> + Send,
+        TX::Error: Debug + Send,
+        BT: TryInto<BlockNumberOrTag> + Send,
+        BT::Error: Debug + Send,
     {
         let transaction = transaction.try_into().map_err(map_error)?;
 
@@ -257,7 +256,7 @@ impl JsonRpcProvider {
     }
 
     /// Returns the current price gas in wei.
-    pub async fn eth_gas_price(&mut self) -> Result<U256> {
+    async fn eth_gas_price(&mut self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -266,7 +265,7 @@ impl JsonRpcProvider {
     }
 
     /// Returns the current maxPriorityFeePerGas per gas in wei.
-    pub async fn eth_max_priority_fee_per_gas(&mut self) -> Result<U256> {
+    async fn eth_max_priority_fee_per_gas(&mut self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -275,18 +274,18 @@ impl JsonRpcProvider {
     }
 
     /// Returns transaction base fee per gas and effective priority fee per gas for the requested/supported block range.
-    pub async fn eth_fee_history<N, BT, RP>(
+    async fn eth_fee_history<N, BT, RP>(
         &mut self,
         block_count: N,
         newest_block: BT,
         reward_percentiles: RP,
     ) -> Result<FeeHistory>
     where
-        N: TryInto<U256>,
-        N::Error: Debug,
-        BT: TryInto<BlockNumberOrTag>,
-        BT::Error: Debug,
-        RP: AsRef<[f64]>,
+        N: TryInto<U256> + Send,
+        N::Error: Debug + Send,
+        BT: TryInto<BlockNumberOrTag> + Send,
+        BT::Error: Debug + Send,
+        RP: AsRef<[f64]> + Send,
     {
         let block_count = block_count.try_into().map_err(map_error)?;
 
@@ -303,10 +302,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns transaction base fee per gas and effective priority fee per gas for the requested/supported block range.
-    pub async fn eth_new_filter<F>(&mut self, filter: F) -> Result<U256>
+    async fn eth_new_filter<F>(&mut self, filter: F) -> Result<U256>
     where
-        F: TryInto<Filter>,
-        F::Error: Debug,
+        F: TryInto<Filter> + Send,
+        F::Error: Debug + Send,
     {
         let filter = filter.try_into().map_err(map_error)?;
 
@@ -314,7 +313,7 @@ impl JsonRpcProvider {
     }
 
     /// Creates new filter in the node,to notify when a new block arrives.
-    pub async fn eth_new_block_filter(&mut self) -> Result<U256> {
+    async fn eth_new_block_filter(&mut self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -323,7 +322,7 @@ impl JsonRpcProvider {
     }
 
     /// Creates new filter in the node,to notify when new pending transactions arrive.
-    pub async fn eth_new_pending_transaction_filter(&mut self) -> Result<U256> {
+    async fn eth_new_pending_transaction_filter(&mut self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -332,10 +331,10 @@ impl JsonRpcProvider {
     }
 
     /// Uninstalls a filter with given id
-    pub async fn eth_uninstall_filter<N>(&mut self, id: N) -> Result<bool>
+    async fn eth_uninstall_filter<N>(&mut self, id: N) -> Result<bool>
     where
-        N: TryInto<U256>,
-        N::Error: Debug,
+        N: TryInto<U256> + Send,
+        N::Error: Debug + Send,
     {
         let id = id.try_into().map_err(map_error)?;
 
@@ -344,10 +343,10 @@ impl JsonRpcProvider {
 
     /// Polling method for a filter, which returns an arrya of logs which occurred since last poll
 
-    pub async fn eth_get_filter_changes<N>(&mut self, id: N) -> Result<Option<FilterEvents>>
+    async fn eth_get_filter_changes<N>(&mut self, id: N) -> Result<Option<FilterEvents>>
     where
-        N: TryInto<U256>,
-        N::Error: Debug,
+        N: TryInto<U256> + Send,
+        N::Error: Debug + Send,
     {
         let id: U256 = id.try_into().map_err(map_error)?;
 
@@ -359,10 +358,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns any arrays of all logs matching filter with given id
-    pub async fn eth_get_filter_logs<N>(&mut self, id: N) -> Result<FilterEvents>
+    async fn eth_get_filter_logs<N>(&mut self, id: N) -> Result<FilterEvents>
     where
-        N: TryInto<U256>,
-        N::Error: Debug,
+        N: TryInto<U256> + Send,
+        N::Error: Debug + Send,
     {
         let id = id.try_into().map_err(map_error)?;
 
@@ -370,10 +369,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns an array of all logs matching filter with filter description
-    pub async fn eth_get_logs<F>(&mut self, filter: F) -> Result<FilterEvents>
+    async fn eth_get_logs<F>(&mut self, filter: F) -> Result<FilterEvents>
     where
-        F: TryInto<Filter>,
-        F::Error: Debug,
+        F: TryInto<Filter> + Send,
+        F::Error: Debug + Send,
     {
         let filter = filter.try_into().map_err(map_error)?;
 
@@ -381,10 +380,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns an RLP encoded transaction signed by the specified account.
-    pub async fn eth_sign_transaction<T>(&mut self, transaction: T) -> Result<Bytes>
+    async fn eth_sign_transaction<T>(&mut self, transaction: T) -> Result<Bytes>
     where
-        T: TryInto<Transaction>,
-        T::Error: Debug,
+        T: TryInto<Transaction> + Send,
+        T::Error: Debug + Send,
     {
         let transaction = transaction.try_into().map_err(map_error)?;
 
@@ -396,10 +395,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns the balance of the account given address.
-    pub async fn eth_get_balance<A>(&mut self, address: A) -> Result<U256>
+    async fn eth_get_balance<A>(&mut self, address: A) -> Result<U256>
     where
-        A: TryInto<Address>,
-        A::Error: Debug,
+        A: TryInto<Address> + Send,
+        A::Error: Debug + Send,
     {
         let address = address.try_into().map_err(map_error)?;
 
@@ -407,10 +406,10 @@ impl JsonRpcProvider {
     }
 
     /// Returns the number of transactions sent from an address
-    pub async fn eth_get_transaction_count<A>(&mut self, address: A) -> Result<U256>
+    async fn eth_get_transaction_count<A>(&mut self, address: A) -> Result<U256>
     where
-        A: TryInto<Address>,
-        A::Error: Debug,
+        A: TryInto<Address> + Send,
+        A::Error: Debug + Send,
     {
         let address = address.try_into().map_err(map_error)?;
 
@@ -422,10 +421,10 @@ impl JsonRpcProvider {
     }
 
     /// Submit a raw transaction.
-    pub async fn eth_send_raw_transaction<B>(&mut self, raw: B) -> Result<H256>
+    async fn eth_send_raw_transaction<B>(&mut self, raw: B) -> Result<H256>
     where
-        B: TryInto<Bytes>,
-        B::Error: Debug,
+        B: TryInto<Bytes> + Send,
+        B::Error: Debug + Send,
     {
         let raw = raw.try_into().map_err(map_error)?;
 
@@ -436,13 +435,10 @@ impl JsonRpcProvider {
             .await?)
     }
 
-    pub async fn eth_get_transaction_by_hash<H>(
-        &mut self,
-        tx_hash: H,
-    ) -> Result<Option<Transaction>>
+    async fn eth_get_transaction_by_hash<H>(&mut self, tx_hash: H) -> Result<Option<Transaction>>
     where
-        H: TryInto<H256>,
-        H::Error: Debug,
+        H: TryInto<H256> + Send,
+        H::Error: Debug + Send,
     {
         let tx_hash = tx_hash.try_into().map_err(map_error)?;
 
@@ -454,13 +450,13 @@ impl JsonRpcProvider {
     }
 
     /// Returns the receipt of a transaction by transaction hash
-    pub async fn eth_get_transaction_receipt<H>(
+    async fn eth_get_transaction_receipt<H>(
         &mut self,
         tx_hash: H,
     ) -> Result<Option<TransactionReceipt>>
     where
-        H: TryInto<H256>,
-        H::Error: Debug,
+        H: TryInto<H256> + Send,
+        H::Error: Debug + Send,
     {
         let tx_hash = tx_hash.try_into().map_err(map_error)?;
 

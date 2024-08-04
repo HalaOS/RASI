@@ -10,6 +10,7 @@ use super::{
     serde::BytesVisitor,
 };
 
+/// Represents the ethereum address.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Address(Hex<[u8; 20]>);
 
