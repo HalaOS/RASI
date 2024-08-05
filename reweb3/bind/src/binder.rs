@@ -98,8 +98,14 @@ impl<'a> BinderContext<'a> {
         }
     }
 
+    /// Get the metadata of tuple type.
     pub fn component(&self, name: &str) -> Option<&Vec<Parameter>> {
         self.components.get(name)
+    }
+
+    /// Returns the bytecode string of compiled contract.
+    pub fn bytecode(&self) -> Option<&str> {
+        self.bytecode
     }
 }
 
@@ -130,6 +136,7 @@ pub trait ContractBinder {
     fn bind_constructor(
         &mut self,
         cx: &BinderContext<'_>,
+        signature: &str,
         state: &StateMutability,
     ) -> Result<Self::ConstructorBinder, Self::Error>;
 
@@ -137,6 +144,8 @@ pub trait ContractBinder {
     fn bind_function(
         &mut self,
         cx: &BinderContext<'_>,
+        fn_name: &str,
+        signature: &str,
         state: &StateMutability,
     ) -> Result<Self::FunctionBinder, Self::Error>;
 
@@ -189,7 +198,7 @@ pub trait ConstructorBinder {
     ) -> Result<(), Self::Error>;
 
     /// This function is called to clean up resources after the code generation process is end.
-    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<(), Self::Error>;
 }
 
 /// A trait object returns by [`bind_function`](ContractBinder::bind_function) function.
@@ -213,7 +222,7 @@ pub trait FunctionBinder {
     ) -> Result<(), Self::Error>;
 
     /// This function is called to clean up resources after the code generation process is end.
-    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<(), Self::Error>;
 }
 
 /// A trait object returns by [`bind_event`](ContractBinder::bind_event) function.
@@ -228,7 +237,7 @@ pub trait EventBinder {
     ) -> Result<(), Self::Error>;
 
     /// This function is called to clean up resources after the code generation process is end.
-    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<(), Self::Error>;
 }
 
 /// A trait object returns by [`bind_error`](ContractBinder::bind_error) function.
@@ -243,7 +252,7 @@ pub trait ErrorBinder {
     ) -> Result<(), Self::Error>;
 
     /// This function is called to clean up resources after the code generation process is end.
-    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<(), Self::Error>;
 }
 
 /// Invoke code generation with `context data`.
@@ -267,7 +276,12 @@ pub fn bind<'a, B: Binder>(
         match field {
             AbiField::Function(function) => {
                 let mut binder = contract
-                    .bind_function(cx, &function.state_mutability)
+                    .bind_function(
+                        cx,
+                        &function.name,
+                        function.signature().as_str(),
+                        &function.state_mutability,
+                    )
                     .map_err(map_binder_error)?;
 
                 for (index, parameter) in function.inputs.iter().enumerate() {
@@ -286,7 +300,11 @@ pub fn bind<'a, B: Binder>(
             }
             AbiField::Constructor(constructor) => {
                 let mut binder = contract
-                    .bind_constructor(cx, &constructor.state_mutability)
+                    .bind_constructor(
+                        cx,
+                        constructor.signature().as_str(),
+                        &constructor.state_mutability,
+                    )
                     .map_err(map_binder_error)?;
 
                 for (index, parameter) in constructor.inputs.iter().enumerate() {

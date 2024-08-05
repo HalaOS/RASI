@@ -2,6 +2,12 @@ use super::hex::Hex;
 
 pub type Bytes = Hex<Vec<u8>>;
 
+impl From<Bytes> for bytes::Bytes {
+    fn from(value: Bytes) -> Self {
+        Self::from(value.0)
+    }
+}
+
 macro_rules! define_bytes_n {
     ($ident: ident, $len: expr) => {
         #[doc = concat!("Represents solidity type ",stringify!($ident))]
