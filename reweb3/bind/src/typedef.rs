@@ -178,7 +178,7 @@ pub struct Fallback {
     pub state_mutability: StateMutability,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StateMutability {
     Pure,

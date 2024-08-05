@@ -17,3 +17,7 @@ proc-macro2 = { workspace = true }
 heck = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
+
+[features]
+default = ["rustgen"]
+rustgen = []

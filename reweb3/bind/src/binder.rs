@@ -16,6 +16,8 @@ pub enum BindError {
 /// The trait that the error returned by binder traits must implement.
 pub trait BinderError: std::error::Error + Send + Sync + 'static {}
 
+impl<T> BinderError for T where T: std::error::Error + Send + Sync + 'static {}
+
 fn map_binder_error<E: BinderError>(error: E) -> BindError {
     BindError::BinderError(anyhow::Error::from(error))
 }
@@ -185,6 +187,9 @@ pub trait ConstructorBinder {
         index: usize,
         parameter: &Parameter,
     ) -> Result<(), Self::Error>;
+
+    /// This function is called to clean up resources after the code generation process is end.
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
 }
 
 /// A trait object returns by [`bind_function`](ContractBinder::bind_function) function.
@@ -206,6 +211,9 @@ pub trait FunctionBinder {
         index: usize,
         parameter: &Parameter,
     ) -> Result<(), Self::Error>;
+
+    /// This function is called to clean up resources after the code generation process is end.
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
 }
 
 /// A trait object returns by [`bind_event`](ContractBinder::bind_event) function.
@@ -218,6 +226,9 @@ pub trait EventBinder {
         index: usize,
         parameter: &Parameter,
     ) -> Result<(), Self::Error>;
+
+    /// This function is called to clean up resources after the code generation process is end.
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
 }
 
 /// A trait object returns by [`bind_error`](ContractBinder::bind_error) function.
@@ -230,6 +241,9 @@ pub trait ErrorBinder {
         index: usize,
         parameter: &Parameter,
     ) -> Result<(), Self::Error>;
+
+    /// This function is called to clean up resources after the code generation process is end.
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
 }
 
 /// Invoke code generation with `context data`.
@@ -267,6 +281,8 @@ pub fn bind<'a, B: Binder>(
                         .bind_output(cx, index, parameter)
                         .map_err(map_binder_error)?;
                 }
+
+                binder.finialize(cx).map_err(map_binder_error)?;
             }
             AbiField::Constructor(constructor) => {
                 let mut binder = contract
@@ -278,6 +294,8 @@ pub fn bind<'a, B: Binder>(
                         .bind_input(cx, index, parameter)
                         .map_err(map_binder_error)?;
                 }
+
+                binder.finialize(cx).map_err(map_binder_error)?;
             }
             AbiField::Receive(receiver) => {
                 contract
@@ -299,6 +317,8 @@ pub fn bind<'a, B: Binder>(
                         .bind_input(cx, index, parameter)
                         .map_err(map_binder_error)?;
                 }
+
+                binder.finialize(cx).map_err(map_binder_error)?;
             }
             AbiField::Error(e) => {
                 let mut binder = contract.bind_error(cx, &e.name).map_err(map_binder_error)?;
@@ -308,6 +328,8 @@ pub fn bind<'a, B: Binder>(
                         .bind_input(cx, index, parameter)
                         .map_err(map_binder_error)?;
                 }
+
+                binder.finialize(cx).map_err(map_binder_error)?;
             }
         }
     }
