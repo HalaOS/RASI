@@ -1,0 +1,15 @@
+[package]
+name = "reweb3-example"
+edition.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+reweb3 = { workspace = true }
+serde = { workspace = true }
+rasi = { workspace = true, features = ["task-futures"] }
+rasi-mio = { workspace = true }
+futures-jsonrpcv2 = { workspace = true }
+
+[build-dependencies]
+reweb3 = { workspace = true, features = ["bind"] }

@@ -37,8 +37,7 @@ mod with_client {
             Block, BlockNumberOrTag, Client, FeeHistory, Filter, FilterEvents, SyncingStatus,
             Transaction, TransactionReceipt,
         },
-        primitives::{Address, Bytes, H256},
-        TransferOptions,
+        primitives::{balance::TransferOptions, Address, Bytes, H256},
     };
 
     use super::*;

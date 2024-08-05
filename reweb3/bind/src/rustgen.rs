@@ -45,12 +45,6 @@ pub enum RustBinderError {
     #[error("`rt_transfer_ops` type mapping not found")]
     RuntimeTransferOps,
 
-    #[error("`rt_serialize_derive` type mapping not found")]
-    RuntimeSerializeDerive,
-
-    #[error("`rt_deserialize_derive` type mapping not found")]
-    RuntimeDeserializeDerive,
-
     #[error("parse mapping type `{0}` failed: {1}")]
     ParseMappingType(String, String),
 
@@ -721,7 +715,7 @@ impl TupleBinder for RustTupleBinder {
         let field_name: Ident = format_ident!("{}", param.name.to_snek_case());
 
         self.field_list.push(quote! {
-            #field_name: #rt_ident
+            pub #field_name: #rt_ident
         });
 
         Ok(())
@@ -732,20 +726,8 @@ impl TupleBinder for RustTupleBinder {
 
         let field_list = self.field_list.as_slice();
 
-        let serialize = rt_type_mapping(
-            &mut self.context.borrow_mut().mapping.borrow_mut(),
-            "rt_serialize_derive",
-        )?
-        .ok_or(RustBinderError::RuntimeSerializeDerive)?;
-
-        let deserialize = rt_type_mapping(
-            &mut self.context.borrow_mut().mapping.borrow_mut(),
-            "rt_deserialize_derive",
-        )?
-        .ok_or(RustBinderError::RuntimeDeserializeDerive)?;
-
         let stream = quote! {
-            #[derive(#serialize,#deserialize)]
+            #[derive(serde::Serialize,serde::Deserialize)]
             pub struct #tuple_name {
                 #(#field_list,)*
             }
@@ -794,7 +776,7 @@ impl EventBinder for RustEventBinder {
         let field_name: Ident = format_ident!("{}", param.name.to_snek_case());
 
         self.field_list.push(quote! {
-            #field_name: #rt_ident
+            pub #field_name: #rt_ident
         });
 
         Ok(())
@@ -867,7 +849,7 @@ impl ErrorBinder for RustErrorBinder {
         let field_name: Ident = format_ident!("{}", param.name.to_snek_case());
 
         self.field_list.push(quote! {
-            #field_name: #rt_ident
+            pub #field_name: #rt_ident
         });
 
         Ok(())

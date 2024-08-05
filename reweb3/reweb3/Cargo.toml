@@ -20,6 +20,11 @@ log = { workspace = true }
 bytes = { workspace = true }
 async-trait = { workspace = true }
 concat-idents = { workspace = true }
+ethbind = { workspace = true, optional = true }
+heck = { workspace = true, optional = true }
+syn = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
+proc-macro2 = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_env_logger = { workspace = true }
@@ -29,12 +34,11 @@ futures-test = { workspace = true }
 
 [features]
 default = ["rlp", "clients", "eip712", "abi", "signer", "macros"]
-contract = ["rlp", "clients", "abi", "signer"]
 test-clients = []
 rlp = []
 clients = []
 eip712 = []
 abi = []
 signer = []
-bind = []
+bind = ["ethbind", "heck", "syn", "quote", "proc-macro2"]
 macros = ["reweb3-macros"]

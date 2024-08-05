@@ -2,7 +2,7 @@ use std::sync::{Once, OnceLock};
 
 use futures_jsonrpcv2::{client::JsonRpcClient, rasi::http::HttpJsonRpcClient};
 use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
-use reweb3::{clients::JsonRpcProvider, hardhat_artifact, Address};
+use reweb3::{clients::JsonRpcProvider, hardhat_artifact, runtimes::Address};
 
 hardhat_artifact!("tests/abi.json");
 

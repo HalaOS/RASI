@@ -6,6 +6,7 @@ members = [
     "crates/sqlite3",
     "futures/*",
     "reweb3/*",
+    "examples/*"
 ]
 resolver = "2"
 
@@ -62,6 +63,7 @@ futures-boring = { path = "futures/boring", version = "^0.2" }
 futures-map = { path = "futures/map", version = "^0.2" }
 futures-http = { path = "futures/http", version = "^0.2" }
 futures-jsonrpcv2 = { path = "futures/jsonrpc", version = "^0.2" }
+reweb3 = { path = "reweb3/reweb3", version = "^0.2" }
 reweb3-num = { path = "reweb3/num", version = "^0.2" }
 reweb3-macros = { path = "reweb3/macros", version = "^0.2" }
 ethbind = { path = "reweb3/bind", version = "^0.2" }
