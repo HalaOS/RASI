@@ -194,4 +194,14 @@ pub trait Client {
     where
         H: TryInto<H256> + Send,
         H::Error: Debug + Send;
+
+    #[allow(unused)]
+    async fn call(
+        &self,
+        signature: &str,
+        contract_address: &Address,
+        call_data: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        todo!()
+    }
 }

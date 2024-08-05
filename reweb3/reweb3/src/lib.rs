@@ -21,3 +21,20 @@ pub mod clients;
 #[cfg(feature = "rlp")]
 #[cfg_attr(docsrs, doc(cfg(feature = "rlp")))]
 pub mod rlp;
+
+#[cfg(feature = "macros")]
+#[cfg_attr(docsrs, doc(cfg(feature = "macros")))]
+pub mod macros;
+
+pub use primitives::{balance::TransferOptions, *};
+
+#[cfg(feature = "abi")]
+pub use abi::{from_abi, to_abi};
+
+pub use serde;
+
+#[cfg(feature = "signer")]
+pub use signer::SignerWithProvider;
+
+#[cfg(feature = "clients")]
+pub use clients::Client;

@@ -25,7 +25,10 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 pub enum RustBinderError {
     #[error("`rt_signer_with_provider` type mapping not found")]
-    RuntimeClientType,
+    RuntimeSignerWithProviderType,
+
+    #[error("`rt_provider` type mapping not found")]
+    RuntimeProviderType,
 
     #[error("`address` type mapping not found")]
     RuntimeAddressType,
@@ -41,6 +44,12 @@ pub enum RustBinderError {
 
     #[error("`rt_transfer_ops` type mapping not found")]
     RuntimeTransferOps,
+
+    #[error("`rt_serialize_derive` type mapping not found")]
+    RuntimeSerializeDerive,
+
+    #[error("`rt_deserialize_derive` type mapping not found")]
+    RuntimeDeserializeDerive,
 
     #[error("parse mapping type `{0}` failed: {1}")]
     ParseMappingType(String, String),
@@ -214,12 +223,6 @@ impl ContractBinder for RustContractBinder {
         &mut self,
         _cx: &crate::binder::BinderContext<'_>,
     ) -> Result<proc_macro2::TokenStream, Self::Error> {
-        let signer_with_provider = rt_type_mapping(
-            &mut self.context.borrow_mut().mapping.borrow_mut(),
-            "rt_signer_with_provider",
-        )?
-        .ok_or(RustBinderError::RuntimeClientType)?;
-
         let contract_name = format_ident!(
             "{}",
             self.context
@@ -284,7 +287,15 @@ impl ContractBinder for RustContractBinder {
                 client: C,
             }
 
-            impl #contract_name<C> where C: #signer_with_provider + Send + Unpin {
+            impl<C> #contract_name<C> {
+                pub fn new(client: C, address: #address) -> Self {
+                    Self {
+                        address,client,
+                    }
+                }
+            }
+
+            impl<C> #contract_name<C> {
                 #(#fns)*
             }
         };
@@ -410,11 +421,11 @@ impl ConstructorBinder for RustConstructorBinder {
 
         self.where_list.push(quote! {
             #generic_param_ident: TryInto<#rt_ident>,
-            #generic_param_ident::Error: Debug + Send + 'static
+            #generic_param_ident::Error: std::fmt::Debug + Send + 'static
         });
 
         self.try_into_list.push(quote! {
-            let #var_ident = #var_ident.try_into().map_error(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?
+            let #var_ident = #var_ident.try_into().map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?
         });
 
         self.param_encode_list.push(quote! {#var_ident});
@@ -435,11 +446,11 @@ impl ConstructorBinder for RustConstructorBinder {
             }
         };
 
-        let signer_with_provider = rt_type_mapping(
+        let signer = rt_type_mapping(
             &mut self.context.borrow_mut().mapping.borrow_mut(),
             "rt_signer_with_provider",
         )?
-        .ok_or(RustBinderError::RuntimeClientType)?;
+        .ok_or(RustBinderError::RuntimeSignerWithProviderType)?;
 
         let abi_encode = rt_type_mapping(
             &mut self.context.borrow_mut().mapping.borrow_mut(),
@@ -462,23 +473,22 @@ impl ConstructorBinder for RustConstructorBinder {
 
         let fn_stream = quote! {
             /// Deploy contract with provided client.
-            pub async fn deploy<C, #(#generic_param_list,)* Ops>(client: C, #(#param_list,)* transfer_ops: Ops) -> std::io::Result<Self>
+            pub async fn deploy<#(#generic_param_list,)* Ops>(client: C, #(#param_list,)* transfer_ops: Ops) -> std::io::Result<Self>
             where
-                C: #signer_with_provider,
-                C:: Error: Debug + Send + 'static,
+                C: #signer + Send + Unpin,
                 Ops: TryInto<#transfer_ops>,
-                Ops:: Error: Debug + Send + 'static,
+                Ops:: Error: std::fmt::Debug + Send + 'static,
                 #(#where_list,)*
             {
-                let transfer_ops = transfer_ops.try_into().map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?;
+                let transfer_ops = transfer_ops.try_into().map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
                 #(#try_into_list;)*
 
                 let params = #abi_encode((#(#param_encode_list,)*))
-                    .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?;
+                    .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
                 let address = client.deploy(#bytecode, #signature, params, transfer_ops).await
-                    .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{}",err)))?;
+                    .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
 
                 Ok(Self::new(client, address))
             }
@@ -548,11 +558,11 @@ impl FunctionBinder for RustFunctionBinder {
 
         self.where_list.push(quote! {
             #generic_param_ident: TryInto<#rt_ident>,
-            #generic_param_ident::Error: Debug + Send + 'static
+            #generic_param_ident::Error: std::fmt::Debug + Send + 'static
         });
 
         self.try_into_list.push(quote! {
-            let #var_ident = #var_ident.try_into().map_error(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?
+            let #var_ident = #var_ident.try_into().map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?
         });
 
         self.param_encode_list.push(quote! {#var_ident});
@@ -607,8 +617,20 @@ impl FunctionBinder for RustFunctionBinder {
         )?
         .ok_or(RustBinderError::RuntimeH256Type)?;
 
+        let signer = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_signer_with_provider",
+        )?
+        .ok_or(RustBinderError::RuntimeSignerWithProviderType)?;
+
+        let provider = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_provider",
+        )?
+        .ok_or(RustBinderError::RuntimeProviderType)?;
+
         let signature = &self.signature;
-        let fn_name = format_ident!("{}", &self.fn_name);
+        let fn_name = format_ident!("{}", &self.fn_name.to_snek_case());
         let generic_param_list = &self.generic_param_list;
         let param_list: &Vec<TokenStream> = &self.param_list;
         let where_list = &self.where_list;
@@ -621,19 +643,19 @@ impl FunctionBinder for RustFunctionBinder {
                 quote! {
                     pub async fn #fn_name<#(#generic_param_list,)*>(&self, #(#param_list,)*) -> std::io::Result<(#(#return_param_list,)*)>
                     where
-                        C:: Error: Debug + Send + 'static,
+                        C: #provider + Sync + Unpin,
                         #(#where_list,)*
                     {
                         #(#try_into_list;)*
 
                         let params = #abi_encode((#(#param_encode_list,)*))
-                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?;
+                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
                          let call_result = self.client.call(#signature, &self.address, params).await
-                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{}",err)))?;
+                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
 
                          Ok(#abi_decode(call_result)
-                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?)
+                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?)
                     }
                 }
             }
@@ -642,21 +664,21 @@ impl FunctionBinder for RustFunctionBinder {
                 quote! {
                     pub async fn #fn_name<#(#generic_param_list,)* Ops>(&self, #(#param_list,)* transfer_ops: Ops) -> std::io::Result<#h256>
                     where
-                        C:: Error: Debug + Send + 'static,
+                        C: #signer + Sync + Unpin,
                         Ops: TryInto<#transfer_ops>,
-                        Ops:: Error: Debug + Send + 'static,
+                        Ops:: Error: std::fmt::Debug + Send + 'static,
                         #(#where_list,)*
                     {
 
-                        let transfer_ops = transfer_ops.try_into().map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?;
+                        let transfer_ops = transfer_ops.try_into().map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
                         #(#try_into_list;)*
 
                         let params = #abi_encode((#(#param_encode_list,)*))
-                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}",err)))?;
+                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
                          Ok(self.client.sign_and_send_transaction(#signature, &self.address, params, transfer_ops).await
-                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{}",err)))?)
+                            .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?)
                     }
                 }
             }
@@ -710,8 +732,21 @@ impl TupleBinder for RustTupleBinder {
 
         let field_list = self.field_list.as_slice();
 
+        let serialize = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_serialize_derive",
+        )?
+        .ok_or(RustBinderError::RuntimeSerializeDerive)?;
+
+        let deserialize = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_deserialize_derive",
+        )?
+        .ok_or(RustBinderError::RuntimeDeserializeDerive)?;
+
         let stream = quote! {
-            struct #tuple_name {
+            #[derive(#serialize,#deserialize)]
+            pub struct #tuple_name {
                 #(#field_list,)*
             }
         };
@@ -783,7 +818,7 @@ impl EventBinder for RustEventBinder {
         };
 
         let stream = quote! {
-            struct #tuple_name {
+            pub struct #tuple_name {
                 #(#field_list,)*
             }
 
@@ -846,7 +881,7 @@ impl ErrorBinder for RustErrorBinder {
         let signature = self.signature.as_str();
 
         let stream = quote! {
-            struct #tuple_name {
+            pub struct #tuple_name {
                 #(#field_list,)*
             }
 

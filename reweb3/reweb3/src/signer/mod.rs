@@ -38,12 +38,36 @@ mod with_client {
             Transaction, TransactionReceipt,
         },
         primitives::{Address, Bytes, H256},
+        TransferOptions,
     };
 
     use super::*;
 
     /// A combinated trait of [`Signer`] and [`Client`]
-    pub trait SignerWithProvider: Signer + Client {}
+    #[async_trait]
+    pub trait SignerWithProvider: Signer + Client + Send + Sync {
+        #[allow(unused)]
+        async fn deploy(
+            &self,
+            bytecode: &str,
+            signature: &str,
+            call_data: Vec<u8>,
+            ops: TransferOptions,
+        ) -> Result<Address> {
+            todo!()
+        }
+
+        #[allow(unused)]
+        async fn sign_and_send_transaction(
+            &self,
+            signature: &str,
+            contract_address: &Address,
+            call_data: Vec<u8>,
+            ops: TransferOptions,
+        ) -> Result<H256> {
+            todo!()
+        }
+    }
 
     #[async_trait]
     impl<S, C> Signer for (S, C)

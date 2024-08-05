@@ -266,6 +266,9 @@ impl Display for Decimals {
     }
 }
 
+/// Flags for send_Transaction.
+pub struct TransferOptions {}
+
 #[cfg(test)]
 mod tests {
 

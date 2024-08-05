@@ -9,6 +9,7 @@ version.workspace = true
 
 [dependencies]
 reweb3-num = { workspace = true, features = ["serde"] }
+reweb3-macros = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
@@ -27,7 +28,7 @@ rasi-mio = { workspace = true }
 futures-test = { workspace = true }
 
 [features]
-default = ["rlp", "clients", "eip712", "abi", "signer"]
+default = ["rlp", "clients", "eip712", "abi", "signer", "macros"]
 contract = ["rlp", "clients", "abi", "signer"]
 test-clients = []
 rlp = []
@@ -36,3 +37,4 @@ eip712 = []
 abi = []
 signer = []
 bind = []
+macros = ["reweb3-macros"]
