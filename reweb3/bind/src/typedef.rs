@@ -199,6 +199,40 @@ pub struct Event {
     pub anonymous: bool,
 }
 
+impl Event {
+    /// Only include inputs,e.g: withdraw(address)
+    pub fn signature(&self) -> String {
+        let tuple = Self::to_signature(&self.inputs);
+
+        format!("{}{}", self.name, tuple)
+    }
+
+    fn to_signature(params: &[Parameter]) -> String {
+        let mut pairs = vec![];
+
+        for param in params.iter() {
+            if let Some(components) = &param.components {
+                let element = Self::to_signature(components);
+                match &param.r#type {
+                    Type::Array(_) => {
+                        pairs.push(format!("{}[]", element));
+                    }
+                    Type::ArrayM(array_m) => {
+                        pairs.push(format!("{}[{}]", element, array_m.m));
+                    }
+                    _ => {
+                        pairs.push(format!("{}", element));
+                    }
+                }
+            } else {
+                pairs.push(format!("{}", param.r#type));
+            }
+        }
+
+        format!("({})", pairs.join(","))
+    }
+}
+
 /// A structure type to represent `event` abi
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -207,6 +241,40 @@ pub struct Error {
     pub name: String,
     /// An array of function's input params
     pub inputs: Vec<Parameter>,
+}
+
+impl Error {
+    /// Only include inputs,e.g: withdraw(address)
+    pub fn signature(&self) -> String {
+        let tuple = Self::to_signature(&self.inputs);
+
+        format!("{}{}", self.name, tuple)
+    }
+
+    fn to_signature(params: &[Parameter]) -> String {
+        let mut pairs = vec![];
+
+        for param in params.iter() {
+            if let Some(components) = &param.components {
+                let element = Self::to_signature(components);
+                match &param.r#type {
+                    Type::Array(_) => {
+                        pairs.push(format!("{}[]", element));
+                    }
+                    Type::ArrayM(array_m) => {
+                        pairs.push(format!("{}[{}]", element, array_m.m));
+                    }
+                    _ => {
+                        pairs.push(format!("{}", element));
+                    }
+                }
+            } else {
+                pairs.push(format!("{}", param.r#type));
+            }
+        }
+
+        format!("({})", pairs.join(","))
+    }
 }
 /// Handle Function/Event/Error 's input or output parameter type
 #[derive(Debug, Clone, Serialize, Deserialize)]

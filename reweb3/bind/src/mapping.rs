@@ -41,7 +41,7 @@ impl BinderTypeMapping {
     }
 
     fn get(&self, type_name: &str) -> Option<&str> {
-        self.rt_type_mapping(type_name)
+        self.mapping.get(type_name).map(String::as_str)
     }
 
     fn dynamic_mapping<T: ToString>(&self, t: T) -> Option<&str> {

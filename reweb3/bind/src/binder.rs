@@ -1,26 +1,15 @@
 //! This mod provides various types and utilities for code generation.
 
-use std::{collections::HashMap, fmt::Debug};
+use std::collections::HashMap;
 
 use proc_macro2::TokenStream;
 
 use crate::typedef::{AbiField, Parameter, StateMutability};
 
-/// Error type for code generation.
-#[derive(Debug, thiserror::Error)]
-pub enum BindError {
-    #[error("{0}")]
-    BinderError(#[from] anyhow::Error),
-}
-
 /// The trait that the error returned by binder traits must implement.
 pub trait BinderError: std::error::Error + Send + Sync + 'static {}
 
 impl<T> BinderError for T where T: std::error::Error + Send + Sync + 'static {}
-
-fn map_binder_error<E: BinderError>(error: E) -> BindError {
-    BindError::BinderError(anyhow::Error::from(error))
-}
 
 /// Context data to invoke [`bind`] function.
 pub struct BinderContext<'a> {
@@ -98,11 +87,6 @@ impl<'a> BinderContext<'a> {
         }
     }
 
-    /// Get the metadata of tuple type.
-    pub fn component(&self, name: &str) -> Option<&Vec<Parameter>> {
-        self.components.get(name)
-    }
-
     /// Returns the bytecode string of compiled contract.
     pub fn bytecode(&self) -> Option<&str> {
         self.bytecode
@@ -113,7 +97,7 @@ impl<'a> BinderContext<'a> {
 pub trait Binder {
     type Error: BinderError;
 
-    type ContractBinder: ContractBinder;
+    type ContractBinder: ContractBinder<Error = Self::Error>;
 
     /// Start a new process of contract code generation.
     fn prepare(
@@ -127,10 +111,17 @@ pub trait Binder {
 pub trait ContractBinder {
     type Error: BinderError;
 
-    type ConstructorBinder: ConstructorBinder;
-    type FunctionBinder: FunctionBinder;
-    type EventBinder: EventBinder;
-    type ErrorBinder: ErrorBinder;
+    type ConstructorBinder: ConstructorBinder<Error = Self::Error>;
+    type FunctionBinder: FunctionBinder<Error = Self::Error>;
+    type EventBinder: EventBinder<Error = Self::Error>;
+    type ErrorBinder: ErrorBinder<Error = Self::Error>;
+    type TupleBinder: TupleBinder<Error = Self::Error>;
+
+    fn bind_tuple(
+        &mut self,
+        cx: &BinderContext<'_>,
+        name: &str,
+    ) -> Result<Self::TupleBinder, Self::Error>;
 
     /// This function is called to generate contract `contructor` function.
     fn bind_constructor(
@@ -168,7 +159,7 @@ pub trait ContractBinder {
         &mut self,
         cx: &BinderContext<'_>,
         name: &str,
-        anonymous: bool,
+        signature: Option<&str>,
     ) -> Result<Self::EventBinder, Self::Error>;
 
     /// Calling this function generates error handling related code.
@@ -176,10 +167,8 @@ pub trait ContractBinder {
         &mut self,
         cx: &BinderContext<'_>,
         name: &str,
+        signature: &str,
     ) -> Result<Self::ErrorBinder, Self::Error>;
-
-    /// This function is called to generate contract deploy function.
-    fn bind_deploy(&mut self, cx: &BinderContext<'_>, bytecode: &str) -> Result<(), Self::Error>;
 
     /// This function is called to clean up resources after the code generation process is end.
     fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<TokenStream, Self::Error>;
@@ -240,6 +229,21 @@ pub trait EventBinder {
     fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<(), Self::Error>;
 }
 
+/// A trait object returns by [`bind_tuple`](ContractBinder::bind_tuple) function.
+pub trait TupleBinder {
+    type Error: BinderError;
+
+    fn bind_input(
+        &mut self,
+        cx: &BinderContext<'_>,
+        index: usize,
+        parameter: &Parameter,
+    ) -> Result<(), Self::Error>;
+
+    /// This function is called to clean up resources after the code generation process is end.
+    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<(), Self::Error>;
+}
+
 /// A trait object returns by [`bind_error`](ContractBinder::bind_error) function.
 pub trait ErrorBinder {
     type Error: BinderError;
@@ -258,101 +262,86 @@ pub trait ErrorBinder {
 /// Invoke code generation with `context data`.
 ///
 /// On success, returns the [`TokenStream`] of generated codes.
-pub fn bind<'a, B: Binder>(
-    cx: &BinderContext<'a>,
-    mut binder: B,
-) -> Result<TokenStream, BindError> {
-    let mut contract = binder
-        .prepare(cx, &cx.contract_name)
-        .map_err(map_binder_error)?;
+pub fn bind<'a, B: Binder>(cx: &BinderContext<'a>, mut binder: B) -> Result<TokenStream, B::Error> {
+    let mut contract = binder.prepare(cx, &cx.contract_name)?;
 
-    if let Some(bytecode) = cx.bytecode {
-        contract
-            .bind_deploy(cx, bytecode)
-            .map_err(map_binder_error)?;
+    for (name, fields) in &cx.components {
+        let mut binder = contract.bind_tuple(cx, name)?;
+
+        for (index, parameter) in fields.iter().enumerate() {
+            binder.bind_input(cx, index, parameter)?;
+        }
+
+        binder.finialize(cx)?;
     }
 
     for field in cx.fields {
         match field {
             AbiField::Function(function) => {
-                let mut binder = contract
-                    .bind_function(
-                        cx,
-                        &function.name,
-                        function.signature().as_str(),
-                        &function.state_mutability,
-                    )
-                    .map_err(map_binder_error)?;
+                let mut binder = contract.bind_function(
+                    cx,
+                    &function.name,
+                    function.signature().as_str(),
+                    &function.state_mutability,
+                )?;
 
                 for (index, parameter) in function.inputs.iter().enumerate() {
-                    binder
-                        .bind_input(cx, index, parameter)
-                        .map_err(map_binder_error)?;
+                    binder.bind_input(cx, index, parameter)?;
                 }
 
                 for (index, parameter) in function.outputs.iter().enumerate() {
-                    binder
-                        .bind_output(cx, index, parameter)
-                        .map_err(map_binder_error)?;
+                    binder.bind_output(cx, index, parameter)?;
                 }
 
-                binder.finialize(cx).map_err(map_binder_error)?;
+                binder.finialize(cx)?;
             }
             AbiField::Constructor(constructor) => {
-                let mut binder = contract
-                    .bind_constructor(
-                        cx,
-                        constructor.signature().as_str(),
-                        &constructor.state_mutability,
-                    )
-                    .map_err(map_binder_error)?;
+                let mut binder = contract.bind_constructor(
+                    cx,
+                    constructor.signature().as_str(),
+                    &constructor.state_mutability,
+                )?;
 
                 for (index, parameter) in constructor.inputs.iter().enumerate() {
-                    binder
-                        .bind_input(cx, index, parameter)
-                        .map_err(map_binder_error)?;
+                    binder.bind_input(cx, index, parameter)?;
                 }
 
-                binder.finialize(cx).map_err(map_binder_error)?;
+                binder.finialize(cx)?;
             }
             AbiField::Receive(receiver) => {
-                contract
-                    .bind_receiver(cx, &receiver.state_mutability)
-                    .map_err(map_binder_error)?;
+                contract.bind_receiver(cx, &receiver.state_mutability)?;
             }
             AbiField::Fallback(fallback) => {
-                contract
-                    .bind_receiver(cx, &fallback.state_mutability)
-                    .map_err(map_binder_error)?;
+                contract.bind_receiver(cx, &fallback.state_mutability)?;
             }
             AbiField::Event(event) => {
-                let mut binder = contract
-                    .bind_event(cx, &event.name, event.anonymous)
-                    .map_err(map_binder_error)?;
+                let signature = if event.anonymous {
+                    None
+                } else {
+                    Some(event.signature())
+                };
+
+                let mut binder = contract.bind_event(cx, &event.name, signature.as_deref())?;
 
                 for (index, parameter) in event.inputs.iter().enumerate() {
-                    binder
-                        .bind_input(cx, index, parameter)
-                        .map_err(map_binder_error)?;
+                    binder.bind_input(cx, index, parameter)?;
                 }
 
-                binder.finialize(cx).map_err(map_binder_error)?;
+                binder.finialize(cx)?;
             }
             AbiField::Error(e) => {
-                let mut binder = contract.bind_error(cx, &e.name).map_err(map_binder_error)?;
+                let mut binder = contract.bind_error(cx, &e.name, e.signature().as_str())?;
 
                 for (index, parameter) in e.inputs.iter().enumerate() {
-                    binder
-                        .bind_input(cx, index, parameter)
-                        .map_err(map_binder_error)?;
+                    binder.bind_input(cx, index, parameter)?;
                 }
 
-                binder.finialize(cx).map_err(map_binder_error)?;
+                binder.finialize(cx)?;
             }
         }
     }
 
-    Ok(contract.finialize(cx).map_err(map_binder_error)?)
+    Ok(contract.finialize(cx)?)
 }
 
 #[cfg(test)]
