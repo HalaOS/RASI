@@ -23,16 +23,15 @@ pub mod clients;
 pub mod rlp;
 
 #[cfg(feature = "macros")]
-#[cfg_attr(docsrs, doc(cfg(feature = "macros")))]
+#[doc(hidden)]
 pub mod macros;
 
+#[doc(hidden)]
 pub mod runtimes {
     pub use super::primitives::{balance::TransferOptions, *};
 
     #[cfg(feature = "abi")]
     pub use super::abi::{from_abi, to_abi};
-
-    pub use serde;
 
     #[cfg(feature = "signer")]
     pub use super::signer::SignerWithProvider;
