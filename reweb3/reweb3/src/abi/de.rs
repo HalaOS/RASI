@@ -416,7 +416,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut AbiDeserializer {
 
                 visitor.visit_byte_buf(buff.to_vec())
             }
-            "address" | "bytesN" | "fixed32" => {
+            "address" | "bytesN" | "fixed32" | "uint256" | "int256" => {
                 let buff = self.read_static()?;
 
                 return visitor.visit_byte_buf(buff.to_vec());
@@ -604,8 +604,8 @@ impl<'de, 'a> de::SeqAccess<'de> for TupleAccess<'a> {
 }
 
 /// Deserialize rust value from contract abi format.
-pub fn from_abi<'de, D: Deserialize<'de>, B: Into<Bytes>>(data: B) -> Result<D, AbiDeError> {
-    let mut deserializer = AbiDeserializer::new(data.into());
+pub fn from_abi<'de, D: Deserialize<'de>, B: AsRef<[u8]>>(data: B) -> Result<D, AbiDeError> {
+    let mut deserializer = AbiDeserializer::new(Bytes::copy_from_slice(data.as_ref()));
 
     D::deserialize(&mut deserializer)
 }

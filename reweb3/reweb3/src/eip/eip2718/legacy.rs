@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rlp")]
-use super::keccak256;
+use crate::primitives::keccak256;
 
 use crate::primitives::{Address, Bytes, U256};
 #[cfg(feature = "rlp")]

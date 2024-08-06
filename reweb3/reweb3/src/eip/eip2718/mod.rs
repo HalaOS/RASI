@@ -10,19 +10,7 @@ use crate::{
     primitives::{Bytes, Eip1559Signature, H256},
 };
 
-fn keccak256<S>(bytes: S) -> [u8; 32]
-where
-    S: AsRef<[u8]>,
-{
-    let mut hasher = Keccak256::new();
-
-    hasher.update(bytes.as_ref());
-
-    hasher.finalize().into()
-}
-
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 
 /// Represents the various request types for Ethernet transactions.
 /// The jsonrpc api uses it to deserialize transactions..

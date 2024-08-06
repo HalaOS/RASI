@@ -1,10 +1,24 @@
 //! Implements ethereum H256 type.
 //!
 
+use sha3::{Digest, Keccak256};
+
 use super::hex::Hex;
 
 /// Represents solidity/jsonrpc type H256.
 pub type H256 = Hex<[u8; 32]>;
+
+/// Calculate the input data's keccak256 hash
+pub fn keccak256<S>(bytes: S) -> H256
+where
+    S: AsRef<[u8]>,
+{
+    let mut hasher = Keccak256::new();
+
+    hasher.update(bytes.as_ref());
+
+    Hex::<[u8; 32]>(hasher.finalize().into())
+}
 
 #[cfg(test)]
 mod tests {

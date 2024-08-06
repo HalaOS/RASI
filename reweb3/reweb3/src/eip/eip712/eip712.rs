@@ -2,27 +2,16 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use sha3::{Digest, Keccak256};
-
 use crate::{
     errors::Result,
     primitives::{Address, Bytes32, H256, U256},
+    runtimes::keccak256,
 };
 
 use super::serde::{
     eip712_encode_type, eip712_hash_struct, eip712_type_definitions, TypeDefinition,
 };
 
-pub fn keccak256<S>(bytes: S) -> [u8; 32]
-where
-    S: AsRef<[u8]>,
-{
-    let mut hasher = Keccak256::new();
-
-    hasher.update(bytes.as_ref());
-
-    hasher.finalize().into()
-}
 ///
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -62,7 +51,7 @@ where
     M: Serialize,
 {
     pub fn sign_hash(&self) -> Result<H256> {
-        Ok(keccak256(self.encode()?).into())
+        Ok(keccak256(self.encode()?))
     }
 
     pub fn encode(&self) -> Result<[u8; 66]> {

@@ -159,23 +159,23 @@ mod with_client {
         }
 
         /// Returns an object with data about the sync status or false
-        async fn eth_syncing(&mut self) -> Result<SyncingStatus> {
+        async fn eth_syncing(&self) -> Result<SyncingStatus> {
             self.1.eth_syncing().await
         }
 
         /// Returns the client coinbase address.
-        async fn eth_coinbase(&mut self) -> Result<Address> {
+        async fn eth_coinbase(&self) -> Result<Address> {
             self.1.eth_coinbase().await
         }
 
         /// Returns a list of addresses owned by client.
-        async fn eth_accounts(&mut self) -> Result<Vec<Address>> {
+        async fn eth_accounts(&self) -> Result<Vec<Address>> {
             self.1.eth_accounts().await
         }
 
         /// Executes a new message call immediately without creating a transaction on the block chain.
         async fn eth_call<TX, BT>(
-            &mut self,
+            &self,
             transaction: TX,
             block_number_or_tag: Option<BT>,
         ) -> Result<Bytes>
@@ -190,7 +190,7 @@ mod with_client {
 
         /// Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.
         async fn eth_estimate_gas<TX, BT>(
-            &mut self,
+            &self,
             transaction: TX,
             block_number_or_tag: Option<BT>,
         ) -> Result<U256>
@@ -207,7 +207,7 @@ mod with_client {
 
         /// Generates an access list for a transaction
         async fn eth_create_accesslist<TX, BT>(
-            &mut self,
+            &self,
             transaction: TX,
             block_number_or_tag: Option<BT>,
         ) -> Result<U256>
@@ -223,18 +223,18 @@ mod with_client {
         }
 
         /// Returns the current price gas in wei.
-        async fn eth_gas_price(&mut self) -> Result<U256> {
+        async fn eth_gas_price(&self) -> Result<U256> {
             self.1.eth_gas_price().await
         }
 
         /// Returns the current maxPriorityFeePerGas per gas in wei.
-        async fn eth_max_priority_fee_per_gas(&mut self) -> Result<U256> {
+        async fn eth_max_priority_fee_per_gas(&self) -> Result<U256> {
             self.1.eth_max_priority_fee_per_gas().await
         }
 
         /// Returns transaction base fee per gas and effective priority fee per gas for the requested/supported block range.
         async fn eth_fee_history<N, BT, RP>(
-            &mut self,
+            &self,
             block_count: N,
             newest_block: BT,
             reward_percentiles: RP,
@@ -252,7 +252,7 @@ mod with_client {
         }
 
         /// Returns transaction base fee per gas and effective priority fee per gas for the requested/supported block range.
-        async fn eth_new_filter<F>(&mut self, filter: F) -> Result<U256>
+        async fn eth_new_filter<F>(&self, filter: F) -> Result<U256>
         where
             F: TryInto<Filter> + Send,
             F::Error: Debug + Send,
@@ -261,17 +261,17 @@ mod with_client {
         }
 
         /// Creates new filter in the node,to notify when a new block arrives.
-        async fn eth_new_block_filter(&mut self) -> Result<U256> {
+        async fn eth_new_block_filter(&self) -> Result<U256> {
             self.1.eth_new_block_filter().await
         }
 
         /// Creates new filter in the node,to notify when new pending transactions arrive.
-        async fn eth_new_pending_transaction_filter(&mut self) -> Result<U256> {
+        async fn eth_new_pending_transaction_filter(&self) -> Result<U256> {
             self.1.eth_new_pending_transaction_filter().await
         }
 
         /// Uninstalls a filter with given id
-        async fn eth_uninstall_filter<N>(&mut self, id: N) -> Result<bool>
+        async fn eth_uninstall_filter<N>(&self, id: N) -> Result<bool>
         where
             N: TryInto<U256> + Send,
             N::Error: Debug + Send,
@@ -281,7 +281,7 @@ mod with_client {
 
         /// Polling method for a filter, which returns an arrya of logs which occurred since last poll
 
-        async fn eth_get_filter_changes<N>(&mut self, id: N) -> Result<Option<FilterEvents>>
+        async fn eth_get_filter_changes<N>(&self, id: N) -> Result<Option<FilterEvents>>
         where
             N: TryInto<U256> + Send,
             N::Error: Debug + Send,
@@ -290,7 +290,7 @@ mod with_client {
         }
 
         /// Returns any arrays of all logs matching filter with given id
-        async fn eth_get_filter_logs<N>(&mut self, id: N) -> Result<FilterEvents>
+        async fn eth_get_filter_logs<N>(&self, id: N) -> Result<FilterEvents>
         where
             N: TryInto<U256> + Send,
             N::Error: Debug + Send,
@@ -299,7 +299,7 @@ mod with_client {
         }
 
         /// Returns an array of all logs matching filter with filter description
-        async fn eth_get_logs<F>(&mut self, filter: F) -> Result<FilterEvents>
+        async fn eth_get_logs<F>(&self, filter: F) -> Result<FilterEvents>
         where
             F: TryInto<Filter> + Send,
             F::Error: Debug + Send,
@@ -308,7 +308,7 @@ mod with_client {
         }
 
         /// Returns an RLP encoded transaction signed by the specified account.
-        async fn eth_sign_transaction<T>(&mut self, transaction: T) -> Result<Bytes>
+        async fn eth_sign_transaction<T>(&self, transaction: T) -> Result<Bytes>
         where
             T: TryInto<Transaction> + Send,
             T::Error: Debug + Send,
@@ -317,7 +317,7 @@ mod with_client {
         }
 
         /// Returns the balance of the account given address.
-        async fn eth_get_balance<A>(&mut self, address: A) -> Result<U256>
+        async fn eth_get_balance<A>(&self, address: A) -> Result<U256>
         where
             A: TryInto<Address> + Send,
             A::Error: Debug + Send,
@@ -326,7 +326,7 @@ mod with_client {
         }
 
         /// Returns the number of transactions sent from an address
-        async fn eth_get_transaction_count<A>(&mut self, address: A) -> Result<U256>
+        async fn eth_get_transaction_count<A>(&self, address: A) -> Result<U256>
         where
             A: TryInto<Address> + Send,
             A::Error: Debug + Send,
@@ -335,7 +335,7 @@ mod with_client {
         }
 
         /// Submit a raw transaction.
-        async fn eth_send_raw_transaction<B>(&mut self, raw: B) -> Result<H256>
+        async fn eth_send_raw_transaction<B>(&self, raw: B) -> Result<H256>
         where
             B: TryInto<Bytes> + Send,
             B::Error: Debug + Send,
@@ -343,10 +343,7 @@ mod with_client {
             self.1.eth_send_raw_transaction(raw).await
         }
 
-        async fn eth_get_transaction_by_hash<H>(
-            &mut self,
-            tx_hash: H,
-        ) -> Result<Option<Transaction>>
+        async fn eth_get_transaction_by_hash<H>(&self, tx_hash: H) -> Result<Option<Transaction>>
         where
             H: TryInto<H256> + Send,
             H::Error: Debug + Send,
@@ -356,7 +353,7 @@ mod with_client {
 
         /// Returns the receipt of a transaction by transaction hash
         async fn eth_get_transaction_receipt<H>(
-            &mut self,
+            &self,
             tx_hash: H,
         ) -> Result<Option<TransactionReceipt>>
         where

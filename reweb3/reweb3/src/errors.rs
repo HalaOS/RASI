@@ -51,6 +51,9 @@ pub enum Error {
     #[cfg(feature = "abi")]
     #[error(transparent)]
     ContractAbiDeError(#[from] AbiDeError),
+
+    #[error("create logs filter failed: {0}")]
+    FilterBuilder(String),
 }
 
 /// Result type for web3rs.

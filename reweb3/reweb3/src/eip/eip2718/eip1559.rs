@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[cfg(feature = "rlp")]
-use super::keccak256;
+use crate::primitives::keccak256;
 
 /// Represents ethereum transaction type defined in eip1559.
 #[derive(Debug, Serialize, Deserialize, Clone)]

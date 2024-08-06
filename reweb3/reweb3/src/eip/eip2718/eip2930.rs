@@ -10,7 +10,7 @@ use crate::{
 use super::{AccessList, LegacyTransactionRequest};
 
 #[cfg(feature = "rlp")]
-use super::keccak256;
+use crate::primitives::keccak256;
 
 /// Represents ethereum transaction type defined in eip2930.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

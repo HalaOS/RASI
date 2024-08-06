@@ -868,7 +868,7 @@ impl ErrorBinder for RustErrorBinder {
             }
 
             impl #tuple_name {
-                pub fn signature() -> &'static str {
+                pub fn topic_filter() -> &'static str {
                     #signature
                 }
             }

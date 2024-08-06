@@ -140,7 +140,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns an object with data about the sync status or false
-    async fn eth_syncing(&mut self) -> Result<SyncingStatus> {
+    async fn eth_syncing(&self) -> Result<SyncingStatus> {
         Ok(self
             .0
             .clone()
@@ -149,7 +149,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns the client coinbase address.
-    async fn eth_coinbase(&mut self) -> Result<Address> {
+    async fn eth_coinbase(&self) -> Result<Address> {
         Ok(self
             .0
             .clone()
@@ -158,7 +158,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns a list of addresses owned by client.
-    async fn eth_accounts(&mut self) -> Result<Vec<Address>> {
+    async fn eth_accounts(&self) -> Result<Vec<Address>> {
         Ok(self
             .0
             .clone()
@@ -168,7 +168,7 @@ impl Client for JsonRpcProvider {
 
     /// Executes a new message call immediately without creating a transaction on the block chain.
     async fn eth_call<TX, BT>(
-        &mut self,
+        &self,
         transaction: TX,
         block_number_or_tag: Option<BT>,
     ) -> Result<Bytes>
@@ -195,7 +195,7 @@ impl Client for JsonRpcProvider {
 
     /// Generates and returns an estimate of how much gas is necessary to allow the transaction to complete.
     async fn eth_estimate_gas<TX, BT>(
-        &mut self,
+        &self,
         transaction: TX,
         block_number_or_tag: Option<BT>,
     ) -> Result<U256>
@@ -226,7 +226,7 @@ impl Client for JsonRpcProvider {
 
     /// Generates an access list for a transaction
     async fn eth_create_accesslist<TX, BT>(
-        &mut self,
+        &self,
         transaction: TX,
         block_number_or_tag: Option<BT>,
     ) -> Result<U256>
@@ -256,7 +256,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns the current price gas in wei.
-    async fn eth_gas_price(&mut self) -> Result<U256> {
+    async fn eth_gas_price(&self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -265,7 +265,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns the current maxPriorityFeePerGas per gas in wei.
-    async fn eth_max_priority_fee_per_gas(&mut self) -> Result<U256> {
+    async fn eth_max_priority_fee_per_gas(&self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -275,7 +275,7 @@ impl Client for JsonRpcProvider {
 
     /// Returns transaction base fee per gas and effective priority fee per gas for the requested/supported block range.
     async fn eth_fee_history<N, BT, RP>(
-        &mut self,
+        &self,
         block_count: N,
         newest_block: BT,
         reward_percentiles: RP,
@@ -302,7 +302,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns transaction base fee per gas and effective priority fee per gas for the requested/supported block range.
-    async fn eth_new_filter<F>(&mut self, filter: F) -> Result<U256>
+    async fn eth_new_filter<F>(&self, filter: F) -> Result<U256>
     where
         F: TryInto<Filter> + Send,
         F::Error: Debug + Send,
@@ -313,7 +313,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Creates new filter in the node,to notify when a new block arrives.
-    async fn eth_new_block_filter(&mut self) -> Result<U256> {
+    async fn eth_new_block_filter(&self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -322,7 +322,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Creates new filter in the node,to notify when new pending transactions arrive.
-    async fn eth_new_pending_transaction_filter(&mut self) -> Result<U256> {
+    async fn eth_new_pending_transaction_filter(&self) -> Result<U256> {
         Ok(self
             .0
             .clone()
@@ -331,7 +331,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Uninstalls a filter with given id
-    async fn eth_uninstall_filter<N>(&mut self, id: N) -> Result<bool>
+    async fn eth_uninstall_filter<N>(&self, id: N) -> Result<bool>
     where
         N: TryInto<U256> + Send,
         N::Error: Debug + Send,
@@ -343,7 +343,7 @@ impl Client for JsonRpcProvider {
 
     /// Polling method for a filter, which returns an arrya of logs which occurred since last poll
 
-    async fn eth_get_filter_changes<N>(&mut self, id: N) -> Result<Option<FilterEvents>>
+    async fn eth_get_filter_changes<N>(&self, id: N) -> Result<Option<FilterEvents>>
     where
         N: TryInto<U256> + Send,
         N::Error: Debug + Send,
@@ -358,7 +358,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns any arrays of all logs matching filter with given id
-    async fn eth_get_filter_logs<N>(&mut self, id: N) -> Result<FilterEvents>
+    async fn eth_get_filter_logs<N>(&self, id: N) -> Result<FilterEvents>
     where
         N: TryInto<U256> + Send,
         N::Error: Debug + Send,
@@ -369,7 +369,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns an array of all logs matching filter with filter description
-    async fn eth_get_logs<F>(&mut self, filter: F) -> Result<FilterEvents>
+    async fn eth_get_logs<F>(&self, filter: F) -> Result<FilterEvents>
     where
         F: TryInto<Filter> + Send,
         F::Error: Debug + Send,
@@ -380,7 +380,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns an RLP encoded transaction signed by the specified account.
-    async fn eth_sign_transaction<T>(&mut self, transaction: T) -> Result<Bytes>
+    async fn eth_sign_transaction<T>(&self, transaction: T) -> Result<Bytes>
     where
         T: TryInto<Transaction> + Send,
         T::Error: Debug + Send,
@@ -395,7 +395,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns the balance of the account given address.
-    async fn eth_get_balance<A>(&mut self, address: A) -> Result<U256>
+    async fn eth_get_balance<A>(&self, address: A) -> Result<U256>
     where
         A: TryInto<Address> + Send,
         A::Error: Debug + Send,
@@ -406,7 +406,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns the number of transactions sent from an address
-    async fn eth_get_transaction_count<A>(&mut self, address: A) -> Result<U256>
+    async fn eth_get_transaction_count<A>(&self, address: A) -> Result<U256>
     where
         A: TryInto<Address> + Send,
         A::Error: Debug + Send,
@@ -421,7 +421,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Submit a raw transaction.
-    async fn eth_send_raw_transaction<B>(&mut self, raw: B) -> Result<H256>
+    async fn eth_send_raw_transaction<B>(&self, raw: B) -> Result<H256>
     where
         B: TryInto<Bytes> + Send,
         B::Error: Debug + Send,
@@ -435,7 +435,7 @@ impl Client for JsonRpcProvider {
             .await?)
     }
 
-    async fn eth_get_transaction_by_hash<H>(&mut self, tx_hash: H) -> Result<Option<Transaction>>
+    async fn eth_get_transaction_by_hash<H>(&self, tx_hash: H) -> Result<Option<Transaction>>
     where
         H: TryInto<H256> + Send,
         H::Error: Debug + Send,
@@ -450,10 +450,7 @@ impl Client for JsonRpcProvider {
     }
 
     /// Returns the receipt of a transaction by transaction hash
-    async fn eth_get_transaction_receipt<H>(
-        &mut self,
-        tx_hash: H,
-    ) -> Result<Option<TransactionReceipt>>
+    async fn eth_get_transaction_receipt<H>(&self, tx_hash: H) -> Result<Option<TransactionReceipt>>
     where
         H: TryInto<H256> + Send,
         H::Error: Debug + Send,
@@ -470,12 +467,19 @@ impl Client for JsonRpcProvider {
 
 #[cfg(all(test, feature = "test-clients"))]
 mod tests {
-    use std::sync::{Once, OnceLock};
+    use std::{
+        str::FromStr,
+        sync::{Once, OnceLock},
+    };
 
     use futures_jsonrpcv2::rasi::http::HttpJsonRpcClient;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
 
-    use crate::clients::BlockTag;
+    use crate::{
+        abi::from_abi,
+        clients::{BlockTag, Topic},
+        runtimes::keccak256,
+    };
 
     use super::*;
 
@@ -593,5 +597,37 @@ mod tests {
             .eth_get_uncle_count_by_block_number(BlockTag::Earliest)
             .await
             .unwrap();
+    }
+
+    #[futures_test::test]
+    async fn eth_get_logs() {
+        let provider = init();
+
+        let filter = Filter::new()
+            .with_block(20427505)
+            .with_address("0x1425273B6696d9f8Dbbe60FE4340029548590a45")
+            .with_topics((
+                Topic::from([
+                    keccak256("Transfer(address,address,uint256)"),
+                    keccak256("ETHReceived1(uint256)"),
+                ]),
+                Topic::from_simple_value(
+                    Address::from_str("0x9ffaBEC0355d7ae65E3441d02b9eF212cF3A943F").unwrap(),
+                ),
+            ))
+            .create()
+            .unwrap();
+
+        let events = provider.eth_get_logs(filter).await.unwrap();
+
+        if let FilterEvents::Logs(logs) = events {
+            assert_eq!(logs.len(), 1);
+
+            let amount: U256 = from_abi(&logs[0].data).unwrap();
+
+            assert_eq!(amount, U256::from(7033000000000000000000u128));
+        } else {
+            assert!(false);
+        }
     }
 }

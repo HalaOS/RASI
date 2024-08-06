@@ -11,3 +11,21 @@ pub type I16 = i16;
 pub type I32 = i32;
 pub type I64 = i64;
 pub type I128 = i128;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::{abi::from_abi, runtimes::Bytes};
+
+    #[test]
+    fn test_abi_decode() {
+        let hex: Bytes = "0x00000000000000000000000000000000000000000000000000ae09a16fb800f1"
+            .parse()
+            .unwrap();
+
+        let value: U256 = from_abi(&hex).unwrap();
+
+        assert_eq!(value, U256::from(48987234916368625u128));
+    }
+}

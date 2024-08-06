@@ -37,7 +37,7 @@ pub mod runtimes {
     pub use super::signer::SignerWithProvider;
 
     #[cfg(feature = "clients")]
-    pub use super::clients::Client;
+    pub use super::clients::*;
 }
 
 #[cfg(feature = "bind")]

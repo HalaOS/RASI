@@ -1,9 +1,13 @@
+use std::fmt::Debug;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
+    abi::to_abi,
     eip::eip2718::AccessList,
-    errors::Error,
+    errors::{Error, Result},
     primitives::{Address, Bytes, Hex, H256, U256},
+    runtimes::{keccak256, HexError},
 };
 
 /// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
@@ -199,7 +203,7 @@ impl From<U256> for BlockNumberOrTag {
 
 impl TryFrom<&str> for BlockNumberOrTag {
     type Error = Error;
-    fn try_from(v: &str) -> Result<Self, Self::Error> {
+    fn try_from(v: &str) -> std::result::Result<Self, Self::Error> {
         if v.starts_with("0x") {
             Ok(BlockNumberOrTag::U256(
                 U256::from_str_radix(&v[2..], 16).map_err(|err| Error::Other(err.to_string()))?,
@@ -214,7 +218,7 @@ impl TryFrom<&str> for BlockNumberOrTag {
 
 impl TryFrom<String> for BlockNumberOrTag {
     type Error = Error;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
         value.as_str().try_into()
     }
 }
@@ -222,7 +226,7 @@ impl TryFrom<String> for BlockNumberOrTag {
 impl TryFrom<BlockTag> for BlockNumberOrTag {
     type Error = Error;
 
-    fn try_from(value: BlockTag) -> Result<Self, Self::Error> {
+    fn try_from(value: BlockTag) -> std::result::Result<Self, Self::Error> {
         Ok(BlockNumberOrTag::Tag(value))
     }
 }
@@ -259,23 +263,96 @@ pub enum BlockTag {
 ///
 /// If a topic-set is an array of topics, a log topic in that position must match any one
 /// of the topics (i.e. the topic in this position are OR-ed).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct TopicFilter(Topic, Topic, Topic, Topic);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TopicFilter(
+    pub Topic,
+    #[serde(skip_serializing_if = "Option::is_none")] pub Option<Topic>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub Option<Topic>,
+    #[serde(skip_serializing_if = "Option::is_none")] pub Option<Topic>,
+);
+
+impl From<Topic> for TopicFilter {
+    fn from(value: Topic) -> Self {
+        TopicFilter(value, None, None, None)
+    }
+}
+
+impl From<(Topic, Topic)> for TopicFilter {
+    fn from(value: (Topic, Topic)) -> Self {
+        TopicFilter(value.0, Some(value.1), None, None)
+    }
+}
+
+impl From<(Topic, Topic, Topic)> for TopicFilter {
+    fn from(value: (Topic, Topic, Topic)) -> Self {
+        TopicFilter(value.0, Some(value.1), Some(value.2), None)
+    }
+}
+
+impl From<(Topic, Topic, Topic, Topic)> for TopicFilter {
+    fn from(value: (Topic, Topic, Topic, Topic)) -> Self {
+        TopicFilter(value.0, Some(value.1), Some(value.2), Some(value.3))
+    }
+}
 
 /// Topic filter expr
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(untagged)]
 pub enum Topic {
-    /// Not filtered at all and any value matches
-    Unset,
     /// Match any of the hashes.
     OneOf(Vec<H256>),
     /// Match only this hash.
     This(H256),
 }
 
-impl Default for Topic {
-    fn default() -> Self {
-        Self::Unset
+impl<const N: usize> From<[H256; N]> for Topic {
+    fn from(value: [H256; N]) -> Self {
+        Self::OneOf(value.to_vec())
+    }
+}
+
+impl Topic {
+    /// Create topic from event's/error's signature.
+    pub fn signature(value: &str) -> Self {
+        Self::This(keccak256(value))
+    }
+
+    /// Create new topic from simple abi value.
+    ///
+    /// This function will panic, if passed tuple value to.
+    pub fn from_simple_value<T>(value: T) -> Self
+    where
+        T: Serialize,
+    {
+        Self::This(Self::from_simple_value_priv(value))
+    }
+
+    /// Create new topic from simple abi values.
+    ///
+    /// This function will panic, if passed tuple value to.
+    pub fn from_simple_values<T>(value: &[T]) -> Self
+    where
+        T: Serialize,
+    {
+        Self::OneOf(
+            value
+                .iter()
+                .map(Self::from_simple_value_priv)
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn from_simple_value_priv<T>(value: T) -> H256
+    where
+        T: Serialize,
+    {
+        let abi = to_abi(value).expect("Encode simple value");
+
+        let mut buf = [0u8; 32];
+
+        buf.copy_from_slice(abi.as_slice());
+
+        H256::from(buf)
     }
 }
 
@@ -287,20 +364,86 @@ pub enum AddressFilter {
     Addresses(Vec<Address>),
 }
 
-impl From<Address> for AddressFilter {
-    fn from(value: Address) -> Self {
-        AddressFilter::Address(value)
+// impl From<Address> for AddressFilter {
+//     fn from(value: Address) -> Self {
+//         AddressFilter::Address(value)
+//     }
+// }
+
+// impl From<Vec<Address>> for AddressFilter {
+//     fn from(value: Vec<Address>) -> Self {
+//         AddressFilter::Addresses(value)
+//     }
+// }
+
+impl TryFrom<&str> for AddressFilter {
+    type Error = HexError;
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        let address: Address = value.parse()?;
+
+        Ok(Self::Address(address))
     }
 }
 
-impl From<Vec<Address>> for AddressFilter {
-    fn from(value: Vec<Address>) -> Self {
-        AddressFilter::Addresses(value)
+impl<const N: usize> TryFrom<[&str; N]> for AddressFilter {
+    type Error = HexError;
+    fn try_from(value: [&str; N]) -> std::result::Result<Self, Self::Error> {
+        let mut addresses = vec![];
+        for address in value {
+            addresses.push(address.parse()?);
+        }
+
+        Ok(Self::Addresses(addresses))
+    }
+}
+
+impl TryFrom<String> for AddressFilter {
+    type Error = HexError;
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        let address: Address = value.parse()?;
+
+        Ok(Self::Address(address))
+    }
+}
+
+impl<const N: usize> TryFrom<[String; N]> for AddressFilter {
+    type Error = HexError;
+    fn try_from(value: [String; N]) -> std::result::Result<Self, Self::Error> {
+        let mut addresses = vec![];
+        for address in value {
+            addresses.push(address.parse()?);
+        }
+
+        Ok(Self::Addresses(addresses))
+    }
+}
+
+impl TryFrom<&[&str]> for AddressFilter {
+    type Error = HexError;
+    fn try_from(value: &[&str]) -> std::result::Result<Self, Self::Error> {
+        let mut addresses = vec![];
+        for address in value {
+            addresses.push(address.parse()?);
+        }
+
+        Ok(Self::Addresses(addresses))
+    }
+}
+
+impl TryFrom<&[String]> for AddressFilter {
+    type Error = HexError;
+    fn try_from(value: &[String]) -> std::result::Result<Self, Self::Error> {
+        let mut addresses = vec![];
+        for address in value {
+            addresses.push(address.parse()?);
+        }
+
+        Ok(Self::Addresses(addresses))
     }
 }
 
 /// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Filter {
     /// The lowest number block of returned range.
@@ -313,25 +456,126 @@ pub struct Filter {
     pub topics: Option<TopicFilter>,
 }
 
-impl From<(Address, TopicFilter)> for Filter {
-    fn from(value: (Address, TopicFilter)) -> Self {
-        Filter {
-            from_block: None,
-            to_block: None,
-            address: Some(AddressFilter::Address(value.0)),
-            topics: Some(value.1),
+impl Filter {
+    /// Create a new filter with nothing.
+    pub fn new() -> FilterBuilder {
+        FilterBuilder::default()
+    }
+}
+
+#[derive(Debug)]
+pub struct FilterBuilder {
+    filter: Result<Filter>,
+}
+
+impl Default for FilterBuilder {
+    fn default() -> Self {
+        Self {
+            filter: Ok(Filter::default()),
         }
     }
 }
 
-impl From<(Vec<Address>, TopicFilter)> for Filter {
-    fn from(value: (Vec<Address>, TopicFilter)) -> Self {
-        Filter {
-            from_block: None,
-            to_block: None,
-            address: Some(AddressFilter::Addresses(value.0)),
-            topics: Some(value.1),
+impl FilterBuilder {
+    fn and_then<F>(self, func: F) -> Self
+    where
+        F: FnOnce(Filter) -> Result<Filter>,
+    {
+        Self {
+            filter: self.filter.and_then(func),
         }
+    }
+
+    /// Set the from_block field.
+    pub fn with_from_block<N>(self, block_num: N) -> Self
+    where
+        N: TryInto<U256>,
+        N::Error: Debug,
+    {
+        self.and_then(|mut value| {
+            value.from_block = Some(
+                block_num
+                    .try_into()
+                    .map_err(|err| Error::FilterBuilder(format!("{:?}", err)))?,
+            );
+
+            Ok(value)
+        })
+    }
+
+    /// Set the to_block field.
+    pub fn with_to_block<N>(self, block_num: N) -> Self
+    where
+        N: TryInto<U256>,
+        N::Error: Debug,
+    {
+        self.and_then(|mut value| {
+            value.to_block = Some(
+                block_num
+                    .try_into()
+                    .map_err(|err| Error::FilterBuilder(format!("{:?}", err)))?,
+            );
+
+            Ok(value)
+        })
+    }
+
+    /// Set both the from_block and the to_block fields.
+    pub fn with_block<N>(self, block_num: N) -> Self
+    where
+        N: TryInto<U256>,
+        N::Error: Debug,
+    {
+        self.and_then(|mut value| {
+            let block_num = block_num
+                .try_into()
+                .map_err(|err| Error::FilterBuilder(format!("{:?}", err)))?;
+
+            value.from_block = Some(block_num);
+
+            value.to_block = Some(block_num);
+
+            Ok(value)
+        })
+    }
+
+    /// set the address field.
+    pub fn with_address<A>(self, filter: A) -> Self
+    where
+        A: TryInto<AddressFilter>,
+        A::Error: Debug,
+    {
+        self.and_then(|mut value| {
+            let filter = filter
+                .try_into()
+                .map_err(|err| Error::FilterBuilder(format!("{:?}", err)))?;
+
+            value.address = Some(filter);
+
+            Ok(value)
+        })
+    }
+
+    /// set the topics field.
+    pub fn with_topics<T>(self, filter: T) -> Self
+    where
+        T: TryInto<TopicFilter>,
+        T::Error: Debug,
+    {
+        self.and_then(|mut value| {
+            let filter = filter
+                .try_into()
+                .map_err(|err| Error::FilterBuilder(format!("{:?}", err)))?;
+
+            value.topics = Some(filter);
+
+            Ok(value)
+        })
+    }
+
+    /// Consume self and create a new filter from this builder.
+    pub fn create(self) -> Result<Filter> {
+        self.filter
     }
 }
 
