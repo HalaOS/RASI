@@ -9,21 +9,29 @@ use crate::{
     eip::{eip2718::TypedTransactionRequest, eip712::TypedData},
     errors::Result,
     primitives::{Bytes, Eip1559Signature},
+    runtimes::Address,
 };
 
 /// Represent a data signer for etherenum client.
 #[async_trait]
 pub trait Signer {
     /// Signs the transaction request and returns the signed transaction request in [`rlp`](crate::rlp) format.
-    async fn sign_transaction<T>(&self, request: T) -> Result<Bytes>
+    async fn sign_transaction<T>(&self, request: T, with_account: Option<Address>) -> Result<Bytes>
     where
         T: TryInto<TypedTransactionRequest> + Send,
         T::Error: Debug + Send;
 
     /// Calculate the signature of the [`TypedData`] defined in [`eip-712`](https://eips.ethereum.org/EIPS/eip-712)
-    async fn sign_typed_data<V>(&self, typed_data: TypedData<V>) -> Result<Eip1559Signature>
+    async fn sign_typed_data<V>(
+        &self,
+        typed_data: TypedData<V>,
+        with_account: Option<Address>,
+    ) -> Result<Eip1559Signature>
     where
         V: Serialize + Send;
+
+    /// Returns the signer's account addresss.
+    async fn signer_accounts(&self) -> Result<Vec<Address>>;
 }
 
 #[cfg(feature = "clients")]
@@ -37,6 +45,7 @@ mod with_client {
             Block, BlockNumberOrTag, Client, FeeHistory, Filter, FilterEvents, SyncingStatus,
             Transaction, TransactionReceipt,
         },
+        errors::Error,
         primitives::{balance::TransferOptions, Address, Bytes, H256},
     };
 
@@ -66,6 +75,17 @@ mod with_client {
         ) -> Result<H256> {
             todo!()
         }
+
+        /// Get the balance of this signer's first account.
+        async fn balance(&self) -> Result<U256> {
+            let addresses = self.signer_accounts().await?;
+
+            if addresses.is_empty() {
+                return Err(Error::Other("Signer account list is empty".to_string()));
+            }
+
+            Ok(self.eth_get_balance(addresses[0].clone()).await?)
+        }
     }
 
     #[async_trait]
@@ -75,20 +95,33 @@ mod with_client {
         C: Client + Sync + Send + Unpin,
     {
         /// Signs the transaction request and returns the signed transaction request in [`rlp`](crate::rlp) format.
-        async fn sign_transaction<T>(&self, request: T) -> Result<Bytes>
+        async fn sign_transaction<T>(
+            &self,
+            request: T,
+            with_account: Option<Address>,
+        ) -> Result<Bytes>
         where
             T: TryInto<TypedTransactionRequest> + Send,
             T::Error: Debug + Send,
         {
-            self.0.sign_transaction(request).await
+            self.0.sign_transaction(request, with_account).await
         }
 
         /// Calculate the signature of the [`TypedData`] defined in [`eip-712`](https://eips.ethereum.org/EIPS/eip-712)
-        async fn sign_typed_data<V>(&self, typed_data: TypedData<V>) -> Result<Eip1559Signature>
+        async fn sign_typed_data<V>(
+            &self,
+            typed_data: TypedData<V>,
+            with_account: Option<Address>,
+        ) -> Result<Eip1559Signature>
         where
             V: Serialize + Send,
         {
-            self.0.sign_typed_data(typed_data).await
+            self.0.sign_typed_data(typed_data, with_account).await
+        }
+
+        /// Returns the signer's account addresss.
+        async fn signer_accounts(&self) -> Result<Vec<Address>> {
+            self.0.signer_accounts().await
         }
     }
 
