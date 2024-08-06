@@ -114,7 +114,7 @@ pub trait ContractBinder {
     type ConstructorBinder: ConstructorBinder<Error = Self::Error>;
     type FunctionBinder: FunctionBinder<Error = Self::Error>;
     type EventBinder: EventBinder<Error = Self::Error>;
-    type ErrorBinder: ErrorBinder<Error = Self::Error>;
+    type ErrorBinder: EventBinder<Error = Self::Error>;
     type TupleBinder: TupleBinder<Error = Self::Error>;
 
     fn bind_tuple(
@@ -231,21 +231,6 @@ pub trait EventBinder {
 
 /// A trait object returns by [`bind_tuple`](ContractBinder::bind_tuple) function.
 pub trait TupleBinder {
-    type Error: BinderError;
-
-    fn bind_input(
-        &mut self,
-        cx: &BinderContext<'_>,
-        index: usize,
-        parameter: &Parameter,
-    ) -> Result<(), Self::Error>;
-
-    /// This function is called to clean up resources after the code generation process is end.
-    fn finialize(&mut self, cx: &BinderContext<'_>) -> Result<(), Self::Error>;
-}
-
-/// A trait object returns by [`bind_error`](ContractBinder::bind_error) function.
-pub trait ErrorBinder {
     type Error: BinderError;
 
     fn bind_input(

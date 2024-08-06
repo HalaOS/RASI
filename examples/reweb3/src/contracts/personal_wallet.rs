@@ -20,6 +20,56 @@ pub mod events {
             "Delist(address,uint256,address)"
         }
     }
+    impl Delist {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let from: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[1usize])
+                .map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let token_id: reweb3::runtimes::U256 = reweb3::runtimes::from_abi(&log.topics[2usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            if !(log.topics.len() > 3usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let to: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[3usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (): () = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(Delist { from, token_id, to })
+        }
+    }
     pub struct List {
         pub from: reweb3::runtimes::Address,
         pub token_id: reweb3::runtimes::U256,
@@ -28,6 +78,56 @@ pub mod events {
     impl List {
         pub fn signature() -> &'static str {
             "List(address,uint256,address)"
+        }
+    }
+    impl List {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let from: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[1usize])
+                .map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let token_id: reweb3::runtimes::U256 = reweb3::runtimes::from_abi(&log.topics[2usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            if !(log.topics.len() > 3usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let to: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[3usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (): () = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(List { from, token_id, to })
         }
     }
     pub struct MakerBurn {
@@ -39,6 +139,46 @@ pub mod events {
             "MakerBurn(address,uint256)"
         }
     }
+    impl MakerBurn {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let from: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[1usize])
+                .map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let token_id: reweb3::runtimes::U256 = reweb3::runtimes::from_abi(&log.topics[2usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (): () = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(MakerBurn { from, token_id })
+        }
+    }
     pub struct MakerMint {
         pub from: reweb3::runtimes::Address,
         pub token_id: reweb3::runtimes::U256,
@@ -47,6 +187,60 @@ pub mod events {
     impl MakerMint {
         pub fn signature() -> &'static str {
             "MakerMint(address,uint256,address)"
+        }
+    }
+    impl MakerMint {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let from: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[1usize])
+                .map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let token_id: reweb3::runtimes::U256 = reweb3::runtimes::from_abi(&log.topics[2usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            if !(log.topics.len() > 3usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let dex: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[3usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (): () = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(MakerMint {
+                from,
+                token_id,
+                dex,
+            })
         }
     }
     pub struct MakerUpdate {
@@ -60,6 +254,54 @@ pub mod events {
             "MakerUpdate(address,uint256,uint256,uint256)"
         }
     }
+    impl MakerUpdate {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let from: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[1usize])
+                .map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let token_id: reweb3::runtimes::U256 = reweb3::runtimes::from_abi(&log.topics[2usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (settle_sku_quantity_or_id, settle_payment_or_id): (
+                reweb3::runtimes::U256,
+                reweb3::runtimes::U256,
+            ) = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(MakerUpdate {
+                from,
+                token_id,
+                settle_sku_quantity_or_id,
+                settle_payment_or_id,
+            })
+        }
+    }
     pub struct OwnershipTransferred {
         pub previous_owner: reweb3::runtimes::Address,
         pub new_owner: reweb3::runtimes::Address,
@@ -67,6 +309,49 @@ pub mod events {
     impl OwnershipTransferred {
         pub fn signature() -> &'static str {
             "OwnershipTransferred(address,address)"
+        }
+    }
+    impl OwnershipTransferred {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let previous_owner: reweb3::runtimes::Address =
+                reweb3::runtimes::from_abi(&log.topics[1usize]).map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let new_owner: reweb3::runtimes::Address =
+                reweb3::runtimes::from_abi(&log.topics[2usize]).map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (): () = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(OwnershipTransferred {
+                previous_owner,
+                new_owner,
+            })
         }
     }
     pub struct TakerBurn {
@@ -80,6 +365,54 @@ pub mod events {
             "TakerBurn(address,uint256,uint256,uint256)"
         }
     }
+    impl TakerBurn {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let from: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[1usize])
+                .map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let token_id: reweb3::runtimes::U256 = reweb3::runtimes::from_abi(&log.topics[2usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (response_sku_quantity_or_id, response_price_quantity_or_id): (
+                reweb3::runtimes::U256,
+                reweb3::runtimes::U256,
+            ) = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(TakerBurn {
+                from,
+                token_id,
+                response_sku_quantity_or_id,
+                response_price_quantity_or_id,
+            })
+        }
+    }
     pub struct TakerMint {
         pub from: reweb3::runtimes::Address,
         pub token_id: reweb3::runtimes::U256,
@@ -89,6 +422,54 @@ pub mod events {
     impl TakerMint {
         pub fn signature() -> &'static str {
             "TakerMint(address,uint256,uint256,uint256)"
+        }
+    }
+    impl TakerMint {
+        pub fn from_log(log: reweb3::runtimes::Log) -> std::io::Result<Self> {
+            if log.topics.is_empty() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            if reweb3::runtimes::keccak256(Self::signature()) != log.topics[0] {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: signature mismatch"),
+                ));
+            }
+            if !(log.topics.len() > 1usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let from: reweb3::runtimes::Address = reweb3::runtimes::from_abi(&log.topics[1usize])
+                .map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            if !(log.topics.len() > 2usize) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("decode log failed: topic out of range"),
+                ));
+            }
+            let token_id: reweb3::runtimes::U256 = reweb3::runtimes::from_abi(&log.topics[2usize])
+                .map_err(|err| {
+                    std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+                })?;
+            let (request_sku_quantity_or_id, request_price_quantity_or_id): (
+                reweb3::runtimes::U256,
+                reweb3::runtimes::U256,
+            ) = reweb3::runtimes::from_abi(log.data).map_err(|err| {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}", err))
+            })?;
+            Ok(TakerMint {
+                from,
+                token_id,
+                request_sku_quantity_or_id,
+                request_price_quantity_or_id,
+            })
         }
     }
 }

@@ -14,5 +14,7 @@
   "rt_transfer_ops": "reweb3::runtimes::TransferOptions",
   "rt_serialize_derive": "reweb3::runtimes::Serialize",
   "rt_deserialize_derive": "reweb3::runtimes::Deserialize",
+  "rt_log": "reweb3::runtimes::Log",
+  "rt_keccak256": "reweb3::runtimes::keccak256",
   "rt_h256": "reweb3::runtimes::H256"
 }

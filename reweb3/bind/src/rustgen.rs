@@ -14,7 +14,7 @@ use quote::{format_ident, quote};
 
 use crate::{
     binder::{
-        bind, Binder, BinderContext, ConstructorBinder, ContractBinder, ErrorBinder, EventBinder,
+        bind, Binder, BinderContext, ConstructorBinder, ContractBinder, EventBinder,
         FunctionBinder, TupleBinder,
     },
     mapping::BinderTypeMapping,
@@ -32,6 +32,12 @@ pub enum RustBinderError {
 
     #[error("`address` type mapping not found")]
     RuntimeAddressType,
+
+    #[error("`rt_log` type mapping not found")]
+    RuntimeLogType,
+
+    #[error("`rt_keccak256` fn mapping not found")]
+    RuntimeKeccak256Fn,
 
     #[error("`rt_h256` type mapping not found")]
     RuntimeH256Type,
@@ -128,7 +134,7 @@ impl ContractBinder for RustContractBinder {
 
     type EventBinder = RustEventBinder;
 
-    type ErrorBinder = RustErrorBinder;
+    type ErrorBinder = RustEventBinder;
 
     type TupleBinder = RustTupleBinder;
 
@@ -186,6 +192,7 @@ impl ContractBinder for RustContractBinder {
             name.to_owned(),
             signature.map(str::to_owned),
             self.context.clone(),
+            false,
         ))
     }
 
@@ -195,10 +202,11 @@ impl ContractBinder for RustContractBinder {
         name: &str,
         signature: &str,
     ) -> Result<Self::ErrorBinder, Self::Error> {
-        Ok(RustErrorBinder::new(
+        Ok(RustEventBinder::new(
             name.to_owned(),
-            signature.to_owned(),
+            Some(signature.to_owned()),
             self.context.clone(),
+            true,
         ))
     }
 
@@ -744,6 +752,12 @@ pub struct RustEventBinder {
     signature: Option<String>,
     context: Rc<RefCell<RustContractBinderContext>>,
     field_list: Vec<TokenStream>,
+    field_name_list: Vec<TokenStream>,
+    topic_decode_list: Vec<TokenStream>,
+    data_decode_list: Vec<TokenStream>,
+    data_decode_type_list: Vec<TokenStream>,
+    topic_index: usize,
+    is_error: bool,
 }
 
 impl RustEventBinder {
@@ -751,12 +765,19 @@ impl RustEventBinder {
         name: String,
         signature: Option<String>,
         context: Rc<RefCell<RustContractBinderContext>>,
+        is_error: bool,
     ) -> Self {
         Self {
+            topic_index: if signature.is_some() { 1 } else { 0 },
+            is_error,
             name,
             signature,
             context,
             field_list: Default::default(),
+            field_name_list: Default::default(),
+            topic_decode_list: Default::default(),
+            data_decode_list: Default::default(),
+            data_decode_type_list: Default::default(),
         }
     }
 }
@@ -775,9 +796,35 @@ impl EventBinder for RustEventBinder {
 
         let field_name: Ident = format_ident!("{}", param.name.to_snek_case());
 
+        let abi_decode = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_abi_decode",
+        )?
+        .ok_or(RustBinderError::RuntimeAbiDecodeFn)?;
+
+        let topic_index = self.topic_index;
+
         self.field_list.push(quote! {
             pub #field_name: #rt_ident
         });
+
+        self.field_name_list.push(quote! {#field_name});
+
+        if param.indexed {
+            self.topic_index += 1;
+            self.topic_decode_list.push(quote! {
+
+                if !(log.topics.len() > #topic_index) {
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("decode log failed: topic out of range")));
+                }
+
+                let #field_name: #rt_ident = #abi_decode(&log.topics[#topic_index])
+                    .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
+            });
+        } else {
+            self.data_decode_list.push(quote! {#field_name});
+            self.data_decode_type_list.push(quote! {#rt_ident});
+        }
 
         Ok(())
     }
@@ -785,7 +832,28 @@ impl EventBinder for RustEventBinder {
     fn finialize(&mut self, _cx: &crate::binder::BinderContext<'_>) -> Result<(), Self::Error> {
         let tuple_name = format_ident!("{}", self.name);
 
+        let log = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_log",
+        )?
+        .ok_or(RustBinderError::RuntimeLogType)?;
+
+        let keccak256 = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_keccak256",
+        )?
+        .ok_or(RustBinderError::RuntimeKeccak256Fn)?;
+
         let field_list = self.field_list.as_slice();
+        let field_name_list = self.field_name_list.as_slice();
+        let topic_decode_list = self.topic_decode_list.as_slice();
+        let data_decode_list = self.data_decode_list.as_slice();
+        let data_decode_type_list = self.data_decode_type_list.as_slice();
+        let abi_decode = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_abi_decode",
+        )?
+        .ok_or(RustBinderError::RuntimeAbiDecodeFn)?;
 
         let signature = if let Some(signature) = self.signature.as_deref() {
             quote! {
@@ -799,82 +867,47 @@ impl EventBinder for RustEventBinder {
             quote! {}
         };
 
+        let check_signature = if self.signature.is_some() {
+            quote! {
+                if log.topics.is_empty() {
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("decode log failed: topic out of range")));
+                }
+                if #keccak256(Self::signature()) != log.topics[0] {
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("decode log failed: signature mismatch")));
+                }
+            }
+        } else {
+            quote! {}
+        };
+
         let stream = quote! {
             pub struct #tuple_name {
                 #(#field_list,)*
             }
 
             #signature
-        };
-
-        self.context.borrow_mut().events.push(stream);
-
-        Ok(())
-    }
-}
-
-pub struct RustErrorBinder {
-    name: String,
-    signature: String,
-    context: Rc<RefCell<RustContractBinderContext>>,
-    field_list: Vec<TokenStream>,
-}
-
-impl RustErrorBinder {
-    fn new(
-        name: String,
-        signature: String,
-        context: Rc<RefCell<RustContractBinderContext>>,
-    ) -> Self {
-        Self {
-            name,
-            signature,
-            context,
-            field_list: Default::default(),
-        }
-    }
-}
-
-impl ErrorBinder for RustErrorBinder {
-    type Error = RustBinderError;
-    fn bind_input(
-        &mut self,
-        _cx: &crate::binder::BinderContext<'_>,
-        _index: usize,
-        param: &crate::typedef::Parameter,
-    ) -> Result<(), Self::Error> {
-        let rt_ident =
-            param_type_mapping(&mut self.context.borrow_mut().mapping.borrow_mut(), param)?;
-
-        let field_name: Ident = format_ident!("{}", param.name.to_snek_case());
-
-        self.field_list.push(quote! {
-            pub #field_name: #rt_ident
-        });
-
-        Ok(())
-    }
-
-    fn finialize(&mut self, _cx: &crate::binder::BinderContext<'_>) -> Result<(), Self::Error> {
-        let tuple_name = format_ident!("{}", self.name);
-
-        let field_list = self.field_list.as_slice();
-
-        let signature = self.signature.as_str();
-
-        let stream = quote! {
-            pub struct #tuple_name {
-                #(#field_list,)*
-            }
 
             impl #tuple_name {
-                pub fn topic_filter() -> &'static str {
-                    #signature
+                pub fn from_log(log: #log) -> std::io::Result<Self> {
+
+                    #check_signature
+
+                    #(#topic_decode_list)*
+                    let (#(#data_decode_list,)*): (#(#data_decode_type_list,)*) = #abi_decode(log.data)
+                        .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
+
+                    Ok(#tuple_name {
+                         #(#field_name_list,)*
+                    })
                 }
             }
         };
 
-        self.context.borrow_mut().errors.push(stream);
+        if self.is_error {
+            self.context.borrow_mut().errors.push(stream);
+        } else {
+            self.context.borrow_mut().events.push(stream);
+        }
 
         Ok(())
     }
