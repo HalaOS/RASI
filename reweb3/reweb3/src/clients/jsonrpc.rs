@@ -543,7 +543,7 @@ mod tests {
         let _ = provider.eth_getblockbynumber("0x00", false).await.unwrap();
 
         let _ = provider
-            .eth_getblockbynumber(BlockTag::Earliest, false)
+            .eth_getblockbynumber(BlockTag::Finalized, false)
             .await
             .unwrap();
     }
@@ -594,7 +594,7 @@ mod tests {
             .unwrap();
 
         let _ = provider
-            .eth_get_uncle_count_by_block_number(BlockTag::Earliest)
+            .eth_get_uncle_count_by_block_number(BlockTag::Finalized)
             .await
             .unwrap();
     }

@@ -25,6 +25,8 @@ heck = { workspace = true, optional = true }
 syn = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
 proc-macro2 = { workspace = true, optional = true }
+dashmap = { workspace = true, optional = true }
+rasi = { workspace = true, features = ["task-futures"], optional = true }
 
 [dev-dependencies]
 pretty_env_logger = { workspace = true }
@@ -33,7 +35,7 @@ rasi-mio = { workspace = true }
 futures-test = { workspace = true }
 
 [features]
-default = ["rlp", "clients", "eip712", "abi", "signer", "macros"]
+default = ["rlp", "clients", "eip712", "abi", "signer", "macros", "rasi"]
 test-clients = []
 rlp = []
 clients = []
@@ -42,3 +44,4 @@ abi = []
 signer = []
 bind = ["ethbind", "heck", "syn", "quote", "proc-macro2"]
 macros = ["reweb3-macros"]
+rasi = ["dashmap", "dep:rasi"]

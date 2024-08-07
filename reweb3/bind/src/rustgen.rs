@@ -466,6 +466,12 @@ impl ConstructorBinder for RustConstructorBinder {
         )?
         .ok_or(RustBinderError::RuntimeTransferOps)?;
 
+        let h256 = rt_type_mapping(
+            &mut self.context.borrow_mut().mapping.borrow_mut(),
+            "rt_h256",
+        )?
+        .ok_or(RustBinderError::RuntimeH256Type)?;
+
         let signature = &self.signature;
         let generic_param_list = &self.generic_param_list;
         let param_list: &Vec<TokenStream> = &self.param_list;
@@ -475,7 +481,7 @@ impl ConstructorBinder for RustConstructorBinder {
 
         let fn_stream = quote! {
             /// Deploy contract with provided client.
-            pub async fn deploy<#(#generic_param_list,)* Ops>(client: C, #(#param_list,)* transfer_ops: Ops) -> std::io::Result<Self>
+            pub async fn deploy<#(#generic_param_list,)* Ops>(client: C, #(#param_list,)* transfer_ops: Ops) -> std::io::Result<#h256>
             where
                 C: #signer + Send + Unpin,
                 Ops: TryInto<#transfer_ops>,
@@ -489,10 +495,10 @@ impl ConstructorBinder for RustConstructorBinder {
                 let params = #abi_encode((#(#param_encode_list,)*))
                     .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
-                let address = client.deploy_contract(#bytecode, #signature, params, transfer_ops).await
+                let hash = client.deploy_contract(#bytecode, #signature, params, transfer_ops).await
                     .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
 
-                Ok(Self::new(client, address))
+                Ok(hash)
             }
         };
 

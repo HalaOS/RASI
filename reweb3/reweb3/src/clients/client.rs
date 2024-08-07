@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::OnceLock, time::Duration};
 
 use crate::{
     eip::eip2718::{LegacyTransactionRequest, TypedTransactionRequest},
@@ -8,6 +8,7 @@ use crate::{
 };
 
 use async_trait::async_trait;
+use dashmap::DashMap;
 
 use super::{
     Block, BlockNumberOrTag, FeeHistory, Filter, FilterEvents, SyncingStatus, Transaction,
@@ -221,4 +222,116 @@ pub trait ClientExt: Client {
 
         self.eth_call(request, None::<BlockNumberOrTag>).await
     }
+
+    /// Wait a transaction to complete and returns `TransactionReceipt` on succeed.
+    ///
+    /// Returning [`Ok`] only means that the wait process was successful,
+    /// You should check the returned [`TransactionReceipt`] for the status of the transaction.
+    ///
+    /// # Parameters
+    ///
+    /// - blocks: lookup to `blocks` blocks
+    #[cfg(feature = "rasi")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rasi")))]
+    async fn tx_wait(&self, hash: H256, blocks: Option<U256>) -> Result<TransactionReceipt> {
+        use rasi::timer::sleep;
+        use reweb3_num::cast::As;
+
+        use crate::errors::Error;
+
+        let blocks = blocks.unwrap_or(U256::from(2usize));
+
+        if let Some(receipt) = self.eth_get_transaction_receipt(hash.clone()).await? {
+            return Ok(receipt);
+        }
+
+        // get the chain id first
+        let chain_id: U256 = self.eth_chainid().await?.into();
+
+        let (mut duration, suggested) = if let Some(duration) = get_mine_interval(&chain_id) {
+            (duration, true)
+        } else {
+            (Duration::from_secs(1), false)
+        };
+
+        let latest_block_number = self.eth_blocknumber().await?;
+
+        loop {
+            if let Some(receipt) = self.eth_get_transaction_receipt(hash.clone()).await? {
+                if !suggested && receipt.block_number > 10usize.into() {
+                    let block_number = receipt.block_number - U256::from(10usize);
+                    let older_block = self
+                        .eth_getblockbynumber(receipt.block_number - U256::from(10usize), false)
+                        .await?
+                        .ok_or(Error::Other(format!(
+                            "fetch block, chain_id={:x}, num={:x}, error='not found'",
+                            chain_id, block_number,
+                        )))?;
+
+                    let block_number = receipt.block_number;
+
+                    let mine_block = self
+                        .eth_getblockbynumber(receipt.block_number - U256::from(10usize), false)
+                        .await?
+                        .ok_or(Error::Other(format!(
+                            "fetch block, chain_id={:x}, num={:x}, error='not found'",
+                            chain_id, block_number,
+                        )))?;
+
+                    let duration = mine_block.timestamp - older_block.timestamp;
+
+                    let suggest_duration = Duration::from_secs(duration.as_()) / 10;
+
+                    set_mine_interval(chain_id, suggest_duration);
+                }
+                return Ok(receipt);
+            }
+
+            let block_number = self.eth_blocknumber().await?;
+
+            if block_number - latest_block_number > blocks {
+                return Err(Error::Other(format!(
+                    "tx_wait, chain_id={:x}, error='Maximum number of lookup blocks reached({})'",
+                    chain_id, blocks,
+                )));
+            }
+
+            sleep(duration).await;
+
+            if !suggested && duration < Duration::from_secs(300) {
+                duration = duration * 2;
+            }
+        }
+    }
 }
+
+#[cfg(feature = "rasi")]
+#[cfg_attr(docsrs, doc(cfg(feature = "rasi")))]
+
+mod tx_wait {
+    use super::*;
+
+    static CHAIN_MINE_INTERVALS: OnceLock<DashMap<U256, Duration>> = OnceLock::new();
+
+    fn create_default_chain_mine_intervals() -> DashMap<U256, Duration> {
+        DashMap::new()
+    }
+
+    pub(super) fn get_mine_interval(chain_id: &U256) -> Option<Duration> {
+        CHAIN_MINE_INTERVALS
+            .get_or_init(create_default_chain_mine_intervals)
+            .get(chain_id)
+            .map(|value| value.clone())
+    }
+
+    /// Set the suggestion mining interval of chain by `chain_id`.
+    ///
+    /// This function is useful for [`tx_wait`](ClientExt::tx_wait) function.
+    pub fn set_mine_interval(chain_id: U256, duration: Duration) {
+        CHAIN_MINE_INTERVALS
+            .get_or_init(create_default_chain_mine_intervals)
+            .insert(chain_id, duration);
+    }
+}
+#[cfg(feature = "rasi")]
+pub use tx_wait::*;

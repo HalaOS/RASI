@@ -63,16 +63,13 @@ mod with_client {
             signature: &str,
             mut call_data: Bytes,
             ops: TransferOptions,
-        ) -> Result<Address> {
+        ) -> Result<H256> {
             let mut bytecode: Bytes = bytecode.parse()?;
 
             bytecode.0.append(&mut call_data.0);
 
-            let _tx_hash = self
-                .send_raw_transaction(signature, None, call_data, ops)
-                .await?;
-
-            todo!()
+            self.send_raw_transaction(signature, None, call_data, ops)
+                .await
         }
 
         /// Call contract nonpayable/payable function.
