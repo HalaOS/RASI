@@ -2,6 +2,8 @@ use serde::{ser, Serialize};
 
 use thiserror::Error;
 
+use crate::runtimes::Bytes;
+
 /// followed by the minimum number of zero-bytes such that `len(bytes)` is a multiple of 32
 fn padding_right(mut bytes: Vec<u8>) -> Vec<u8> {
     let padding_zeros = 32 - bytes.len() % 32;
@@ -626,10 +628,10 @@ impl<'a> ser::SerializeTupleStruct for &'a mut AbiSerializer {
 }
 
 /// Serialize rust value to contract abi format.
-pub fn to_abi<S: Serialize>(value: S) -> Result<Vec<u8>, AbiSerError> {
+pub fn to_abi<S: Serialize>(value: S) -> Result<Bytes, AbiSerError> {
     let mut serializer = AbiSerializer::default();
 
     value.serialize(&mut serializer).expect("");
 
-    Ok(serializer.finalize()?)
+    Ok(Bytes::from(serializer.finalize()?))
 }

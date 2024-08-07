@@ -54,6 +54,12 @@ pub enum Error {
 
     #[error("create logs filter failed: {0}")]
     FilterBuilder(String),
+
+    #[error("signer accout list is empty")]
+    SignerAccounts,
+
+    #[error(transparent)]
+    SerdeJson(#[from] serde_json::Error),
 }
 
 /// Result type for web3rs.

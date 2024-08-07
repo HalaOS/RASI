@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 
 use crate::{
-    eip::eip2718::TypedTransactionRequest,
+    eip::eip2718::{LegacyTransactionRequest, TypedTransactionRequest},
     errors::Result,
     primitives::{Address, Bytes, H256, U256},
+    runtimes::keccak256,
 };
 
 use async_trait::async_trait;
@@ -199,13 +200,25 @@ pub trait Client {
 /// An extension trait for [`Client`]
 #[async_trait]
 pub trait ClientExt: Client {
-    #[allow(unused)]
+    /// Call contract pure/view function.
     async fn call_contract(
         &self,
         signature: &str,
         contract_address: &Address,
-        call_data: Vec<u8>,
-    ) -> Result<Vec<u8>> {
-        todo!()
+        mut call_data: Bytes,
+    ) -> Result<Bytes> {
+        let mut selector_name = keccak256(signature.as_bytes()).as_ref()[0..4].to_vec();
+
+        selector_name.append(&mut call_data.0);
+
+        let call_data: Bytes = selector_name.into();
+
+        let mut request = LegacyTransactionRequest::default();
+
+        request.to = Some(contract_address.clone());
+
+        request.data = Some(call_data);
+
+        self.eth_call(request, None::<BlockNumberOrTag>).await
     }
 }

@@ -45,8 +45,10 @@ mod with_client {
             Block, BlockNumberOrTag, Client, ClientExt, FeeHistory, Filter, FilterEvents,
             SyncingStatus, Transaction, TransactionReceipt,
         },
+        eip::eip2718::LegacyTransactionRequest,
         errors::Error,
         primitives::{balance::TransferOptions, Address, Bytes, H256},
+        runtimes::keccak256,
     };
 
     use super::*;
@@ -54,26 +56,129 @@ mod with_client {
     /// A combinated trait of [`Signer`] and [`Client`]
     #[async_trait]
     pub trait SignerWithProvider: Signer + ClientExt + Send + Sync {
-        #[allow(unused)]
+        /// Deploy a contract with `bytecode`.
         async fn deploy_contract(
             &self,
             bytecode: &str,
             signature: &str,
-            call_data: Vec<u8>,
+            mut call_data: Bytes,
             ops: TransferOptions,
         ) -> Result<Address> {
+            let mut bytecode: Bytes = bytecode.parse()?;
+
+            bytecode.0.append(&mut call_data.0);
+
+            let _tx_hash = self
+                .send_raw_transaction(signature, None, call_data, ops)
+                .await?;
+
             todo!()
         }
 
-        #[allow(unused)]
+        /// Call contract nonpayable/payable function.
         async fn call_contract_with_transaction(
             &self,
             signature: &str,
             contract_address: &Address,
-            call_data: Vec<u8>,
+            call_data: Bytes,
             ops: TransferOptions,
         ) -> Result<H256> {
-            todo!()
+            self.send_raw_transaction(signature, Some(&contract_address), call_data, ops)
+                .await
+        }
+
+        /// Sign and send a raw transaction.
+        async fn send_raw_transaction(
+            &self,
+            method_name: &str,
+            to: Option<&Address>,
+            mut call_data: Bytes,
+            ops: TransferOptions,
+        ) -> Result<H256> {
+            let address = {
+                let mut accounts = self.signer_accounts().await?;
+
+                if accounts.is_empty() {
+                    return Err(Error::SignerAccounts);
+                }
+
+                accounts.remove(0)
+            };
+
+            // Get nonce first.
+            let nonce = self.eth_get_transaction_count(address.clone()).await?;
+
+            log::debug!(
+                target: method_name,
+                "Fetch account {} nonce, {}",
+                address.to_checksum_string(),
+                nonce
+            );
+
+            // Get chain id
+            let chain_id = self.eth_chainid().await?;
+
+            log::debug!(target: method_name, "Fetch chain_id, {}", chain_id);
+
+            let call_data = if to.is_some() {
+                let mut selector_name = keccak256(method_name.as_bytes()).0[0..4].to_vec();
+
+                selector_name.append(&mut call_data.0);
+
+                selector_name.into()
+            } else {
+                call_data
+            };
+
+            let mut tx = LegacyTransactionRequest {
+                chain_id: Some(chain_id.into()),
+                nonce: Some(nonce),
+                to: to.map(|c| c.clone()),
+                data: Some(call_data),
+                value: ops.value,
+                ..Default::default()
+            };
+
+            // estimate gas
+            let gas = self
+                .eth_estimate_gas(tx.clone(), None::<BlockNumberOrTag>)
+                .await?;
+
+            log::debug!(target: method_name, "Fetch estimate gas, {}", gas);
+
+            tx.gas = Some(gas);
+
+            // Get gas price
+
+            let gas_price = if let Some(gas_price) = ops.gas_price {
+                gas_price
+            } else {
+                self.eth_gas_price().await?
+            };
+
+            log::debug!(target: method_name, "Fetch gas price, {}", gas_price);
+
+            tx.gas_price = Some(gas_price);
+
+            log::debug!(
+                target: method_name,
+                "Try sign transaction, {}",
+                serde_json::to_string(&tx)?,
+            );
+
+            let signed_tx = self.sign_transaction(tx, Some(address)).await?;
+
+            log::debug!(
+                target: method_name,
+                "Signed transaction, {}",
+                signed_tx.to_string()
+            );
+
+            let hash = self.eth_send_raw_transaction(signed_tx).await?;
+
+            log::debug!(target: method_name, "Send transaction success, {}", hash);
+
+            Ok(hash)
         }
 
         /// Get the balance of this signer's first account.

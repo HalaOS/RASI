@@ -350,7 +350,7 @@ impl Topic {
 
         let mut buf = [0u8; 32];
 
-        buf.copy_from_slice(abi.as_slice());
+        buf.copy_from_slice(abi.as_ref());
 
         H256::from(buf)
     }

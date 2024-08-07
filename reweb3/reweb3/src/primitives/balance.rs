@@ -267,7 +267,10 @@ impl Display for Decimals {
 }
 
 /// Flags for send_Transaction.
-pub struct TransferOptions {}
+pub struct TransferOptions {
+    pub value: Option<U256>,
+    pub gas_price: Option<U256>,
+}
 
 #[cfg(test)]
 mod tests {
