@@ -489,7 +489,7 @@ impl ConstructorBinder for RustConstructorBinder {
                 let params = #abi_encode((#(#param_encode_list,)*))
                     .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
-                let address = client.deploy(#bytecode, #signature, params, transfer_ops).await
+                let address = client.deploy_contract(#bytecode, #signature, params, transfer_ops).await
                     .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
 
                 Ok(Self::new(client, address))
@@ -653,7 +653,7 @@ impl FunctionBinder for RustFunctionBinder {
                         let params = #abi_encode((#(#param_encode_list,)*))
                             .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
-                         let call_result = self.client.call(#signature, &self.address, params).await
+                         let call_result = self.client.call_contract(#signature, &self.address, params).await
                             .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
 
                          Ok(#abi_decode(call_result)
@@ -679,7 +679,7 @@ impl FunctionBinder for RustFunctionBinder {
                         let params = #abi_encode((#(#param_encode_list,)*))
                             .map_err(|err|std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{:#?}",err)))?;
 
-                         Ok(self.client.sign_and_send_transaction(#signature, &self.address, params, transfer_ops).await
+                         Ok(self.client.call_contract_with_transaction(#signature, &self.address, params, transfer_ops).await
                             .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?)
                     }
                 }
@@ -870,10 +870,10 @@ impl EventBinder for RustEventBinder {
         let check_signature = if self.signature.is_some() {
             quote! {
                 if log.topics.is_empty() {
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("decode log failed: topic out of range")));
+                    return Ok(None);
                 }
                 if #keccak256(Self::signature()) != log.topics[0] {
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("decode log failed: signature mismatch")));
+                    return Ok(None);
                 }
             }
         } else {
@@ -888,7 +888,7 @@ impl EventBinder for RustEventBinder {
             #signature
 
             impl #tuple_name {
-                pub fn from_log(log: #log) -> std::io::Result<Self> {
+                pub fn from_log(log: #log) -> std::io::Result<Option<Self>> {
 
                     #check_signature
 
@@ -896,9 +896,9 @@ impl EventBinder for RustEventBinder {
                     let (#(#data_decode_list,)*): (#(#data_decode_type_list,)*) = #abi_decode(log.data)
                         .map_err(|err|std::io::Error::new(std::io::ErrorKind::Other, format!("{:#?}",err)))?;
 
-                    Ok(#tuple_name {
+                    Ok(Some(#tuple_name {
                          #(#field_name_list,)*
-                    })
+                    }))
                 }
             }
         };

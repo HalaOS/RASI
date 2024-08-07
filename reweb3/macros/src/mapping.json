@@ -8,7 +8,7 @@
   "bytes_m": "reweb3::runtimes::Bytes$m",
   "address": "reweb3::runtimes::Address",
   "rt_signer_with_provider": "reweb3::runtimes::SignerWithProvider",
-  "rt_provider": "reweb3::runtimes::Client",
+  "rt_provider": "reweb3::runtimes::ClientExt",
   "rt_abi_encode": "reweb3::runtimes::to_abi",
   "rt_abi_decode": "reweb3::runtimes::from_abi",
   "rt_transfer_ops": "reweb3::runtimes::TransferOptions",

@@ -42,8 +42,8 @@ mod with_client {
 
     use crate::{
         clients::{
-            Block, BlockNumberOrTag, Client, FeeHistory, Filter, FilterEvents, SyncingStatus,
-            Transaction, TransactionReceipt,
+            Block, BlockNumberOrTag, Client, ClientExt, FeeHistory, Filter, FilterEvents,
+            SyncingStatus, Transaction, TransactionReceipt,
         },
         errors::Error,
         primitives::{balance::TransferOptions, Address, Bytes, H256},
@@ -53,9 +53,9 @@ mod with_client {
 
     /// A combinated trait of [`Signer`] and [`Client`]
     #[async_trait]
-    pub trait SignerWithProvider: Signer + Client + Send + Sync {
+    pub trait SignerWithProvider: Signer + ClientExt + Send + Sync {
         #[allow(unused)]
-        async fn deploy(
+        async fn deploy_contract(
             &self,
             bytecode: &str,
             signature: &str,
@@ -66,7 +66,7 @@ mod with_client {
         }
 
         #[allow(unused)]
-        async fn sign_and_send_transaction(
+        async fn call_contract_with_transaction(
             &self,
             signature: &str,
             contract_address: &Address,

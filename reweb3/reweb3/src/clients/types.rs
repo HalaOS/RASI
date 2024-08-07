@@ -457,7 +457,7 @@ pub struct Filter {
 }
 
 impl Filter {
-    /// Create a new filter with nothing.
+    /// Create a `Filter` builder to contruct the filter instance.
     pub fn new() -> FilterBuilder {
         FilterBuilder::default()
     }
@@ -690,7 +690,7 @@ pub struct TransactionReceipt {
     pub cumulative_gas_used: U256,
 
     pub effective_gas_price: U256,
-
+    /// The transaction index in the mined block.
     transaction_index: U256,
     /// Block hash
     pub block_hash: H256,

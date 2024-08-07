@@ -194,9 +194,13 @@ pub trait Client {
     where
         H: TryInto<H256> + Send,
         H::Error: Debug + Send;
+}
 
+/// An extension trait for [`Client`]
+#[async_trait]
+pub trait ClientExt: Client {
     #[allow(unused)]
-    async fn call(
+    async fn call_contract(
         &self,
         signature: &str,
         contract_address: &Address,
