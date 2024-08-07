@@ -478,7 +478,7 @@ mod tests {
     use crate::{
         abi::from_abi,
         clients::{BlockTag, Topic},
-        runtimes::keccak256,
+        prelude::keccak256,
     };
 
     use super::*;

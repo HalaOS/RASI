@@ -8,8 +8,8 @@ use serde::Serialize;
 use crate::{
     eip::{eip2718::TypedTransactionRequest, eip712::TypedData},
     errors::Result,
+    prelude::Address,
     primitives::{Bytes, Eip1559Signature},
-    runtimes::Address,
 };
 
 /// Represent a data signer for etherenum client.
@@ -47,8 +47,8 @@ mod with_client {
         },
         eip::eip2718::LegacyTransactionRequest,
         errors::Error,
+        prelude::keccak256,
         primitives::{balance::TransferOptions, Address, Bytes, H256},
-        runtimes::keccak256,
     };
 
     use super::*;

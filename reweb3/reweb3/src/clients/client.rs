@@ -4,7 +4,7 @@ use crate::{
     eip::eip2718::{LegacyTransactionRequest, TypedTransactionRequest},
     errors::Result,
     primitives::{Address, Bytes, H256, U256},
-    runtimes::keccak256,
+    prelude::keccak256,
 };
 
 use async_trait::async_trait;

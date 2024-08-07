@@ -16,7 +16,7 @@ pub type I128 = i128;
 mod tests {
     use super::*;
 
-    use crate::{abi::from_abi, runtimes::Bytes};
+    use crate::{abi::from_abi, prelude::Bytes};
 
     #[test]
     fn test_abi_decode() {

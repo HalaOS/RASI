@@ -14,6 +14,10 @@ pub mod primitives;
 #[cfg_attr(docsrs, doc(cfg(feature = "signer")))]
 pub mod signer;
 
+#[cfg(feature = "wallet")]
+#[cfg_attr(docsrs, doc(cfg(feature = "wallet")))]
+pub mod wallet;
+
 #[cfg(feature = "clients")]
 #[cfg_attr(docsrs, doc(cfg(feature = "clients")))]
 pub mod clients;
@@ -22,12 +26,16 @@ pub mod clients;
 #[cfg_attr(docsrs, doc(cfg(feature = "rlp")))]
 pub mod rlp;
 
+#[cfg(feature = "hardhat")]
+#[cfg_attr(docsrs, doc(cfg(feature = "hardhat")))]
+pub mod hardhat;
+
 #[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod macros;
 
-#[doc(hidden)]
-pub mod runtimes {
+/// Reexport runtimes types.
+pub mod prelude {
     pub use super::primitives::{balance::TransferOptions, *};
 
     #[cfg(feature = "abi")]

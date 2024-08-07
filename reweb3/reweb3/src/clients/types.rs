@@ -7,7 +7,7 @@ use crate::{
     eip::eip2718::AccessList,
     errors::{Error, Result},
     primitives::{Address, Bytes, Hex, H256, U256},
-    runtimes::{keccak256, HexError},
+    prelude::{keccak256, HexError},
 };
 
 /// See [`JSON-RPC Specification`](https://ethereum.github.io/execution-apis/api-documentation/) for details.

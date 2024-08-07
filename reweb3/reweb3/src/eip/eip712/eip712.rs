@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::Result,
     primitives::{Address, Bytes32, H256, U256},
-    runtimes::keccak256,
+    prelude::keccak256,
 };
 
 use super::serde::{

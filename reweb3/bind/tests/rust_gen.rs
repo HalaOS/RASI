@@ -10,7 +10,7 @@ fn gen_rust_code() {
 
     bind_hardhat_artifact(
         root_dir.join("src/abi.json"),
-        root_dir.join("tests/mapping.json"),
+        root_dir.join("../macros/src/mapping.json"),
         tmp_dir,
     )
     .unwrap();

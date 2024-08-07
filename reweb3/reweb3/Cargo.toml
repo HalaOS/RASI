@@ -35,7 +35,17 @@ rasi-mio = { workspace = true }
 futures-test = { workspace = true }
 
 [features]
-default = ["rlp", "clients", "eip712", "abi", "signer", "macros", "rasi"]
+default = [
+    "rlp",
+    "clients",
+    "eip712",
+    "abi",
+    "signer",
+    "macros",
+    "rasi",
+    "wallet",
+    "hardhat"
+]
 test-clients = []
 rlp = []
 clients = []
@@ -45,3 +55,5 @@ signer = []
 bind = ["ethbind", "heck", "syn", "quote", "proc-macro2"]
 macros = ["reweb3-macros"]
 rasi = ["dashmap", "dep:rasi"]
+wallet = []
+hardhat = []

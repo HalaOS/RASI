@@ -2,7 +2,7 @@ use serde::{ser, Serialize};
 
 use thiserror::Error;
 
-use crate::runtimes::Bytes;
+use crate::prelude::Bytes;
 
 /// followed by the minimum number of zero-bytes such that `len(bytes)` is a multiple of 32
 fn padding_right(mut bytes: Vec<u8>) -> Vec<u8> {
