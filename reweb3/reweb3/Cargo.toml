@@ -38,6 +38,7 @@ rand = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
 elliptic-curve = { workspace = true, optional = true }
+ecdsa = { workspace = true, features = ["rfc6979"], optional = true }
 
 [dev-dependencies]
 pretty_env_logger = { workspace = true }
@@ -77,6 +78,7 @@ wallet = [
     "uuid",
     "ctr",
     "digest",
-    "elliptic-curve"
+    "elliptic-curve",
+    "ecdsa"
 ]
 hardhat = []

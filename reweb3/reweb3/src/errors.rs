@@ -4,6 +4,7 @@ use std::num::ParseIntError;
 
 use crate::{
     eip::eip712::serde::{EncodeDataError, EncodeTypeError, TypeDefinitionError},
+    prelude::Address,
     primitives::{balance::ParseBalanceError, HexError},
 };
 
@@ -58,8 +59,27 @@ pub enum Error {
     #[error("signer accout list is empty")]
     SignerAccounts,
 
+    #[error("signer accout not found: {0}")]
+    SignerAccount(Address),
+
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
+
+    #[cfg(feature = "wallet")]
+    #[error(transparent)]
+    SignatureError(#[from] ecdsa::signature::Error),
+
+    #[cfg(feature = "wallet")]
+    #[error("Invalid recovery id({0})")]
+    InvalidRecoveryId(u8),
+
+    #[cfg(feature = "wallet")]
+    #[error(transparent)]
+    EcError(#[from] elliptic_curve::Error),
+
+    #[cfg(feature = "wallet")]
+    #[error(transparent)]
+    Bip32Error(#[from] crate::wallet::hdwallet::bip32::Bip32Error),
 }
 
 /// Result type for web3rs.

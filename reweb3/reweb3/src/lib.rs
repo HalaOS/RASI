@@ -46,6 +46,8 @@ pub mod prelude {
 
     #[cfg(feature = "clients")]
     pub use super::clients::*;
+
+    pub use super::errors::*;
 }
 
 #[cfg(feature = "bind")]

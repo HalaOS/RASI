@@ -25,7 +25,7 @@ impl Display for Eip1559Signature {
         buff[1..33].copy_from_slice(&self.r.to_be_bytes());
         buff[33..].copy_from_slice(&self.s.to_be_bytes());
 
-        write!(f, "{:067x}", Hex(buff))
+        write!(f, "{:#x}", Hex(buff))
     }
 }
 
@@ -51,5 +51,48 @@ impl FromStr for Eip1559Signature {
             r: U256::from_be_bytes(r),
             s: U256::from_be_bytes(s),
         })
+    }
+}
+
+#[cfg(feature = "wallet")]
+#[cfg_attr(docsrs, doc(cfg(feature = "wallet")))]
+mod wallet {
+    use crate::errors::Error;
+
+    use super::*;
+
+    use ecdsa::RecoveryId;
+    use k256::ecdsa::Signature;
+
+    /// Convert tuple ([`Signature`], [`RecoveryId`]) to [`Eip1559Signature`]
+
+    impl From<(Signature, RecoveryId)> for Eip1559Signature {
+        fn from(value: (Signature, RecoveryId)) -> Self {
+            Self {
+                v: value.1.to_byte(),
+                r: U256::from_be_bytes(value.0.r().to_bytes().try_into().unwrap()),
+                s: U256::from_be_bytes(value.0.s().to_bytes().try_into().unwrap()),
+            }
+        }
+    }
+
+    #[cfg(feature = "wallet")]
+    impl TryFrom<Eip1559Signature> for (Signature, RecoveryId) {
+        type Error = Error;
+        fn try_from(sig: Eip1559Signature) -> Result<(Signature, RecoveryId), Self::Error> {
+            let mut buff = [0u8; 64];
+
+            buff[..32].copy_from_slice(&sig.r.to_be_bytes());
+            buff[32..].copy_from_slice(&sig.s.to_be_bytes());
+
+            let recover_id = sig.v;
+
+            let sig = Signature::try_from(buff.as_slice())?;
+
+            let recover_id =
+                RecoveryId::from_byte(recover_id).ok_or(Error::InvalidRecoveryId(recover_id))?;
+
+            Ok((sig, recover_id))
+        }
     }
 }
