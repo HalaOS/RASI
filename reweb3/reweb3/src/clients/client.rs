@@ -320,8 +320,8 @@ impl TransactionWaitBuilder {
 
         let block_num: U256 = client.eth_blocknumber().await?.into();
 
-        let (duration, suggested) = if block_num > 0usize.into() {
-            let older_block_num = block_num - U256::from(1usize);
+        let (duration, suggested) = if block_num > 10usize.into() {
+            let older_block_num = block_num - U256::from(10usize);
 
             let older_block = client
                 .eth_getblockbynumber(older_block_num, false)
@@ -339,10 +339,15 @@ impl TransactionWaitBuilder {
                     older_block_num
                 )))?;
 
-            (
-                Duration::from_secs((block.timestamp - older_block.timestamp).as_()) / 2,
-                true,
-            )
+            // calc the value of epoch/2.
+            let duration =
+                Duration::from_secs((block.timestamp - older_block.timestamp).as_()) / 20;
+
+            if duration.is_zero() {
+                (Duration::from_secs(1), false)
+            } else {
+                (duration, true)
+            }
         } else {
             (Duration::from_secs(1), false)
         };
