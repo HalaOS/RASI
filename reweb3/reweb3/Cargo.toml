@@ -25,7 +25,6 @@ heck = { workspace = true, optional = true }
 syn = { workspace = true, optional = true }
 quote = { workspace = true, optional = true }
 proc-macro2 = { workspace = true, optional = true }
-dashmap = { workspace = true, optional = true }
 rasi = { workspace = true, features = ["task-futures"], optional = true }
 hmac = { workspace = true, optional = true }
 scrypt = { workspace = true, optional = true }
@@ -66,7 +65,7 @@ abi = []
 signer = []
 bind = ["ethbind", "heck", "syn", "quote", "proc-macro2"]
 macros = ["reweb3-macros"]
-rasi = ["dashmap", "dep:rasi"]
+rasi = ["dep:rasi"]
 wallet = [
     "hmac",
     "scrypt",

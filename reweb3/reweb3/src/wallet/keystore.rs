@@ -1,3 +1,6 @@
+//! Add the ethereum wallet keystore format support
+//!
+
 use std::str::FromStr;
 
 use k256::SecretKey;
@@ -24,6 +27,7 @@ const DEFAULT_KDF_PARAMS_LOG_N: u8 = 13u8;
 const DEFAULT_KDF_PARAMS_R: u32 = 8u32;
 const DEFAULT_KDF_PARAMS_P: u32 = 1u32;
 
+/// Errors for keystore encoding/decoding process.
 #[derive(Debug, thiserror::Error)]
 pub enum KeyStoreError {
     #[error("Scrypt error,{0}")]

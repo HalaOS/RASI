@@ -1,14 +1,14 @@
-use std::{fmt::Debug, sync::OnceLock, time::Duration};
+use std::{fmt::Debug, time::Duration};
 
 use crate::{
     eip::eip2718::{LegacyTransactionRequest, TypedTransactionRequest},
-    errors::Result,
-    primitives::{Address, Bytes, H256, U256},
+    errors::{Error, Result},
     prelude::keccak256,
+    primitives::{Address, Bytes, H256, U256},
 };
 
 use async_trait::async_trait;
-use dashmap::DashMap;
+use reweb3_num::cast::As;
 
 use super::{
     Block, BlockNumberOrTag, FeeHistory, Filter, FilterEvents, SyncingStatus, Transaction,
@@ -223,115 +223,199 @@ pub trait ClientExt: Client {
         self.eth_call(request, None::<BlockNumberOrTag>).await
     }
 
-    /// Wait a transaction to complete and returns `TransactionReceipt` on succeed.
+    /// Wait for the transaction to complete or time out.
     ///
-    /// Returning [`Ok`] only means that the wait process was successful,
-    /// You should check the returned [`TransactionReceipt`] for the status of the transaction.
+    /// # Timeout
     ///
-    /// # Parameters
+    /// If the transaction is not found in `5` consecutive mined blocks,
+    /// the function call returns a timeout error.
     ///
-    /// - blocks: lookup to `blocks` blocks
+    /// # configurable
+    ///
+    /// If you need precise control over the whole process, use [`transaction_wait_with`](ClientExt::transaction_wait_with) instead of.
     #[cfg(feature = "rasi")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rasi")))]
-    async fn tx_wait(&self, hash: H256, blocks: Option<U256>) -> Result<TransactionReceipt> {
+    async fn transaction_wait(&self, tx_hash: H256) -> Result<TransactionReceipt>
+    where
+        Self: Sized,
+    {
         use rasi::timer::sleep;
-        use reweb3_num::cast::As;
 
-        use crate::errors::Error;
+        let mut wait = TransactionWait::new(tx_hash, self).await?;
 
-        let blocks = blocks.unwrap_or(U256::from(2usize));
+        loop {
+            if let Some(receipt) = wait.poll_once().await? {
+                return Ok(receipt);
+            }
 
-        if let Some(receipt) = self.eth_get_transaction_receipt(hash.clone()).await? {
-            return Ok(receipt);
+            sleep(wait.timeout()).await;
         }
+    }
 
-        // get the chain id first
-        let chain_id: U256 = self.eth_chainid().await?.into();
+    /// Plus version of [`transaction_wait`](ClientExt::transaction_wait)
+    #[cfg(feature = "rasi")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rasi")))]
+    async fn transaction_wait_with<F>(
+        &self,
+        builder: TransactionWaitBuilder,
+    ) -> Result<TransactionReceipt>
+    where
+        Self: Sized,
+    {
+        use rasi::timer::sleep;
 
-        let (mut duration, suggested) = if let Some(duration) = get_mine_interval(&chain_id) {
-            (duration, true)
+        let mut wait = builder.create(self).await?;
+
+        loop {
+            if let Some(receipt) = wait.poll_once().await? {
+                return Ok(receipt);
+            }
+
+            sleep(wait.timeout()).await;
+        }
+    }
+}
+
+/// A builder pattern implementation for [`TransactionWait`]
+pub struct TransactionWaitBuilder {
+    tx_hash: H256,
+    max_sleep_timeout: Duration,
+    blocks: U256,
+}
+
+impl TransactionWaitBuilder {
+    fn new(tx_hash: H256) -> Self {
+        Self {
+            tx_hash,
+            max_sleep_timeout: Duration::from_secs(300),
+            blocks: 5usize.into(),
+        }
+    }
+
+    /// Set the `max_sleep_timeout` flag.
+    /// generally this value must be equal to time interval of blockchain's one epoch.
+    pub fn set_max_sleep_timeout(mut self, timeout: Duration) -> Self {
+        self.max_sleep_timeout = timeout;
+        self
+    }
+
+    /// Set the `max_waiting_blocks` value. the default value is `2`.
+    ///
+    /// This flag value control the maximun waiting blocks for one transaction.
+    pub fn set_max_waiting_blocks(mut self, blocks: usize) -> Self {
+        self.blocks = blocks.into();
+        self
+    }
+
+    /// Create a new `TransactionWait` instance with this configuration.
+    pub async fn create<'a, C>(self, client: &'a C) -> Result<TransactionWait<'a, C>>
+    where
+        C: Client,
+    {
+        let TransactionWaitBuilder {
+            tx_hash,
+            max_sleep_timeout,
+            blocks,
+        } = self;
+
+        let block_num: U256 = client.eth_blocknumber().await?.into();
+
+        let (duration, suggested) = if block_num > 0usize.into() {
+            let older_block_num = block_num - U256::from(1usize);
+
+            let older_block = client
+                .eth_getblockbynumber(older_block_num, false)
+                .await?
+                .ok_or(Error::Other(format!(
+                    "fetch block({}), returns None",
+                    older_block_num
+                )))?;
+
+            let block = client
+                .eth_getblockbynumber(older_block_num, false)
+                .await?
+                .ok_or(Error::Other(format!(
+                    "fetch block({}), returns None",
+                    older_block_num
+                )))?;
+
+            (
+                Duration::from_secs((block.timestamp - older_block.timestamp).as_()) / 2,
+                true,
+            )
         } else {
             (Duration::from_secs(1), false)
         };
 
-        let latest_block_number = self.eth_blocknumber().await?;
+        Ok(TransactionWait {
+            poll_sleep_timeout: duration,
+            poll_sleep_time_is_suggested: suggested,
+            provider: client,
+            to_block: block_num + blocks,
+            tx_hash,
+            max_sleep_timeout,
+        })
+    }
+}
 
-        loop {
-            if let Some(receipt) = self.eth_get_transaction_receipt(hash.clone()).await? {
-                if !suggested && receipt.block_number > 10usize.into() {
-                    let block_number = receipt.block_number - U256::from(10usize);
-                    let older_block = self
-                        .eth_getblockbynumber(receipt.block_number - U256::from(10usize), false)
-                        .await?
-                        .ok_or(Error::Other(format!(
-                            "fetch block, chain_id={:x}, num={:x}, error='not found'",
-                            chain_id, block_number,
-                        )))?;
+/// A poller for transaction receipt.
+pub struct TransactionWait<'a, C> {
+    tx_hash: H256,
+    max_sleep_timeout: Duration,
+    poll_sleep_timeout: Duration,
+    poll_sleep_time_is_suggested: bool,
+    provider: &'a C,
+    /// Maximum number of block to waiting for
+    to_block: U256,
+}
 
-                    let block_number = receipt.block_number;
+impl<'a, C> TransactionWait<'a, C>
+where
+    C: Client,
+{
+    /// Create a new builder for `TransactionWait`
+    pub fn with_builder(tx_hash: H256) -> TransactionWaitBuilder {
+        TransactionWaitBuilder::new(tx_hash)
+    }
 
-                    let mine_block = self
-                        .eth_getblockbynumber(receipt.block_number - U256::from(10usize), false)
-                        .await?
-                        .ok_or(Error::Other(format!(
-                            "fetch block, chain_id={:x}, num={:x}, error='not found'",
-                            chain_id, block_number,
-                        )))?;
+    /// Create a new `TransactionWait` instance with default configuration.
+    pub async fn new(tx_hash: H256, client: &'a C) -> Result<Self> {
+        TransactionWaitBuilder::new(tx_hash).create(client).await
+    }
 
-                    let duration = mine_block.timestamp - older_block.timestamp;
+    /// Call `eth_get_transaction_receipt` once.
+    ///
+    /// If this function returns `None`,you should call `on_timeout` to get the recommended
+    /// sleeping time before the next time this function
+    pub async fn poll_once(&mut self) -> Result<Option<TransactionReceipt>> {
+        let reciept = self
+            .provider
+            .eth_get_transaction_receipt(self.tx_hash.clone())
+            .await?;
 
-                    let suggest_duration = Duration::from_secs(duration.as_()) / 10;
-
-                    set_mine_interval(chain_id, suggest_duration);
-                }
-                return Ok(receipt);
-            }
-
-            let block_number = self.eth_blocknumber().await?;
-
-            if block_number - latest_block_number > blocks {
+        if reciept.is_none()
+            && !self.poll_sleep_time_is_suggested
+            && self.poll_sleep_timeout < self.max_sleep_timeout
+        {
+            let block_num: U256 = self.provider.eth_blocknumber().await?.into();
+            if block_num > self.to_block {
                 return Err(Error::Other(format!(
-                    "tx_wait, chain_id={:x}, error='Maximum number of lookup blocks reached({})'",
-                    chain_id, blocks,
+                    "TransactionWaiter: reach maximun waiting blocks"
                 )));
             }
 
-            sleep(duration).await;
+            self.poll_sleep_timeout *= 2;
 
-            if !suggested && duration < Duration::from_secs(300) {
-                duration = duration * 2;
+            if self.poll_sleep_timeout > self.max_sleep_timeout {
+                self.poll_sleep_timeout = self.max_sleep_timeout;
             }
         }
+
+        Ok(reciept)
+    }
+
+    /// The recommended sleeping time before the next time this calling function [`poll_once`](Self::poll_once)
+    pub fn timeout(&self) -> Duration {
+        self.poll_sleep_timeout.clone()
     }
 }
-
-#[cfg(feature = "rasi")]
-#[cfg_attr(docsrs, doc(cfg(feature = "rasi")))]
-
-mod tx_wait {
-    use super::*;
-
-    static CHAIN_MINE_INTERVALS: OnceLock<DashMap<U256, Duration>> = OnceLock::new();
-
-    fn create_default_chain_mine_intervals() -> DashMap<U256, Duration> {
-        DashMap::new()
-    }
-
-    pub(super) fn get_mine_interval(chain_id: &U256) -> Option<Duration> {
-        CHAIN_MINE_INTERVALS
-            .get_or_init(create_default_chain_mine_intervals)
-            .get(chain_id)
-            .map(|value| value.clone())
-    }
-
-    /// Set the suggestion mining interval of chain by `chain_id`.
-    ///
-    /// This function is useful for [`tx_wait`](ClientExt::tx_wait) function.
-    pub fn set_mine_interval(chain_id: U256, duration: Duration) {
-        CHAIN_MINE_INTERVALS
-            .get_or_init(create_default_chain_mine_intervals)
-            .insert(chain_id, duration);
-    }
-}
-#[cfg(feature = "rasi")]
-pub use tx_wait::*;

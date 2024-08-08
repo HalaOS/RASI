@@ -1,4 +1,4 @@
-//! This module convert [`SecretKey List`](k256::SecretKey) into a [`Signer`](super::Signer)
+//! This module convert [`SecretKey List`](k256::SecretKey) into a [`Signer`]
 
 use std::fmt::Debug;
 
@@ -19,6 +19,7 @@ use crate::{
 
 use super::Signer;
 
+/// A local wallet wrapper that provider [`Signer`] interface.
 pub struct WalletSigner {
     keys: Vec<SecretKey>,
     addresses: Vec<Address>,
@@ -121,14 +122,14 @@ impl WalletSigner {
 }
 
 impl WalletSigner {
-    /// Create `WalletSigner` by bytes data of private key.
+    /// Create signer with hex str of one private key.
     pub fn from_hex_str(value: &str) -> Result<Self> {
         let key = SecretKey::from_slice(value.try_into_bytes()?.as_ref())?;
 
         Ok(vec![key].into())
     }
 
-    /// Create bip32 wallet signer with provided `mnemonic` and `password`.
+    /// Create a signer with bip32 flags.
     ///
     /// # Accounts drive path
     ///
@@ -155,7 +156,7 @@ impl WalletSigner {
         Ok(keys.into())
     }
 
-    /// Create signer for hardhat network.
+    /// Create a signer for hardhat network.
     #[cfg(feature = "hardhat")]
     #[cfg_attr(docsrs, doc(cfg(feature = "hardhat")))]
     pub fn hardhat() -> Result<Self> {
