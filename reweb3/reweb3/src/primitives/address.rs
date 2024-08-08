@@ -125,6 +125,57 @@ impl<'de> Deserialize<'de> for Address {
     }
 }
 
+#[cfg(feature = "wallet")]
+impl From<&k256::SecretKey> for Address {
+    fn from(value: &k256::SecretKey) -> Self {
+        use elliptic_curve::sec1::ToEncodedPoint;
+
+        let value = value.public_key();
+        let buff = value.to_encoded_point(false);
+
+        let digest: [u8; 32] = Keccak256::new()
+            .chain_update(&buff.as_bytes()[1..])
+            .finalize()
+            .into();
+
+        let buf: [u8; 20] = digest[12..].try_into().unwrap();
+
+        Self(Hex::from(buf))
+    }
+}
+
+#[cfg(feature = "wallet")]
+impl From<k256::SecretKey> for Address {
+    fn from(value: k256::SecretKey) -> Self {
+        Address::from(&value)
+    }
+}
+
+#[cfg(feature = "wallet")]
+impl From<&k256::PublicKey> for Address {
+    fn from(value: &k256::PublicKey) -> Self {
+        use elliptic_curve::sec1::ToEncodedPoint;
+
+        let buff = value.to_encoded_point(false);
+
+        let digest: [u8; 32] = Keccak256::new()
+            .chain_update(&buff.as_bytes()[1..])
+            .finalize()
+            .into();
+
+        let buf: [u8; 20] = digest[12..].try_into().unwrap();
+
+        Self(Hex::from(buf))
+    }
+}
+
+#[cfg(feature = "wallet")]
+impl From<k256::PublicKey> for Address {
+    fn from(value: k256::PublicKey) -> Self {
+        Address::from(&value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Address;

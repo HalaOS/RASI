@@ -1,9 +1,11 @@
 //! Implements ethereum H256 type.
 //!
 
+use std::str::FromStr;
+
 use sha3::{Digest, Keccak256};
 
-use super::hex::Hex;
+use super::{hex::Hex, HexError};
 
 /// Represents solidity/jsonrpc type H256.
 pub type H256 = Hex<[u8; 32]>;
@@ -20,6 +22,20 @@ where
     Hex::<[u8; 32]>(hasher.finalize().into())
 }
 
+/// A trait to parse self as [`H256`]
+pub trait TryIntoH256 {
+    type Error;
+    fn try_into_h256(&self) -> Result<H256, Self::Error>;
+}
+
+impl<T: AsRef<str>> TryIntoH256 for T {
+    type Error = HexError;
+
+    fn try_into_h256(&self) -> Result<H256, Self::Error> {
+        Hex::from_str(self.as_ref())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -29,7 +45,7 @@ mod tests {
     #[test]
     fn test_from_hex() {
         // with prefixed.
-        let value = H256::from_str("0x2a2b").unwrap();
+        let value = "0x2a2b".try_into_h256().unwrap();
 
         let mut target = [0x0u8; 32];
 

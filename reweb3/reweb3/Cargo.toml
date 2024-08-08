@@ -27,6 +27,17 @@ quote = { workspace = true, optional = true }
 proc-macro2 = { workspace = true, optional = true }
 dashmap = { workspace = true, optional = true }
 rasi = { workspace = true, features = ["task-futures"], optional = true }
+hmac = { workspace = true, optional = true }
+scrypt = { workspace = true, optional = true }
+aes = { workspace = true, optional = true }
+ctr = { workspace = true, optional = true }
+digest = { workspace = true, optional = true }
+pbkdf2 = { workspace = true, optional = true }
+k256 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+elliptic-curve = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_env_logger = { workspace = true }
@@ -55,5 +66,17 @@ signer = []
 bind = ["ethbind", "heck", "syn", "quote", "proc-macro2"]
 macros = ["reweb3-macros"]
 rasi = ["dashmap", "dep:rasi"]
-wallet = []
+wallet = [
+    "hmac",
+    "scrypt",
+    "aes",
+    "pbkdf2",
+    "k256",
+    "rand",
+    "sha2",
+    "uuid",
+    "ctr",
+    "digest",
+    "elliptic-curve"
+]
 hardhat = []

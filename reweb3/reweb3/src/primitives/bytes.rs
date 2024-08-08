@@ -1,4 +1,6 @@
-use super::hex::Hex;
+use std::str::FromStr;
+
+use super::{hex::Hex, HexError};
 
 pub type Bytes = Hex<Vec<u8>>;
 
@@ -26,3 +28,17 @@ define_bytes_n!(
     Bytes24, 24, Bytes25, 25, Bytes26, 26, Bytes27, 27, Byte28, 28, Bytes29, 29, Bytes30, 30,
     Bytes31, 31, Bytes32, 32
 );
+
+/// A trait to parse self as [`Bytes`]
+pub trait TryIntoBytes {
+    type Error;
+    fn try_into_bytes(&self) -> Result<Bytes, Self::Error>;
+}
+
+impl<T: AsRef<str>> TryIntoBytes for T {
+    type Error = HexError;
+
+    fn try_into_bytes(&self) -> Result<Bytes, Self::Error> {
+        Bytes::from_str(self.as_ref())
+    }
+}
