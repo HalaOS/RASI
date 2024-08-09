@@ -297,7 +297,7 @@ impl QuicListener {
         let mut raw = self.state.lock().await;
 
         if raw.remove_conn(scid) {
-            log::info!("scid={:?}, remove connection from server pool", scid);
+            log::trace!("scid={:?}, remove connection from server pool", scid);
         } else {
             log::warn!(
                 "scid={:?}, removed from server pool with error: not found",

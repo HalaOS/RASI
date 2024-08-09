@@ -124,6 +124,12 @@ pub struct QuicConn {
     stream_drop_table: Arc<QuicStreamDropTable>,
 }
 
+impl Debug for QuicConn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "quic conn, id={:?}", self.id)
+    }
+}
+
 impl Hash for QuicConn {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state)
@@ -281,10 +287,11 @@ impl QuicConn {
     pub(crate) async fn send_owned(self) -> Result<(Vec<u8>, SendInfo)> {
         let mut buf = vec![0; self.max_send_udp_payload_size];
 
-        log::trace!("scid={:?} try send packet", self.id);
+        log::trace!("send_owned, scid={:?}", self.id);
 
         let (send_size, send_info) = self.send(&mut buf).await?;
 
+        log::trace!("send_owned, scid={:?}, len={:?}", self.id, send_size);
         // Safety: send method ensure send_size <= buf.len()
         buf.resize(send_size, 0);
 
@@ -362,10 +369,12 @@ impl QuicConn {
                 }
                 Err(quiche::Error::Done) => {
                     if self.handle_stream_drop(&mut state).await {
+                        drop(state);
                         continue;
                     }
 
                     if self.send_ack_eliciting(&mut state).await? {
+                        drop(state);
                         continue;
                     }
 
@@ -390,6 +399,8 @@ impl QuicConn {
 
                         self.event_map.wait(&event).await;
                     }
+
+                    log::trace!("QuicConn scid={:?}, send wakeup", self.id);
 
                     continue;
                 }

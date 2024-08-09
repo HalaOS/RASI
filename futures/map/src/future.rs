@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     future::Future,
     hash::Hash,
     sync::{Arc, Mutex},
@@ -69,15 +70,18 @@ impl<K, R> FuturesWaitMap<K, R> {
 
     pub fn poll_next(&self, cx: &mut Context<'_>) -> Poll<(K, R)>
     where
-        K: Hash + Eq + Clone + Send + Sync + 'static,
+        K: Hash + Eq + Clone + Send + Sync + 'static + Debug,
         R: 'static,
     {
         let mut inner = self.inner.lock().unwrap();
 
+        inner.waker = Some(cx.waker().clone());
+
         while let Some(key) = inner.ready_queue.pop_front() {
-            let mut fut = inner.futs.remove(&key).expect(
-                "Inner error: when insert wake information, checking the futs map is necessarily",
-            );
+            let mut fut = match inner.futs.remove(&key) {
+                Some(fut) => fut,
+                None => continue,
+            };
 
             drop(inner);
 
@@ -86,15 +90,15 @@ impl<K, R> FuturesWaitMap<K, R> {
             let mut proxy_context = Context::from_waker(&waker);
 
             match fut.poll_unpin(&mut proxy_context) {
-                Poll::Ready(r) => return Poll::Ready((key, r)),
-                Poll::Pending => {
+                Poll::Ready(r) => {
+                    return Poll::Ready((key, r));
+                }
+                _ => {
                     inner = self.inner.lock().unwrap();
                     inner.futs.insert(key, fut);
                 }
             }
         }
-
-        inner.waker = Some(cx.waker().clone());
 
         Poll::Pending
     }
@@ -102,7 +106,7 @@ impl<K, R> FuturesWaitMap<K, R> {
 
 impl<K, R> Stream for FuturesWaitMap<K, R>
 where
-    K: Hash + Eq + Clone + Send + Sync + 'static,
+    K: Hash + Eq + Clone + Send + Sync + 'static + Debug,
     R: 'static,
 {
     type Item = (K, R);
@@ -114,7 +118,7 @@ where
 
 impl<K, R> Stream for &FuturesWaitMap<K, R>
 where
-    K: Hash + Eq + Clone + Send + Sync + 'static,
+    K: Hash + Eq + Clone + Send + Sync + 'static + Debug,
     R: 'static,
 {
     type Item = (K, R);
@@ -128,16 +132,15 @@ struct FutureWaitMapWaker<K, R>(K, Arc<Mutex<RawFutureWaitMap<K, R>>>);
 
 impl<K, R> WakeRef for FutureWaitMapWaker<K, R>
 where
-    K: Hash + Eq + Clone,
+    K: Hash + Eq + Clone + Debug,
 {
     fn wake_by_ref(&self) {
         let mut inner = self.1.lock().unwrap();
 
-        if inner.futs.contains_key(&self.0) {
-            inner.ready_queue.push_back(self.0.clone());
-            if let Some(waker) = inner.waker.take() {
-                waker.wake();
-            }
+        inner.ready_queue.push_back(self.0.clone());
+
+        if let Some(waker) = inner.waker.take() {
+            waker.wake();
         }
     }
 }

@@ -309,7 +309,7 @@ async fn test_stream_server_close() {
 #[futures_test::test]
 async fn test_stream_server_close_with_fin() {
     init();
-    pretty_env_logger::init_timed();
+    // pretty_env_logger::init_timed();
 
     let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
 
@@ -322,13 +322,13 @@ async fn test_stream_server_close_with_fin() {
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
             while let Some(stream) = conn.incoming().try_next().await.unwrap() {
-                log::info!("server accept stream, id={}", stream.id());
+                log::trace!("server accept stream, id={}", stream.id());
 
                 loop {
                     let mut buf = vec![0; 100];
                     let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
 
-                    log::info!("server recv, fin={}", fin);
+                    log::trace!("server recv, fin={}", fin);
 
                     if fin {
                         break;
@@ -336,7 +336,7 @@ async fn test_stream_server_close_with_fin() {
 
                     stream.send(&buf[..read_size], true).await.unwrap();
 
-                    log::info!("server send",);
+                    log::trace!("server send",);
                 }
             }
         }
@@ -351,13 +351,13 @@ async fn test_stream_server_close_with_fin() {
 
         stream.send(b"hello world", false).await.unwrap();
 
-        log::info!("client send {}", i);
+        log::trace!("client send {}", i);
 
         let mut buf = vec![0; 100];
 
         let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
 
-        log::info!("client recv {}", i);
+        log::trace!("client recv {}", i);
 
         assert_eq!(&buf[..read_size], b"hello world");
         assert!(fin);
