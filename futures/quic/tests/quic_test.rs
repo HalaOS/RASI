@@ -73,7 +73,6 @@ fn mock_config(is_server: bool) -> Config {
 #[futures_test::test]
 async fn test_echo() {
     init();
-    // pretty_env_logger::init();
 
     let listener = QuicListener::bind("127.0.0.1:0", mock_config(true))
         .await
