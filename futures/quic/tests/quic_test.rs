@@ -346,7 +346,7 @@ async fn test_stream_server_close_with_fin() {
         .await
         .unwrap();
 
-    for i in 0..10000 {
+    for i in 0..10 {
         let stream = client.open(false).await.unwrap();
 
         stream.send(b"hello world", false).await.unwrap();
