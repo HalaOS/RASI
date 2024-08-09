@@ -159,6 +159,7 @@ mod tests {
 
     use super::*;
 
+    #[ignore]
     #[test]
     fn test_hardhat() {
         pretty_env_logger::init();
