@@ -518,12 +518,14 @@ impl Drop for QuicStreamState {
 
 #[derive(Clone)]
 pub struct QuicStream {
+    stream_id: u64,
     state: Arc<QuicStreamState>,
 }
 
 impl QuicStream {
     fn new(stream_id: u64, conn: QuicConn) -> Self {
         Self {
+            stream_id,
             state: Arc::new(QuicStreamState { stream_id, conn }),
         }
     }
@@ -544,6 +546,10 @@ impl QuicStream {
 }
 
 impl QuicStream {
+    /// Returns current stream id value.
+    pub fn id(&self) -> u64 {
+        self.stream_id
+    }
     /// Writes data to a stream.
     ///
     /// On success the number of bytes written is returned.

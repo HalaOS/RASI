@@ -207,6 +207,8 @@ async fn listener_recv_loop(group: UdpGroup, listener: QuicListener) {
 
 async fn listener_recv_loop_priv(group: UdpGroup, listener: QuicListener) -> Result<()> {
     loop {
+        log::trace!("server_recv");
+
         let (buf, path_info) = group.recv_from().await?;
 
         log::trace!(

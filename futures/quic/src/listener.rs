@@ -359,6 +359,8 @@ impl QuicListener {
 
         let mut state = self.state.lock().await;
 
+        log::trace!("quic listener: {:?}", header);
+
         if let Some((conn, _)) = state.get_conn(&header.dcid) {
             // release the lock before call [QuicConnState::recv] function.
             drop(state);
@@ -366,37 +368,24 @@ impl QuicListener {
             let recv_size = match conn.recv(buf, recv_info).await {
                 Ok(recv_size) => recv_size,
                 Err(err) => {
+                    log::error!("conn recv, id={:?}, err={}", conn.id, err);
+
                     self.remove_conn(&header.dcid).await;
 
-                    return Err(err);
+                    return Ok((buf.len(), None));
                 }
             };
-
-            // if !is_established && conn.is_established().await {
-            //     // relock the state.
-            //     let mut state = self.state.lock().await;
-            //     // move the connection to established set and push state into incoming queue.
-            //     state.established(&header.dcid);
-
-            //     self.event_map.insert(QuicListenerAccept, ());
-
-            //     drop(state);
-
-            //     let send = conn.clone().send_owned();
-
-            //     self.send_map.insert(conn, send);
-            // }
 
             return Ok((recv_size, None));
         }
 
         // Perform the handshake process.
-        match state.handshake(&header, buf, recv_info)? {
-            QuicListenerHandshake::Connection {
+        match state.handshake(&header, buf, recv_info) {
+            Ok(QuicListenerHandshake::Connection {
                 conn,
                 is_established,
                 read_size,
-            } => {
+            }) => {
                 // notify incoming queue read ops.
                 if is_established {
                     self.event_map.insert(QuicListenerAccept, ());
@@ -408,10 +397,15 @@ impl QuicListener {
 
                 return Ok((read_size, None));
             }
-            QuicListenerHandshake::Response {
+            Ok(QuicListenerHandshake::Response {
                 buf,
                 read_size: recv_size,
-            } => return Ok((recv_size, Some(buf))),
+            }) => return Ok((recv_size, Some(buf))),
+            Err(err) => {
+                log::error!("quic listener handshake, err={}", err);
+
+                return Ok((buf.len(), None));
+            }
         }
     }
 

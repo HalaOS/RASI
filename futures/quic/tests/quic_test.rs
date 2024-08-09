@@ -322,15 +322,15 @@ async fn test_stream_server_close_with_fin() {
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
             while let Some(stream) = conn.incoming().try_next().await.unwrap() {
+                log::info!("server accept stream, id={}", stream.id());
+
                 loop {
-                    log::info!("server accept stream",);
-
                     let mut buf = vec![0; 100];
-                    let (read_size, _) = stream.recv(&mut buf).await.unwrap();
+                    let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
 
-                    log::info!("server recv",);
+                    log::info!("server recv, fin={}", fin);
 
-                    if read_size == 0 {
+                    if fin {
                         break;
                     }
 
