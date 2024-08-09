@@ -333,56 +333,64 @@ impl QuicConn {
     ///
     /// On success, returns the total number of bytes copied and the [`SendInfo`]
     pub async fn send(&self, buf: &mut [u8]) -> Result<(usize, SendInfo)> {
+        let mut on_timout = false;
+
         loop {
-            'inner: loop {
-                let mut state = self.state.lock().await;
+            let mut state = self.state.lock().await;
 
-                match state.conn.send(buf) {
-                    Ok((send_size, send_info)) => {
-                        log::trace!(
-                            "{:?}, send data, len={}, elapsed={:?}",
-                            *state,
-                            send_size,
-                            send_info.at.elapsed()
-                        );
+            // generate timeout packet.
+            if on_timout {
+                on_timout = false;
+                state.conn.on_timeout();
+            }
 
-                        self.after_send(&mut state).await;
+            match state.conn.send(buf) {
+                Ok((send_size, send_info)) => {
+                    log::trace!(
+                        "{:?}, send data, len={}, elapsed={:?}",
+                        *state,
+                        send_size,
+                        send_info.at.elapsed()
+                    );
 
-                        return Ok((send_size, send_info));
-                    }
-                    Err(quiche::Error::Done) => {
-                        if self.handle_stream_drop(&mut state).await {
-                            continue 'inner;
-                        }
+                    self.after_send(&mut state).await;
 
-                        if self.send_ack_eliciting(&mut state).await? {
-                            continue 'inner;
-                        }
-
-                        let event =
-                            QuicConnStateEvent::Send(state.conn.source_id().into_owned().clone());
-
-                        use rasi::timer::TimeoutExt;
-
-                        if let Some(timeout_at) = state.conn.timeout_instant() {
-                            drop(state);
-                            if self
-                                .event_map
-                                .wait(&event)
-                                .timeout_at(timeout_at)
-                                .await
-                                .is_none()
-                            {}
-                        } else {
-                            drop(state);
-
-                            self.event_map.wait(&event).await;
-                        }
-
+                    return Ok((send_size, send_info));
+                }
+                Err(quiche::Error::Done) => {
+                    if self.handle_stream_drop(&mut state).await {
                         continue;
                     }
-                    Err(err) => return Err(map_quic_error(err)),
+
+                    if self.send_ack_eliciting(&mut state).await? {
+                        continue;
+                    }
+
+                    let event =
+                        QuicConnStateEvent::Send(state.conn.source_id().into_owned().clone());
+
+                    use rasi::timer::TimeoutExt;
+
+                    if let Some(timeout_at) = state.conn.timeout_instant() {
+                        drop(state);
+                        if self
+                            .event_map
+                            .wait(&event)
+                            .timeout_at(timeout_at)
+                            .await
+                            .is_none()
+                        {
+                            on_timout = true;
+                        }
+                    } else {
+                        drop(state);
+
+                        self.event_map.wait(&event).await;
+                    }
+
+                    continue;
                 }
+                Err(err) => return Err(map_quic_error(err)),
             }
         }
     }
