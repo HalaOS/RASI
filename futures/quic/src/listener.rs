@@ -76,6 +76,7 @@ impl QuicListenerState {
     }
 
     /// Move connection from handshaking set to established set by id.
+    #[allow(unused)]
     fn established<'a>(&mut self, id: &ConnectionId<'a>) {
         let id = id.clone().into_owned();
         if let Some(conn) = self.handshaking_pool.remove(&id) {
@@ -358,7 +359,7 @@ impl QuicListener {
 
         let mut state = self.state.lock().await;
 
-        if let Some((conn, is_established)) = state.get_conn(&header.dcid) {
+        if let Some((conn, _)) = state.get_conn(&header.dcid) {
             // release the lock before call [QuicConnState::recv] function.
             drop(state);
 
@@ -371,20 +372,20 @@ impl QuicListener {
                 }
             };
 
-            if !is_established && conn.is_established().await {
-                // relock the state.
-                let mut state = self.state.lock().await;
-                // move the connection to established set and push state into incoming queue.
-                state.established(&header.dcid);
+            // if !is_established && conn.is_established().await {
+            //     // relock the state.
+            //     let mut state = self.state.lock().await;
+            //     // move the connection to established set and push state into incoming queue.
+            //     state.established(&header.dcid);
 
-                self.event_map.insert(QuicListenerAccept, ()).await;
+            //     self.event_map.insert(QuicListenerAccept, ());
 
-                drop(state);
+            //     drop(state);
 
-                let send = conn.clone().send_owned();
+            //     let send = conn.clone().send_owned();
 
-                self.send_map.insert(conn, send);
-            }
+            //     self.send_map.insert(conn, send);
+            // }
 
             return Ok((recv_size, None));
         }
@@ -398,7 +399,7 @@ impl QuicListener {
             } => {
                 // notify incoming queue read ops.
                 if is_established {
-                    self.event_map.insert(QuicListenerAccept, ()).await;
+                    self.event_map.insert(QuicListenerAccept, ());
 
                     let send = conn.clone().send_owned();
 

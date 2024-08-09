@@ -20,6 +20,8 @@ use ring::rand::{SecureRandom, SystemRandom};
 
 use crate::{errors::map_quic_error, QuicConn, QuicListener};
 
+const MAX_MTU_SIZE: usize = 1600;
+
 #[derive(Debug)]
 struct PathInfo {
     /// The specified local address.
@@ -153,7 +155,7 @@ pub trait QuicListenerBind {
 
             // max_recv_udp_payload_size must be greater than or equal to the maximum mtu size.
             // generally, the maximum mtu is 1,500 bytes.
-            let udp_group = UdpGroup::bind(laddrs.as_slice(), 1500).await?;
+            let udp_group = UdpGroup::bind(laddrs.as_slice(), MAX_MTU_SIZE as u16).await?;
 
             let laddrs = udp_group.local_addrs().cloned().collect::<Vec<_>>();
 
@@ -305,7 +307,7 @@ pub trait QuicConnect {
 
             let conn = QuicConn::new(conn, 0, None);
 
-            let mut buf = vec![0; 1500];
+            let mut buf = vec![0; MAX_MTU_SIZE];
 
             loop {
                 let (send_size, send_info) = conn.send(&mut buf).await?;
@@ -354,13 +356,13 @@ async fn client_send_loop(udp_socket: UdpSocket, conn: QuicConn) {
 }
 
 async fn client_send_loop_priv(udp_socket: UdpSocket, conn: QuicConn) -> Result<()> {
-    let mut buf = vec![0; 1500];
+    let mut buf = vec![0; MAX_MTU_SIZE];
     loop {
         let (send_size, send_info) = conn.send(&mut buf).await?;
 
         log::trace!(
             "client_send: tx len={}, from={}, to={}",
-            buf.len(),
+            send_size,
             send_info.from,
             send_info.to
         );
@@ -376,13 +378,13 @@ async fn client_recv_loop(udp_socket: UdpSocket, conn: QuicConn) {
 
 async fn client_recv_loop_prev(udp_socket: UdpSocket, conn: QuicConn) -> Result<()> {
     let laddr = udp_socket.local_addr()?;
-    let mut buf = vec![0; 1500];
+    let mut buf = vec![0; MAX_MTU_SIZE];
     loop {
         let (read_size, raddr) = udp_socket.recv_from(&mut buf).await?;
 
         log::trace!(
             "client_recv: tx len={}, from={}, to={}",
-            buf.len(),
+            read_size,
             raddr,
             laddr
         );

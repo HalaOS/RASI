@@ -62,7 +62,7 @@ fn mock_config(is_server: bool) -> Config {
 
     config.set_application_protos(&[b"test"]).unwrap();
 
-    config.set_max_idle_timeout(5000);
+    config.set_max_idle_timeout(50000);
 
     config.set_initial_max_data(10_000_000);
     config.set_disable_active_migration(false);
@@ -309,7 +309,7 @@ async fn test_stream_server_close() {
 #[futures_test::test]
 async fn test_stream_server_close_with_fin() {
     init();
-    // pretty_env_logger::init();
+    pretty_env_logger::init_timed();
 
     let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
 
@@ -323,14 +323,20 @@ async fn test_stream_server_close_with_fin() {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
             while let Some(stream) = conn.incoming().try_next().await.unwrap() {
                 loop {
+                    log::info!("server accept stream",);
+
                     let mut buf = vec![0; 100];
                     let (read_size, _) = stream.recv(&mut buf).await.unwrap();
+
+                    log::info!("server recv",);
 
                     if read_size == 0 {
                         break;
                     }
 
                     stream.send(&buf[..read_size], true).await.unwrap();
+
+                    log::info!("server send",);
                 }
             }
         }
@@ -340,14 +346,18 @@ async fn test_stream_server_close_with_fin() {
         .await
         .unwrap();
 
-    for _ in 0..10 {
+    for i in 0..10000 {
         let stream = client.open(false).await.unwrap();
 
         stream.send(b"hello world", false).await.unwrap();
 
+        log::info!("client send {}", i);
+
         let mut buf = vec![0; 100];
 
         let (read_size, fin) = stream.recv(&mut buf).await.unwrap();
+
+        log::info!("client recv {}", i);
 
         assert_eq!(&buf[..read_size], b"hello world");
         assert!(fin);

@@ -154,7 +154,7 @@ impl QuicConn {
 
         self.collect_stream_events(state, &mut raised_events);
 
-        self.event_map.batch_insert(raised_events).await;
+        self.event_map.batch_insert(raised_events);
 
         self.handle_stream_drop(state).await;
     }
@@ -164,7 +164,7 @@ impl QuicConn {
 
         self.collect_stream_events(state, &mut raised_events);
 
-        self.event_map.batch_insert(raised_events).await;
+        self.event_map.batch_insert(raised_events);
 
         self.handle_stream_drop(state).await;
     }
@@ -185,6 +185,8 @@ impl QuicConn {
     /// Mark the provided `stream_id` to be drop.
     fn stream_close(&self, stream_id: u64) {
         self.stream_drop_table.push(stream_id);
+        self.event_map
+            .insert(QuicConnStateEvent::Send(self.id.clone()), ());
     }
 
     async fn handle_stream_drop(&self, state: &mut QuicConnState) -> bool {
@@ -340,6 +342,7 @@ impl QuicConn {
 
             // generate timeout packet.
             if on_timout {
+                log::trace!("{:?}, send data, timeout", *state);
                 on_timout = false;
                 state.conn.on_timeout();
             }
@@ -415,7 +418,7 @@ impl QuicConn {
                 // for more information.
 
                 // So we must cancel all pending listener of event_map immediately;
-                self.event_map.cancel_all().await;
+                self.event_map.cancel_all();
 
                 Err(map_quic_error(err))
             }
@@ -560,14 +563,10 @@ impl QuicStream {
             if self.state.stream_id % 2 == state.next_outbound_stream_id % 2 {
                 // notify can open next stream.
                 if state.outbound_stream_ids.remove(&self.state.stream_id) {
-                    self.state
-                        .conn
-                        .event_map
-                        .insert(
-                            QuicConnStateEvent::OutboundStream(state.conn.source_id().into_owned()),
-                            (),
-                        )
-                        .await;
+                    self.state.conn.event_map.insert(
+                        QuicConnStateEvent::OutboundStream(state.conn.source_id().into_owned()),
+                        (),
+                    );
                 }
             }
 
@@ -575,28 +574,20 @@ impl QuicStream {
                 Ok(send_size) => {
                     // According to the function A [`send`](https://docs.rs/quiche/latest/quiche/struct.Connection.html#method.send)
                     // document description, we should call the send function immediately.
-                    self.state
-                        .conn
-                        .event_map
-                        .insert(
-                            QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
-                            (),
-                        )
-                        .await;
+                    self.state.conn.event_map.insert(
+                        QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
+                        (),
+                    );
 
                     return Ok(send_size);
                 }
                 Err(quiche::Error::Done) => {
                     // if no data was written(e.g. because the stream has no capacity),
                     // call `send()` function immediately
-                    self.state
-                        .conn
-                        .event_map
-                        .insert(
-                            QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
-                            (),
-                        )
-                        .await;
+                    self.state.conn.event_map.insert(
+                        QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
+                        (),
+                    );
 
                     let event = QuicConnStateEvent::StreamWritable(
                         state.conn.source_id().into_owned(),
@@ -630,14 +621,10 @@ impl QuicStream {
 
             match state.conn.stream_recv(self.state.stream_id, buf) {
                 Ok((read_size, fin)) => {
-                    self.state
-                        .conn
-                        .event_map
-                        .insert(
-                            QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
-                            (),
-                        )
-                        .await;
+                    self.state.conn.event_map.insert(
+                        QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
+                        (),
+                    );
 
                     return Ok((read_size, fin));
                 }

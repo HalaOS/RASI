@@ -139,7 +139,7 @@ impl JsonRpcClient {
         let resp: Response<String, serde_json::Value, serde_json::Value> =
             serde_json::from_slice(packet.as_ref())?;
 
-        self.wait_map.insert(resp.id, resp).await;
+        self.wait_map.insert(resp.id, resp);
 
         Ok(())
     }

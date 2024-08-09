@@ -4,12 +4,8 @@ use std::{
     fmt::Debug,
     future::Future,
     hash::Hash,
+    sync::Mutex,
     task::{Poll, Waker},
-};
-
-use futures::{
-    lock::{Mutex, MutexLockFuture},
-    FutureExt,
 };
 
 enum Event<V> {
@@ -45,8 +41,8 @@ where
     /// Inserts a event-value pair into the map.
     ///
     /// If the map did not have this key present, None is returned.
-    pub async fn insert(&self, k: K, v: V) -> Option<V> {
-        let mut raw = self.inner.lock().await;
+    pub fn insert(&self, k: K, v: V) -> Option<V> {
+        let mut raw = self.inner.lock().unwrap();
 
         if let Some(waker) = raw.wakers.remove(&k) {
             waker.wake();
@@ -65,12 +61,12 @@ where
     /// Inserts a event-value pair into the map.
     ///
     /// If the map did not have this key present, None is returned.
-    pub async fn batch_insert<I>(&self, kv: I)
+    pub fn batch_insert<I>(&self, kv: I)
     where
         I: IntoIterator<Item = (K, V)>,
         K: Debug,
     {
-        let mut raw = self.inner.lock().await;
+        let mut raw = self.inner.lock().unwrap();
 
         for (k, v) in kv.into_iter() {
             if let Some(waker) = raw.wakers.remove(&k) {
@@ -94,7 +90,7 @@ where
         K: Clone,
     {
         {
-            let mut raw = self.inner.lock().await;
+            let mut raw = self.inner.lock().unwrap();
 
             if let Some(v) = raw.kv.remove(&k) {
                 match v {
@@ -104,21 +100,16 @@ where
             }
         }
 
-        Wait {
-            event_map: self,
-            lock: None,
-            k,
-        }
-        .await
+        Wait { event_map: self, k }.await
     }
 
     /// Cancel other key waiting tasks.
-    pub async fn cancel<Q>(&self, k: &Q) -> bool
+    pub fn cancel<Q>(&self, k: &Q) -> bool
     where
         K: Borrow<Q>,
         Q: Hash + Eq,
     {
-        let mut raw = self.inner.lock().await;
+        let mut raw = self.inner.lock().unwrap();
 
         if let Some((k, waker)) = raw.wakers.remove_entry(k) {
             raw.kv.insert(k, Event::Cancel);
@@ -131,8 +122,8 @@ where
     }
 
     /// Cancel all key waiting tasks.
-    pub async fn cancel_all(&self) {
-        let mut raw = self.inner.lock().await;
+    pub fn cancel_all(&self) {
+        let mut raw = self.inner.lock().unwrap();
 
         let wakers = raw.wakers.drain().collect::<Vec<_>>();
 
@@ -145,7 +136,6 @@ where
 
 struct Wait<'a, K, V> {
     event_map: &'a KeyWaitMap<K, V>,
-    lock: Option<MutexLockFuture<'a, RawMap<K, V>>>,
     k: &'a K,
 }
 
@@ -156,31 +146,19 @@ where
     type Output = Option<V>;
 
     fn poll(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        let mut lock = if let Some(lock) = self.lock.take() {
-            lock
-        } else {
-            self.event_map.inner.lock()
-        };
+        let mut inner = self.event_map.inner.lock().unwrap();
 
-        match lock.poll_unpin(cx) {
-            std::task::Poll::Ready(mut inner) => {
-                if let Some(event) = inner.kv.remove(&self.k) {
-                    match event {
-                        Event::Value(value) => return Poll::Ready(Some(value)),
-                        Event::Cancel => return Poll::Ready(None),
-                    }
-                } else {
-                    inner.wakers.insert(self.k.clone(), cx.waker().clone());
-                    return Poll::Pending;
-                }
+        if let Some(event) = inner.kv.remove(&self.k) {
+            match event {
+                Event::Value(value) => return Poll::Ready(Some(value)),
+                Event::Cancel => return Poll::Ready(None),
             }
-            std::task::Poll::Pending => {
-                self.lock = Some(lock);
-                return Poll::Pending;
-            }
+        } else {
+            inner.wakers.insert(self.k.clone(), cx.waker().clone());
+            return Poll::Pending;
         }
     }
 }
@@ -195,7 +173,7 @@ mod tests {
     async fn test_event_map() {
         let event_map = KeyWaitMap::<usize, usize>::new();
 
-        event_map.insert(1, 1).await;
+        event_map.insert(1, 1);
 
         assert_eq!(event_map.wait(&1).await, Some(1));
 
@@ -203,7 +181,7 @@ mod tests {
 
         assert_eq!(poll!(&mut wait), Poll::Pending);
 
-        event_map.cancel(&2).await;
+        event_map.cancel(&2);
 
         assert_eq!(poll!(&mut wait), Poll::Ready(None));
 
@@ -211,7 +189,7 @@ mod tests {
 
         assert_eq!(poll!(&mut wait), Poll::Pending);
 
-        event_map.insert(2, 2).await;
+        event_map.insert(2, 2);
 
         assert_eq!(poll!(&mut wait), Poll::Ready(Some(2)));
     }
