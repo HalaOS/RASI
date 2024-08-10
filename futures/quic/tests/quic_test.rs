@@ -282,7 +282,7 @@ async fn test_stream_server_close() {
         .await
         .unwrap();
 
-    for _ in 0..100 {
+    for _ in 0..101 {
         let mut stream = client.open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();

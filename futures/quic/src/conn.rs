@@ -200,13 +200,28 @@ impl QuicConn {
         if let Some(drain) = self.stream_drop_table.drain() {
             let drop_streams = drain.len();
             for stream_id in drain {
-                if let Err(err) = state.conn.stream_send(stream_id, &[], true) {
+                if let Err(err) = state.conn.stream_send(stream_id, b"", true) {
                     log::error!(
                         "{:?}, drop stream failed, stream_id={}, error={}",
                         state,
                         stream_id,
                         err
                     );
+                }
+
+                if !state.conn.stream_finished(stream_id) {
+                    if let Err(err) =
+                        state
+                            .conn
+                            .stream_shutdown(stream_id, quiche::Shutdown::Read, 0)
+                    {
+                        log::error!(
+                            "{:?}, drop stream failed, stream_id={}, error={}",
+                            state,
+                            stream_id,
+                            err
+                        );
+                    }
                 }
             }
 
