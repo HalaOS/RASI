@@ -6,7 +6,8 @@ members = [
     "crates/sqlite3",
     "futures/*",
     "reweb3/*",
-    "examples/*"
+    "examples/*",
+    "rep2p/*"
 ]
 resolver = "2"
 
@@ -79,3 +80,13 @@ reweb3 = { path = "reweb3/reweb3", version = "^0.2" }
 reweb3-num = { path = "reweb3/num", version = "^0.2" }
 reweb3-macros = { path = "reweb3/macros", version = "^0.2" }
 ethbind = { path = "reweb3/bind", version = "^0.2" }
+#libp2p
+multiaddr = "^0.18"
+identity = { version = "^0.2", package = "libp2p-identity" }
+semver = "^1.0"
+multistream-select = "^0.13"
+unsigned-varint = "^0.8.0"
+# protobuf
+protobuf-codegen = "^3"
+protoc-bin-vendored = "^3"
+protobuf = "^3"
