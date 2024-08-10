@@ -321,7 +321,6 @@ pub trait QuicConnect {
                         Some(Ok((read_size, from))) => (read_size, from),
                         Some(Err(err)) => return Err(err),
                         None => {
-                            log::trace!("=============");
                             conn.on_timeout().await;
                             continue;
                         }

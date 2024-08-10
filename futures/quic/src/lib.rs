@@ -10,3 +10,5 @@ mod errors;
 mod rasi;
 #[cfg(feature = "with-rasi")]
 pub use rasi::*;
+
+pub use quiche;

@@ -156,28 +156,25 @@ impl QuicListenerState {
 
         let read_size = quiche_conn.recv(buf, recv_info).map_err(map_quic_error)?;
 
-        // let is_established = quiche_conn.is_established();
+        let is_established = quiche_conn.is_established();
 
         let scid = quiche_conn.source_id().into_owned();
         let dcid = quiche_conn.destination_id().into_owned();
 
-        let conn = QuicConn::new(quiche_conn, 1, None);
-
-        // if is_established {
-        //     self.established_conns.insert(scid, conn.clone());
-        //     self.incoming_conns.push_back(conn.clone());
-        // } else {
-        //     self.handshaking_pool.insert(scid, conn.clone());
-        // }
-
         log::trace!("Create new incoming conn, scid={:?}, dcid={:?}", scid, dcid);
 
-        self.established_conns.insert(scid, conn.clone());
-        self.incoming_conns.push_back(conn.clone());
+        let conn = QuicConn::new(quiche_conn, 1, None);
+
+        if is_established {
+            self.established_conns.insert(scid, conn.clone());
+            self.incoming_conns.push_back(conn.clone());
+        } else {
+            self.handshaking_pool.insert(scid, conn.clone());
+        }
 
         Ok(QuicListenerHandshake::Connection {
             conn,
-            is_established: true,
+            is_established,
             read_size,
         })
     }
@@ -361,7 +358,7 @@ impl QuicListener {
 
         log::trace!("quic listener: {:?}", header);
 
-        if let Some((conn, _)) = state.get_conn(&header.dcid) {
+        if let Some((conn, is_established)) = state.get_conn(&header.dcid) {
             // release the lock before call [QuicConnState::recv] function.
             drop(state);
 
@@ -376,6 +373,15 @@ impl QuicListener {
                 }
             };
 
+            if !is_established && conn.is_established().await {
+                // relock the state.
+                state = self.state.lock().await;
+                // move the connection to established set and push state into incoming queue.
+                state.established(&header.dcid);
+
+                self.event_map.insert(QuicListenerAccept, ());
+            }
+
             return Ok((recv_size, None));
         }
 
@@ -389,11 +395,11 @@ impl QuicListener {
                 // notify incoming queue read ops.
                 if is_established {
                     self.event_map.insert(QuicListenerAccept, ());
-
-                    let send = conn.clone().send_owned();
-
-                    self.send_map.insert(conn, send);
                 }
+
+                let send = conn.clone().send_owned();
+
+                self.send_map.insert(conn, send);
 
                 return Ok((read_size, None));
             }

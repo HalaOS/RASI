@@ -3,6 +3,7 @@ use std::{
     fmt::Debug,
     hash::Hash,
     io::{Error, ErrorKind, Result},
+    net::SocketAddr,
     ops::Deref,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -513,6 +514,44 @@ impl QuicConn {
 
             return Ok(QuicStream::new(stream_id, self.clone()));
         }
+    }
+
+    /// Returns the peer's cert in der format if valid.
+    pub async fn peer_cert(&self) -> Option<Vec<u8>> {
+        let state = self.state.lock().await;
+
+        state.conn.peer_cert().map(|v| v.to_vec())
+    }
+
+    /// Get the peer address on path.
+    pub async fn peer_addr(&self, laddr: SocketAddr) -> Option<SocketAddr> {
+        let state = self.state.lock().await;
+
+        state.conn.paths_iter(laddr).next()
+    }
+
+    /// Close this connection.
+    pub async fn close(&self) -> Result<()> {
+        let mut state = self.state.lock().await;
+
+        state.conn.close(false, 1, b"").map_err(map_quic_error)?;
+
+        self.event_map
+            .insert(QuicConnStateEvent::Send(self.id.clone()), ());
+
+        Ok(())
+    }
+
+    pub async fn path(&self) -> Option<(SocketAddr, SocketAddr)> {
+        let state = self.state.lock().await;
+
+        let result = state
+            .conn
+            .path_stats()
+            .next()
+            .map(|stats| (stats.local_addr, stats.peer_addr));
+
+        result
     }
 }
 

@@ -1,25 +1,36 @@
-use std::io::{self, Result};
-use std::net::{IpAddr, SocketAddr};
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{
+    io::{self, Result},
+    net::{IpAddr, SocketAddr},
+    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    task::{Context, Poll},
+};
 
 use async_trait::async_trait;
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite};
-use futures_boring::ssl::{
-    SslAcceptor, SslAlert, SslConnector, SslMethod, SslVerifyError, SslVerifyMode, SslVersion,
+use futures::{AsyncRead, AsyncWrite};
+use futures_boring::{
+    ec, pkey,
+    ssl::{SslAlert, SslContextBuilder, SslMethod, SslVerifyError, SslVerifyMode, SslVersion},
+    x509::X509,
 };
-use futures_boring::x509::X509;
-use futures_boring::{accept, connect, ec, pkey};
-use multistream_select::{dialer_select_proto, listener_select_proto, Version};
-use rasi::net::{TcpListener, TcpStream};
-use rep2p::identity::PublicKey;
-use rep2p::multiaddr::{Multiaddr, Protocol};
-use rep2p::transport::syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport};
-use rep2p::transport::{Connection, Listener, Stream};
-use rep2p::Switch;
-use rep2p_mux::{Reason, YamuxConn, YamuxStream, INIT_WINDOW_SIZE};
+use futures_quic::{
+    quiche::{self, Config},
+    QuicConn, QuicConnect, QuicListener, QuicListenerBind, QuicStream,
+};
+
+use rep2p::{
+    identity::PublicKey,
+    keystore::KeyStore,
+    multiaddr::{Multiaddr, Protocol},
+    transport::{
+        syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport},
+        Connection, Listener, Stream,
+    },
+    Switch,
+};
 
 fn to_sockaddr(addr: &Multiaddr) -> Option<SocketAddr> {
     let mut iter = addr.iter();
@@ -42,82 +53,27 @@ fn to_sockaddr(addr: &Multiaddr) -> Option<SocketAddr> {
     None
 }
 
-/// The libp2p tcp transport implementation.
-pub struct TcpTransport;
+async fn create_quic_config(host_key: &KeyStore) -> io::Result<Config> {
+    let (cert, pk) = rep2p_x509::generate(host_key).await?;
 
-#[async_trait]
-impl DriverTransport for TcpTransport {
-    async fn bind(&self, laddr: &Multiaddr, switch: Switch) -> Result<Listener> {
-        let (cert, pk) = rep2p_x509::generate(switch.keystore()).await?;
+    let cert = X509::from_der(&cert)?;
 
-        let cert = X509::from_der(&cert)?;
+    let pk = pkey::PKey::from_ec_key(ec::EcKey::private_key_from_der(&pk)?)?;
 
-        let pk = pkey::PKey::from_ec_key(ec::EcKey::private_key_from_der(&pk)?)?;
+    let mut ssl_context_builder = SslContextBuilder::new(SslMethod::tls())?;
 
-        let mut ssl_acceptor_builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())?;
+    ssl_context_builder.set_max_proto_version(Some(SslVersion::TLS1_3))?;
+    ssl_context_builder.set_min_proto_version(Some(SslVersion::TLS1_3))?;
 
-        ssl_acceptor_builder.set_max_proto_version(Some(SslVersion::TLS1_3))?;
-        ssl_acceptor_builder.set_min_proto_version(Some(SslVersion::TLS1_3))?;
+    ssl_context_builder.set_certificate(&cert)?;
 
-        ssl_acceptor_builder.set_certificate(&cert)?;
+    ssl_context_builder.set_private_key(&pk)?;
 
-        ssl_acceptor_builder.set_private_key(&pk)?;
+    ssl_context_builder.check_private_key()?;
 
-        ssl_acceptor_builder.check_private_key()?;
-
-        ssl_acceptor_builder.set_custom_verify_callback(
-            SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT,
-            |ssl| {
-                let cert = ssl
-                    .peer_certificate()
-                    .ok_or(SslVerifyError::Invalid(SslAlert::CERTIFICATE_REQUIRED))?;
-
-                let cert = cert
-                    .to_der()
-                    .map_err(|_| SslVerifyError::Invalid(SslAlert::BAD_CERTIFICATE))?;
-
-                let peer_id = rep2p_x509::verify(cert)
-                    .map_err(|_| SslVerifyError::Invalid(SslAlert::BAD_CERTIFICATE))?
-                    .to_peer_id();
-
-                log::trace!("ssl_server: verified peer={}", peer_id);
-
-                Ok(())
-            },
-        );
-
-        let ssl_acceptor = ssl_acceptor_builder.build();
-
-        let addr = to_sockaddr(laddr).ok_or(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Invalid laddr",
-        ))?;
-
-        let listener = TcpListener::bind(addr).await?;
-
-        let laddr = listener.local_addr()?;
-
-        Ok(P2pTcpListener::new(switch, ssl_acceptor, listener, laddr).into())
-    }
-
-    /// Connect to peer with remote peer [`raddr`](Multiaddr).
-    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection> {
-        let (cert, pk) = rep2p_x509::generate(switch.keystore()).await?;
-
-        let cert = X509::from_der(&cert)?;
-
-        let pk = pkey::PKey::from_ec_key(ec::EcKey::private_key_from_der(&pk)?)?;
-
-        let mut config = SslConnector::builder(SslMethod::tls_client())?;
-
-        config.set_certificate(&cert)?;
-
-        config.set_private_key(&pk)?;
-
-        config.set_max_proto_version(Some(SslVersion::TLS1_3))?;
-        config.set_min_proto_version(Some(SslVersion::TLS1_3))?;
-
-        config.set_custom_verify_callback(SslVerifyMode::PEER, |ssl| {
+    ssl_context_builder.set_custom_verify_callback(
+        SslVerifyMode::PEER | SslVerifyMode::FAIL_IF_NO_PEER_CERT,
+        |ssl| {
             let cert = ssl
                 .peer_certificate()
                 .ok_or(SslVerifyError::Invalid(SslAlert::CERTIFICATE_REQUIRED))?;
@@ -130,37 +86,80 @@ impl DriverTransport for TcpTransport {
                 .map_err(|_| SslVerifyError::Invalid(SslAlert::BAD_CERTIFICATE))?
                 .to_peer_id();
 
-            log::trace!("ssl_client: verified peer={}", peer_id);
+            log::trace!("ssl_server: verified peer={}", peer_id);
 
             Ok(())
-        });
+        },
+    );
 
-        let config = config.build().configure()?;
+    let mut config =
+        Config::with_boring_ssl_ctx_builder(quiche::PROTOCOL_VERSION, ssl_context_builder)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
-        let addr =
+    config.set_initial_max_data(10_000_000);
+    config.set_initial_max_stream_data_bidi_local(1024 * 1024);
+    config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
+    config.set_initial_max_streams_bidi(100);
+    config.set_initial_max_streams_uni(100);
+    config.set_max_idle_timeout(5000);
+
+    config.verify_peer(true);
+
+    config.set_application_protos(&[b"libp2p"]).unwrap();
+
+    config.enable_early_data();
+
+    config.set_disable_active_migration(false);
+
+    Ok(config)
+}
+
+/// A libp2p transport backed quic protocol.
+pub struct QuicTransport;
+
+#[async_trait]
+impl DriverTransport for QuicTransport {
+    async fn bind(&self, laddr: &Multiaddr, switch: Switch) -> Result<Listener> {
+        let quic_config = create_quic_config(switch.keystore()).await?;
+
+        let laddrs =
+            to_sockaddr(laddr).ok_or(io::Error::new(io::ErrorKind::Other, "Invalid laddr"))?;
+
+        let listener = QuicListener::bind(laddrs, quic_config).await?;
+
+        let laddr = listener.local_addrs().next().unwrap().clone();
+
+        Ok(QuicP2pListener::new(switch, listener, laddr).into())
+    }
+
+    /// Connect to peer with remote peer [`raddr`](Multiaddr).
+    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection> {
+        let mut quic_config = create_quic_config(switch.keystore()).await?;
+
+        let raddr =
             to_sockaddr(raddr).ok_or(io::Error::new(io::ErrorKind::Other, "Invalid laddr"))?;
 
-        let mut stream = TcpStream::connect(addr).await?;
+        let laddr = if raddr.is_ipv4() {
+            "0.0.0.0:0"
+        } else {
+            "[::]:0"
+        };
 
-        let laddr = stream.local_addr()?;
+        let conn = QuicConn::connect(None, laddr, raddr, &mut quic_config).await?;
 
-        // dynamic select the secure protocol.
-        let (_, _) = dialer_select_proto(&mut stream, ["/tls/1.0.0"], Version::V1).await?;
-
-        let mut stream = connect(config, &addr.ip().to_string(), stream)
+        let (laddr, raddr) = conn
+            .path()
             .await
-            .map_err(|err| io::Error::new(io::ErrorKind::BrokenPipe, err))?;
+            .ok_or(io::Error::new(io::ErrorKind::Other, "quic: no valid path"))?;
 
-        let cert = stream
-            .ssl()
-            .peer_certificate()
-            .ok_or(io::Error::new(io::ErrorKind::Other, "Handshaking"))?;
+        let cert = conn.peer_cert().await.ok_or(io::Error::new(
+            io::ErrorKind::NotFound,
+            "quic: peer cert not found",
+        ))?;
 
-        let public_key = rep2p_x509::verify(cert.to_der()?)?;
+        let public_key = rep2p_x509::verify(cert)?;
 
-        let (_, _) = dialer_select_proto(&mut stream, ["/yamux/1.0.0"], Version::V1).await?;
-
-        let conn = P2pTcpConn::new(switch.clone(), laddr, addr, public_key, stream, false)?;
+        let conn = QuicP2pConn::new(switch.clone(), laddr, raddr, conn, public_key);
 
         Ok((conn, switch).into())
     }
@@ -179,109 +178,94 @@ impl DriverTransport for TcpTransport {
     }
 }
 
-struct P2pTcpListener {
+struct QuicP2pListener {
+    listener: QuicListener,
     laddr: SocketAddr,
-    ssl_acceptor: SslAcceptor,
-    listener: TcpListener,
     switch: Switch,
 }
 
-impl P2pTcpListener {
-    fn new(
-        switch: Switch,
-        ssl_acceptor: SslAcceptor,
-        listener: TcpListener,
-        laddr: SocketAddr,
-    ) -> Self {
+impl QuicP2pListener {
+    fn new(switch: Switch, listener: QuicListener, laddr: SocketAddr) -> Self {
         Self {
-            laddr,
-            ssl_acceptor,
-            listener,
             switch,
+            laddr,
+            listener,
         }
     }
 }
 
 #[async_trait]
-impl DriverListener for P2pTcpListener {
+impl DriverListener for QuicP2pListener {
     /// Accept next incoming connection between local and peer.
     async fn accept(&mut self) -> Result<Connection> {
-        let (mut stream, raddr) = self.listener.accept().await?;
+        let conn = self.listener.accept().await?;
 
-        let (_, _) = listener_select_proto(&mut stream, ["/tls/1.0.0"]).await?;
+        let cert = conn.peer_cert().await.ok_or(io::Error::new(
+            io::ErrorKind::NotFound,
+            "quic: peer cert not found",
+        ))?;
 
-        let mut stream = accept(&self.ssl_acceptor, stream)
-            .await
-            .map_err(|err| io::Error::new(io::ErrorKind::BrokenPipe, err))?;
+        let public_key = rep2p_x509::verify(cert)?;
 
-        let cert = stream
-            .ssl()
-            .peer_certificate()
-            .ok_or(io::Error::new(io::ErrorKind::Other, "Handshaking"))?;
+        let peer_addr = conn.peer_addr(self.laddr).await.ok_or(io::Error::new(
+            io::ErrorKind::NotFound,
+            "quic: peer path not found",
+        ))?;
 
-        let public_key = rep2p_x509::verify(cert.to_der()?)?;
-
-        let (_, _) = listener_select_proto(&mut stream, ["/yamux/1.0.0"]).await?;
-
-        let conn = P2pTcpConn::new(
+        Ok((
+            QuicP2pConn::new(
+                self.switch.clone(),
+                self.laddr.clone(),
+                peer_addr,
+                conn,
+                public_key,
+            ),
             self.switch.clone(),
-            self.laddr,
-            raddr,
-            public_key,
-            stream,
-            true,
-        )?;
-
-        Ok((conn, self.switch.clone()).into())
+        )
+            .into())
     }
 
     /// Returns the local address that this listener is bound to.
     fn local_addr(&self) -> Result<Multiaddr> {
         let mut addr = Multiaddr::from(self.laddr.ip());
-        addr.push(Protocol::Tcp(self.laddr.port()));
+        addr.push(Protocol::Udp(self.laddr.port()));
+        addr.push(Protocol::QuicV1);
 
         Ok(addr)
     }
 }
 
 #[derive(Clone)]
-struct P2pTcpConn {
-    public_key: PublicKey,
+struct QuicP2pConn {
     laddr: SocketAddr,
     raddr: SocketAddr,
-    conn: YamuxConn,
-    switch: Switch,
+    conn: QuicConn,
+    public_key: PublicKey,
     is_closed: Arc<AtomicBool>,
+    switch: Switch,
 }
 
-impl P2pTcpConn {
-    fn new<S>(
+impl QuicP2pConn {
+    fn new(
         switch: Switch,
         laddr: SocketAddr,
         raddr: SocketAddr,
+        conn: QuicConn,
         public_key: PublicKey,
-        stream: S,
-        is_server: bool,
-    ) -> io::Result<Self>
-    where
-        S: AsyncWrite + AsyncRead + 'static + Sync + Send,
-    {
-        let (read, write) = stream.split();
-        let conn = rep2p_mux::YamuxConn::new_with(INIT_WINDOW_SIZE, is_server, read, write);
-
-        Ok(Self {
+    ) -> Self {
+        Self {
             switch,
             laddr,
             raddr,
             conn,
             public_key,
             is_closed: Default::default(),
-        })
+        }
     }
 }
 
 #[async_trait]
-impl DriverConnection for P2pTcpConn {
+impl DriverConnection for QuicP2pConn {
     /// Returns local bind address.
     ///
     /// This can be useful, for example, when binding to port 0 to figure out which port was
@@ -305,9 +289,9 @@ impl DriverConnection for P2pTcpConn {
     ///
     /// If the connection is dropping or has been dropped, this function will returns `None`.
     async fn accept(&mut self) -> io::Result<Stream> {
-        let stream = self.conn.stream_accept().await?;
+        let stream = self.conn.accept().await?;
 
-        Ok(P2pTcpStream::new(
+        Ok(QuicP2pStream::new(
             stream,
             self.public_key.clone(),
             self.laddr.clone(),
@@ -317,9 +301,9 @@ impl DriverConnection for P2pTcpConn {
     }
 
     async fn connect(&mut self) -> Result<Stream> {
-        let stream = self.conn.stream_open().await?;
+        let stream = self.conn.open(true).await?;
 
-        Ok(P2pTcpStream::new(
+        Ok(QuicP2pStream::new(
             stream,
             self.public_key.clone(),
             self.laddr.clone(),
@@ -329,7 +313,7 @@ impl DriverConnection for P2pTcpConn {
     }
 
     async fn close(&mut self) -> io::Result<()> {
-        self.conn.close(Reason::Normal).await?;
+        self.conn.close().await?;
 
         self.is_closed.store(true, Ordering::Relaxed);
 
@@ -352,16 +336,16 @@ impl DriverConnection for P2pTcpConn {
     }
 }
 
-struct P2pTcpStream {
-    stream: YamuxStream,
+struct QuicP2pStream {
+    stream: QuicStream,
     public_key: PublicKey,
     laddr: SocketAddr,
     raddr: SocketAddr,
 }
 
-impl P2pTcpStream {
+impl QuicP2pStream {
     fn new(
-        stream: YamuxStream,
+        stream: QuicStream,
         public_key: PublicKey,
         laddr: SocketAddr,
         raddr: SocketAddr,
@@ -376,7 +360,7 @@ impl P2pTcpStream {
 }
 
 #[async_trait]
-impl DriverStream for P2pTcpStream {
+impl DriverStream for QuicP2pStream {
     /// Return the remote peer's public key.
     fn public_key(&self) -> Result<PublicKey> {
         Ok(self.public_key.clone())
@@ -431,7 +415,7 @@ mod tests {
 
     use std::sync::Once;
 
-    use futures::AsyncWriteExt;
+    use futures::{AsyncReadExt, AsyncWriteExt};
     use rasi::task::spawn_ok;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
 
@@ -452,11 +436,13 @@ mod tests {
     async fn test_tls() {
         init();
 
-        let transport = TcpTransport;
+        // pretty_env_logger::init();
 
-        let server_switch = Switch::new("test").create().await.unwrap();
+        let transport = QuicTransport;
 
-        let laddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
+        let server_switch = Switch::new("test-server").create().await.unwrap();
+
+        let laddr = "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap();
 
         let mut listener = transport.bind(&laddr, server_switch.clone()).await.unwrap();
 
@@ -490,7 +476,7 @@ mod tests {
             }
         });
 
-        let client_switch = Switch::new("test_client").create().await.unwrap();
+        let client_switch = Switch::new("test-client").create().await.unwrap();
 
         let mut conn = transport
             .connect(&laddr, client_switch.clone())
