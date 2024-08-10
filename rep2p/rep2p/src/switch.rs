@@ -12,10 +12,10 @@ use protobuf::Message;
 use rasi::{task::spawn_ok, timer::TimeoutExt};
 
 use crate::{
-    keystore::{syscall::DriverKeyStore, KeyStore},
+    keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
     proto::identity::Identity,
     protocol::{syscall::DriverProtocol, Protocol, ProtocolHandler},
-    routetable::{syscall::DriverRouteTable, RouteTable},
+    routetable::{syscall::DriverRouteTable, MemoryRouteTable, RouteTable},
     transport::{
         syscall::{DriverConnection, DriverTransport},
         Connection, Listener, Stream, Transport,
@@ -50,7 +50,7 @@ struct ImmutableSwitch {
 }
 
 impl ImmutableSwitch {
-    fn new(agent_version: String, keystore: KeyStore, route_table: RouteTable) -> Self {
+    fn new(agent_version: String) -> Self {
         Self {
             agent_version,
             timeout: Duration::from_secs(10),
@@ -61,8 +61,8 @@ impl ImmutableSwitch {
             proto_handlers: Default::default(),
             max_identity_len: 4096,
             transports: vec![],
-            keystore,
-            route_table,
+            keystore: MemoryKeyStore::random().into(),
+            route_table: MemoryRouteTable::default().into(),
             laddrs: vec![],
         }
     }
@@ -102,6 +102,30 @@ pub struct SwitchBuilder {
 }
 
 impl SwitchBuilder {
+    /// Replace default [`MemoryKeyStore`].
+    pub fn keystore<K>(self, value: K) -> Self
+    where
+        K: DriverKeyStore + 'static,
+    {
+        self.and_then(|mut cfg| {
+            cfg.keystore = value.into();
+
+            Ok(cfg)
+        })
+    }
+
+    /// Replace default [`MemoryRouteTable`].
+    pub fn route_table<R>(self, value: R) -> Self
+    where
+        R: DriverRouteTable + 'static,
+    {
+        self.and_then(|mut cfg| {
+            cfg.route_table = value.into();
+
+            Ok(cfg)
+        })
+    }
+
     /// Set the protocol timeout, the default value is `10s`
     pub fn timeout(self, duration: Duration) -> Self {
         self.and_then(|mut cfg| {
@@ -512,19 +536,13 @@ impl Switch {
 }
 
 impl Switch {
-    /// Create a new `Switch` builder.
-    pub fn new<A, K, R>(agent_version: A, keystore: K, route_table: R) -> SwitchBuilder
+    /// Uses `agent_version` string to create a switch [`builder`](SwitchBuilder).
+    pub fn new<A>(agent_version: A) -> SwitchBuilder
     where
         A: AsRef<str>,
-        K: DriverKeyStore + 'static,
-        R: DriverRouteTable + 'static,
     {
         SwitchBuilder {
-            ops: Ok(ImmutableSwitch::new(
-                agent_version.as_ref().to_owned(),
-                keystore.into(),
-                route_table.into(),
-            )),
+            ops: Ok(ImmutableSwitch::new(agent_version.as_ref().to_owned())),
         }
     }
 
