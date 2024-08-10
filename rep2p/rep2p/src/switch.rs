@@ -70,7 +70,7 @@ impl ImmutableSwitch {
     fn get_transport_by_address(&self, laddr: &Multiaddr) -> Option<&Transport> {
         self.transports
             .iter()
-            .find(|transport| transport.is_support(laddr))
+            .find(|transport| transport.multiaddr_hit(laddr))
     }
 }
 
@@ -597,5 +597,10 @@ impl Switch {
             .ok_or(Error::Timeout)??;
 
         Ok((stream, protocol_id.as_ref().to_owned()))
+    }
+
+    /// Get associated keystore instance.
+    pub fn keystore(&self) -> &KeyStore {
+        &self.immutable.keystore
     }
 }

@@ -473,6 +473,8 @@ pub struct Session {
     send_frames: VecDeque<SendFrame>,
     /// session terminated reason.
     terminated: Option<Reason>,
+    /// the close flag.
+    is_closed: bool,
 }
 
 impl Session {
@@ -690,6 +692,7 @@ impl Session {
             streams: Default::default(),
             send_frames: Default::default(),
             terminated: None,
+            is_closed: false,
         }
     }
 
@@ -883,8 +886,13 @@ impl Session {
 
     pub fn close(&mut self, reason: Reason) -> Result<()> {
         self.send_frames.push_back(SendFrame::GoAway(reason));
+        self.is_closed = true;
 
         Ok(())
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.is_closed
     }
 }
 

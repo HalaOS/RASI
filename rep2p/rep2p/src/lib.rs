@@ -9,6 +9,9 @@ pub use switch::*;
 mod errors;
 pub use errors::*;
 
+pub use identity;
+pub use multiaddr;
+
 #[allow(renamed_and_removed_lints)]
 mod proto;
 

@@ -99,6 +99,13 @@ impl YamuxConn {
         Ok(())
     }
 
+    /// Get the closed flag.
+    pub async fn is_closed(&self) -> bool {
+        let session = self.session.lock().await;
+
+        session.is_closed()
+    }
+
     async fn stream_send_owned(self, stream_id: u32, buf: Vec<u8>, fin: bool) -> io::Result<usize> {
         self.stream_send(stream_id, &buf, fin).await
     }
@@ -376,6 +383,9 @@ pub struct YamuxStream {
     raw: Arc<RawStream>,
     poll: Option<StreamPoll>,
 }
+
+unsafe impl Send for YamuxStream {}
+unsafe impl Sync for YamuxStream {}
 
 impl YamuxStream {
     fn new(stream_id: u32, conn: YamuxConn) -> Self {

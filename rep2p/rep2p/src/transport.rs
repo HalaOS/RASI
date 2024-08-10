@@ -31,7 +31,7 @@ pub mod syscall {
         async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection>;
 
         /// Check if this transport support the protocol stack represented by the `addr`.
-        fn is_support(&self, addr: &Multiaddr) -> bool;
+        fn multiaddr_hit(&self, addr: &Multiaddr) -> bool;
     }
 
     /// A server-side socket that accept new incoming stream.
