@@ -365,21 +365,23 @@ impl Drop for RawStream {
     }
 }
 
+enum StreamPoll {
+    PollClose(BoxFuture<'static, Result<()>>),
+    PollSend(BoxFuture<'static, Result<usize>>),
+    PollRead(BoxFuture<'static, Result<(Vec<u8>, bool)>>),
+}
+
 /// Yamux stream type with asynchronous api.
 pub struct YamuxStream {
     raw: Arc<RawStream>,
-    pending_close: Option<BoxFuture<'static, Result<()>>>,
-    pending_send: Option<BoxFuture<'static, Result<usize>>>,
-    pending_read: Option<BoxFuture<'static, Result<(Vec<u8>, bool)>>>,
+    poll: Option<StreamPoll>,
 }
 
 impl YamuxStream {
     fn new(stream_id: u32, conn: YamuxConn) -> Self {
         Self {
             raw: Arc::new(RawStream(stream_id, conn)),
-            pending_read: None,
-            pending_send: None,
-            pending_close: None,
+            poll: None,
         }
     }
 
@@ -394,8 +396,8 @@ impl AsyncWrite for YamuxStream {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
-    ) -> std::task::Poll<io::Result<usize>> {
-        let mut fut = if let Some(fut) = self.pending_send.take() {
+    ) -> std::task::Poll<Result<usize>> {
+        let mut fut = if let Some(StreamPoll::PollSend(fut)) = self.poll.take() {
             fut
         } else {
             Box::pin(
@@ -408,7 +410,7 @@ impl AsyncWrite for YamuxStream {
 
         match fut.poll_unpin(cx) {
             Poll::Pending => {
-                self.pending_send = Some(fut);
+                self.poll = Some(StreamPoll::PollSend(fut));
 
                 Poll::Pending
             }
@@ -420,23 +422,23 @@ impl AsyncWrite for YamuxStream {
     fn poll_flush(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<io::Result<()>> {
+    ) -> std::task::Poll<Result<()>> {
         Poll::Ready(Ok(()))
     }
 
     fn poll_close(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<io::Result<()>> {
-        let mut fut = if let Some(fut) = self.pending_close.take() {
+    ) -> std::task::Poll<Result<()>> {
+        let mut fut = if let Some(StreamPoll::PollClose(fut)) = self.poll.take() {
             fut
         } else {
-            Box::pin(self.raw.1.clone().stream_close_owned(self.raw.0))
+            Box::pin(self.raw.1.clone().stream_close_owned(self.stream_id()))
         };
 
         match fut.poll_unpin(cx) {
             Poll::Pending => {
-                self.pending_close = Some(fut);
+                self.poll = Some(StreamPoll::PollClose(fut));
 
                 Poll::Pending
             }
@@ -451,11 +453,16 @@ impl AsyncRead for YamuxStream {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        let mut fut = if let Some(fut) = self.pending_read.take() {
+    ) -> std::task::Poll<Result<usize>> {
+        let mut fut = if let Some(StreamPoll::PollRead(fut)) = self.poll.take() {
             fut
         } else {
-            Box::pin(self.raw.1.clone().stream_recv_owned(self.raw.0, buf.len()))
+            Box::pin(
+                self.raw
+                    .1
+                    .clone()
+                    .stream_recv_owned(self.stream_id(), buf.len()),
+            )
         };
 
         match fut.poll_unpin(cx) {
@@ -466,7 +473,7 @@ impl AsyncRead for YamuxStream {
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => {
-                self.pending_read = Some(fut);
+                self.poll = Some(StreamPoll::PollRead(fut));
                 Poll::Pending
             }
         }

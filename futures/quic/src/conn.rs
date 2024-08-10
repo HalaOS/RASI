@@ -516,51 +516,18 @@ impl QuicConn {
     }
 }
 
-struct QuicStreamState {
+struct RawQuicStream {
     stream_id: u64,
     conn: QuicConn,
 }
 
-impl Drop for QuicStreamState {
+impl Drop for RawQuicStream {
     fn drop(&mut self) {
         self.conn.stream_close(self.stream_id);
     }
 }
 
-#[derive(Clone)]
-pub struct QuicStream {
-    stream_id: u64,
-    state: Arc<QuicStreamState>,
-}
-
-impl QuicStream {
-    fn new(stream_id: u64, conn: QuicConn) -> Self {
-        Self {
-            stream_id,
-            state: Arc::new(QuicStreamState { stream_id, conn }),
-        }
-    }
-
-    async fn send_owned(self, buf: Vec<u8>, fin: bool) -> Result<usize> {
-        self.send(buf, fin).await
-    }
-
-    async fn recv_owned(self, len: usize) -> Result<(Vec<u8>, bool)> {
-        let mut buf = vec![0; len];
-
-        let (recv_size, fin) = self.recv(&mut buf).await?;
-
-        buf.resize(recv_size, 0);
-
-        Ok((buf, fin))
-    }
-}
-
-impl QuicStream {
-    /// Returns current stream id value.
-    pub fn id(&self) -> u64 {
-        self.stream_id
-    }
+impl RawQuicStream {
     /// Writes data to a stream.
     ///
     /// On success the number of bytes written is returned.
@@ -568,19 +535,19 @@ impl QuicStream {
         let buf = buf.as_ref();
 
         loop {
-            let mut state = self.state.conn.state.lock().await;
+            let mut state = self.conn.state.lock().await;
 
-            let result = state.conn.stream_send(self.state.stream_id, buf, fin);
+            let result = state.conn.stream_send(self.stream_id, buf, fin);
 
             // After calling stream_send,
             // The [`peer_streams_left_bidi`](https://docs.rs/quiche/latest/quiche/struct.Connection.html#method.peer_streams_left_bidi)
             // will be able to return the correct value.
             //
             // So the outbound stream id can be removed from `outbound_stream_ids`, safely.
-            if self.state.stream_id % 2 == state.next_outbound_stream_id % 2 {
+            if self.stream_id % 2 == state.next_outbound_stream_id % 2 {
                 // notify can open next stream.
-                if state.outbound_stream_ids.remove(&self.state.stream_id) {
-                    self.state.conn.event_map.insert(
+                if state.outbound_stream_ids.remove(&self.stream_id) {
+                    self.conn.event_map.insert(
                         QuicConnStateEvent::OutboundStream(state.conn.source_id().into_owned()),
                         (),
                     );
@@ -591,7 +558,7 @@ impl QuicStream {
                 Ok(send_size) => {
                     // According to the function A [`send`](https://docs.rs/quiche/latest/quiche/struct.Connection.html#method.send)
                     // document description, we should call the send function immediately.
-                    self.state.conn.event_map.insert(
+                    self.conn.event_map.insert(
                         QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
                         (),
                     );
@@ -601,19 +568,19 @@ impl QuicStream {
                 Err(quiche::Error::Done) => {
                     // if no data was written(e.g. because the stream has no capacity),
                     // call `send()` function immediately
-                    self.state.conn.event_map.insert(
+                    self.conn.event_map.insert(
                         QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
                         (),
                     );
 
                     let event = QuicConnStateEvent::StreamWritable(
                         state.conn.source_id().into_owned(),
-                        self.state.stream_id,
+                        self.stream_id,
                     );
 
                     drop(state);
 
-                    self.state.conn.event_map.wait(&event).await;
+                    self.conn.event_map.wait(&event).await;
 
                     continue;
                 }
@@ -622,23 +589,15 @@ impl QuicStream {
         }
     }
 
-    /// Reads contiguous data from a stream into the provided slice.
-    ///
-    /// The slice must be sized by the caller and will be populated up to its capacity.
-    /// On success the amount of bytes read and a flag indicating the fin state is
-    /// returned as a tuple.
-    ///
-    /// Reading data from a stream may trigger queueing of control messages
-    /// (e.g. MAX_STREAM_DATA). send() should be called after reading.
-    pub async fn recv<Buf: AsMut<[u8]>>(&self, mut buf: Buf) -> Result<(usize, bool)> {
+    async fn recv<Buf: AsMut<[u8]>>(&self, mut buf: Buf) -> Result<(usize, bool)> {
         let buf = buf.as_mut();
 
         loop {
-            let mut state = self.state.conn.state.lock().await;
+            let mut state = self.conn.state.lock().await;
 
-            match state.conn.stream_recv(self.state.stream_id, buf) {
+            match state.conn.stream_recv(self.stream_id, buf) {
                 Ok((read_size, fin)) => {
-                    self.state.conn.event_map.insert(
+                    self.conn.event_map.insert(
                         QuicConnStateEvent::Send(state.conn.source_id().into_owned()),
                         (),
                     );
@@ -648,29 +607,29 @@ impl QuicStream {
                 Err(quiche::Error::Done) => {
                     let event = QuicConnStateEvent::StreamReadable(
                         state.conn.source_id().into_owned(),
-                        self.state.stream_id,
+                        self.stream_id,
                     );
 
                     drop(state);
 
-                    self.state.conn.event_map.wait(&event).await;
+                    self.conn.event_map.wait(&event).await;
                     log::trace!("stream wakeup: {:?}", event);
                     continue;
                 }
                 Err(quiche::Error::InvalidStreamState(_)) => {
                     // the stream is not created yet.
-                    if state.outbound_stream_ids.contains(&self.state.stream_id) {
+                    if state.outbound_stream_ids.contains(&self.stream_id) {
                         let event = QuicConnStateEvent::StreamReadable(
                             state.conn.source_id().into_owned(),
-                            self.state.stream_id,
+                            self.stream_id,
                         );
 
                         drop(state);
 
-                        self.state.conn.event_map.wait(&event).await;
+                        self.conn.event_map.wait(&event).await;
                     } else {
                         return Err(map_quic_error(quiche::Error::InvalidStreamState(
-                            self.state.stream_id,
+                            self.stream_id,
                         )));
                     }
                 }
@@ -681,61 +640,96 @@ impl QuicStream {
         }
     }
 
-    pub fn to_io(&self) -> QuicIO {
-        QuicIO {
-            stream: self.clone(),
-            pending_close: Default::default(),
-            pending_send: Default::default(),
-            pending_read: Default::default(),
-        }
+    async fn send_owned(self: Arc<Self>, buf: Vec<u8>, fin: bool) -> Result<usize> {
+        self.send(buf, fin).await
+    }
+
+    async fn recv_owned(self: Arc<Self>, len: usize) -> Result<(Vec<u8>, bool)> {
+        let mut buf = vec![0; len];
+
+        let (recv_size, fin) = self.recv(&mut buf).await?;
+
+        buf.resize(recv_size, 0);
+
+        Ok((buf, fin))
     }
 }
 
-impl From<&QuicStream> for QuicIO {
-    fn from(value: &QuicStream) -> Self {
+/// The AsyncRead / AsyncWrite poll state matchine.
+enum QuicStreamPoll {
+    PollWrite(BoxFuture<'static, Result<usize>>),
+    PollRead(BoxFuture<'static, Result<(Vec<u8>, bool)>>),
+    PollClose(BoxFuture<'static, Result<usize>>),
+}
+
+pub struct QuicStream {
+    state: Arc<RawQuicStream>,
+    poll: Option<QuicStreamPoll>,
+}
+
+/// Safety: only AsyncRead/AsyncWrite functions will access the `poll` field.
+unsafe impl Sync for QuicStream {}
+
+impl Clone for QuicStream {
+    fn clone(&self) -> Self {
+        assert!(!self.poll.is_none(),"Clone quic stream, after returns pending by calling AsyncWrite / AsyncRead poll function.");
+
         Self {
-            stream: value.clone(),
-            pending_close: Default::default(),
-            pending_send: Default::default(),
-            pending_read: Default::default(),
+            state: self.state.clone(),
+            poll: None,
         }
     }
 }
 
-/// A wrapper of [`QuicStream`] that implements [`AsyncWrite`] and [`AsyncRead`] traits.
-pub struct QuicIO {
-    stream: QuicStream,
-    pending_close: Option<BoxFuture<'static, Result<usize>>>,
-    pending_send: Option<BoxFuture<'static, Result<usize>>>,
-    pending_read: Option<BoxFuture<'static, Result<(Vec<u8>, bool)>>>,
-}
-
-impl From<QuicStream> for QuicIO {
-    fn from(value: QuicStream) -> Self {
+impl QuicStream {
+    fn new(stream_id: u64, conn: QuicConn) -> Self {
         Self {
-            stream: value,
-            pending_read: None,
-            pending_send: None,
-            pending_close: None,
+            state: Arc::new(RawQuicStream { stream_id, conn }),
+            poll: None,
         }
     }
 }
 
-impl AsyncWrite for QuicIO {
+impl QuicStream {
+    /// Returns current stream id value.
+    pub fn id(&self) -> u64 {
+        self.state.stream_id
+    }
+    /// Writes data to a stream.
+    ///
+    /// On success the number of bytes written is returned.
+    pub async fn send<Buf: AsRef<[u8]>>(&self, buf: Buf, fin: bool) -> Result<usize> {
+        self.state.send(buf, fin).await
+    }
+
+    /// Reads contiguous data from a stream into the provided slice.
+    ///
+    /// The slice must be sized by the caller and will be populated up to its capacity.
+    /// On success the amount of bytes read and a flag indicating the fin state is
+    /// returned as a tuple.
+    ///
+    /// Reading data from a stream may trigger queueing of control messages
+    /// (e.g. MAX_STREAM_DATA). send() should be called after reading.
+    pub async fn recv<Buf: AsMut<[u8]>>(&self, buf: Buf) -> Result<(usize, bool)> {
+        self.state.recv(buf).await
+    }
+}
+
+impl AsyncWrite for QuicStream {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<Result<usize>> {
-        let mut fut = if let Some(fut) = self.pending_send.take() {
+        let mut fut = if let Some(QuicStreamPoll::PollWrite(fut)) = self.poll.take() {
             fut
         } else {
-            Box::pin(self.stream.clone().send_owned(buf.to_owned(), false))
+            Box::pin(self.state.clone().send_owned(buf.to_owned(), false))
         };
 
         match fut.poll_unpin(cx) {
             Poll::Pending => {
-                self.pending_send = Some(fut);
+                self.poll = Some(QuicStreamPoll::PollWrite(fut));
 
                 Poll::Pending
             }
@@ -755,15 +749,15 @@ impl AsyncWrite for QuicIO {
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<()>> {
-        let mut fut = if let Some(fut) = self.pending_close.take() {
+        let mut fut = if let Some(QuicStreamPoll::PollClose(fut)) = self.poll.take() {
             fut
         } else {
-            Box::pin(self.stream.clone().send_owned(vec![], true))
+            Box::pin(self.state.clone().send_owned(vec![], false))
         };
 
         match fut.poll_unpin(cx) {
             Poll::Pending => {
-                self.pending_close = Some(fut);
+                self.poll = Some(QuicStreamPoll::PollClose(fut));
 
                 Poll::Pending
             }
@@ -773,16 +767,16 @@ impl AsyncWrite for QuicIO {
     }
 }
 
-impl AsyncRead for QuicIO {
+impl AsyncRead for QuicStream {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> std::task::Poll<Result<usize>> {
-        let mut fut = if let Some(fut) = self.pending_read.take() {
+        let mut fut = if let Some(QuicStreamPoll::PollRead(fut)) = self.poll.take() {
             fut
         } else {
-            Box::pin(self.stream.clone().recv_owned(buf.len()))
+            Box::pin(self.state.clone().recv_owned(buf.len()))
         };
 
         match fut.poll_unpin(cx) {
@@ -793,7 +787,7 @@ impl AsyncRead for QuicIO {
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => {
-                self.pending_read = Some(fut);
+                self.poll = Some(QuicStreamPoll::PollRead(fut));
                 Poll::Pending
             }
         }

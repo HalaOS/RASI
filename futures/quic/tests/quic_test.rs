@@ -82,8 +82,7 @@ async fn test_echo() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(stream) = conn.incoming().try_next().await.unwrap() {
-                let mut stream = stream.to_io();
+            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
                 loop {
                     let mut buf = vec![0; 100];
 
@@ -103,9 +102,7 @@ async fn test_echo() {
         .await
         .unwrap();
 
-    let stream = client.open(false).await.unwrap();
-
-    let mut stream = stream.to_io();
+    let mut stream = client.open(false).await.unwrap();
 
     for _ in 0..10 {
         stream.write_all(b"hello world").await.unwrap();
@@ -133,10 +130,8 @@ async fn test_echo_per_stream() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(stream) = conn.incoming().try_next().await.unwrap() {
+            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
                 spawn_ok(async move {
-                    let mut stream = stream.to_io();
-
                     loop {
                         let mut buf = vec![0; 100];
                         let read_size = stream.read(&mut buf).await.unwrap();
@@ -157,7 +152,7 @@ async fn test_echo_per_stream() {
         .unwrap();
 
     for _ in 0..10 {
-        let mut stream = client.open(false).await.unwrap().to_io();
+        let mut stream = client.open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
 
@@ -184,9 +179,7 @@ async fn test_connect_server_close() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(stream) = conn.incoming().try_next().await.unwrap() {
-                let mut stream = stream.to_io();
-
+            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
                 let mut buf = vec![0; 100];
                 _ = stream.read(&mut buf).await.unwrap();
 
@@ -200,7 +193,7 @@ async fn test_connect_server_close() {
             .await
             .unwrap();
 
-        let mut stream = client.open(false).await.unwrap().to_io();
+        let mut stream = client.open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
 
@@ -226,10 +219,8 @@ async fn test_connect_client_close() {
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
             spawn_ok(async move {
-                while let Some(stream) = conn.incoming().try_next().await.unwrap() {
+                while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
                     spawn_ok(async move {
-                        let mut stream = stream.to_io();
-
                         loop {
                             let mut buf = vec![0; 100];
                             let read_size = stream.read(&mut buf).await.unwrap();
@@ -251,7 +242,7 @@ async fn test_connect_client_close() {
             .await
             .unwrap();
 
-        let mut stream = client.open(false).await.unwrap().to_io();
+        let mut stream = client.open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
 
@@ -278,9 +269,7 @@ async fn test_stream_server_close() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(stream) = conn.incoming().try_next().await.unwrap() {
-                let mut stream = stream.to_io();
-
+            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
                 let mut buf = vec![0; 100];
                 let read_size = stream.read(&mut buf).await.unwrap();
 
@@ -294,7 +283,7 @@ async fn test_stream_server_close() {
         .unwrap();
 
     for _ in 0..10 {
-        let mut stream = client.open(false).await.unwrap().to_io();
+        let mut stream = client.open(false).await.unwrap();
 
         stream.write_all(b"hello world").await.unwrap();
 
