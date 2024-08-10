@@ -1,0 +1,11 @@
+[package]
+description = "Simple in-memory ringbuf implementation"
+documentation = "https://docs.rs/ringbuf-rs"
+edition.workspace = true
+license = "MIT"
+name = "ringbuf-rs"
+repository.workspace = true
+version.workspace = true
+readme = "README.md"
+
+[dependencies]

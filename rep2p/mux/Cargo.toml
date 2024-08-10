@@ -1,0 +1,23 @@
+[package]
+description = "The yamux protocol implementation, rewritten from the ground up"
+documentation = "https://docs.rs/rep2p-mux"
+edition.workspace = true
+license = "MIT"
+name = "rep2p-mux"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+futures = { workspace = true }
+rasi = { workspace = true }
+bitmask-enum = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+ringbuf-rs = { workspace = true }
+futures-map = { workspace = true }
+
+[dev-dependencies]
+futures-test = { workspace = true }
+rasi = { workspace = true, features = ["task-futures"] }
+rasi-mio = { workspace = true }
+pretty_env_logger = { workspace = true }
