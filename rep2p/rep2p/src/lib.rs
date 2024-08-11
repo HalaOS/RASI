@@ -1,5 +1,5 @@
 pub mod keystore;
-pub mod protocol;
+pub mod mux;
 pub mod routetable;
 pub mod transport;
 

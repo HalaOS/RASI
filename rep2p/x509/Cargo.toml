@@ -11,7 +11,9 @@ version.workspace = true
 x509-cert = { workspace = true, features = ["builder", "hazmat"] }
 p256 = { workspace = true, features = ["arithmetic", "pkcs8", "pem"] }
 const-oid = { workspace = true }
-der = { workspace = true, features = ["std"] }
+der = { workspace = true }
+# pin syn version=2.0.72
+syn = { workspace = true }
 rsa = { workspace = true }
 sha2 = { workspace = true, features = ["oid"] }
 p384 = { workspace = true }

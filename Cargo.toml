@@ -95,6 +95,7 @@ ringbuf-rs = { path = "crates/ringbuf", version = "^0.2" }
 rep2p = { path = "rep2p/rep2p", version = "^0.2" }
 rep2p-mux = { path = "rep2p/mux", version = "^0.2" }
 rep2p-x509 = { path = "rep2p/x509", version = "^0.2" }
+rep2p-spec = { path = "rep2p/spec", version = "^0.2" }
 #libp2p
 multiaddr = "^0.18"
 identity = { version = "^0.2", package = "libp2p-identity" }

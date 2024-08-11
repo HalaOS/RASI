@@ -177,7 +177,7 @@ impl SwitchBuilder {
 
         let switch = Switch {
             inner: Arc::new(InnerSwitch {
-                public_key: public_key,
+                public_key,
                 immutable: ops,
                 mutable: Mutex::new(MutableSwitch::new()),
                 event_map: KeyWaitMap::new(),
@@ -205,6 +205,7 @@ struct MutableSwitch {
     peer_conns: HashMap<PeerId, Vec<String>>,
     uuid_conns: HashMap<String, Connection>,
     incoming_streams: VecDeque<(Stream, String)>,
+    laddrs: Vec<Multiaddr>,
 }
 
 impl MutableSwitch {
@@ -213,6 +214,7 @@ impl MutableSwitch {
             peer_conns: HashMap::new(),
             uuid_conns: HashMap::new(),
             incoming_streams: Default::default(),
+            laddrs: Default::default(),
         }
     }
 
@@ -562,6 +564,8 @@ impl Switch {
 
         let laddr = listener.local_addr()?;
 
+        self.mutable.lock().await.laddrs.push(laddr.clone());
+
         let this = self.clone();
 
         spawn_ok(async move {
@@ -733,6 +737,11 @@ impl Switch {
     /// Get associated keystore instance.
     pub fn keystore(&self) -> &KeyStore {
         &self.immutable.keystore
+    }
+
+    /// Returns the addresses list of this switch is bound to.
+    pub async fn local_addrs(&self) -> Vec<Multiaddr> {
+        self.mutable.lock().await.laddrs.clone()
     }
 
     pub(crate) async fn remove_conn(&self, conn: &Connection) {
