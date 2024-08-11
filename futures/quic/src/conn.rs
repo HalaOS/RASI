@@ -568,6 +568,11 @@ impl QuicConn {
 
         result
     }
+
+    /// Get this source id of this connection.
+    pub fn scid(&self) -> &ConnectionId<'_> {
+        &self.id
+    }
 }
 
 struct RawQuicStream {
@@ -749,6 +754,12 @@ impl QuicStream {
     pub fn id(&self) -> u64 {
         self.state.stream_id
     }
+
+    /// Returns this stream's source connection id.
+    pub fn scid(&self) -> &ConnectionId<'_> {
+        &self.state.conn.id
+    }
+
     /// Writes data to a stream.
     ///
     /// On success the number of bytes written is returned.

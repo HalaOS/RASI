@@ -238,7 +238,7 @@ struct P2pTcpConn {
     raddr: Multiaddr,
     conn: YamuxConn,
     is_closed: Arc<AtomicBool>,
-    id: Uuid,
+    id: String,
 }
 
 impl P2pTcpConn {
@@ -269,14 +269,14 @@ impl P2pTcpConn {
             conn,
             public_key,
             is_closed: Default::default(),
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().to_string(),
         })
     }
 }
 
 #[async_trait]
 impl DriverConnection for P2pTcpConn {
-    fn id(&self) -> &Uuid {
+    fn id(&self) -> &str {
         &self.id
     }
     /// Returns local bind address.
@@ -344,6 +344,7 @@ impl DriverConnection for P2pTcpConn {
 }
 
 struct P2pTcpStream {
+    id: String,
     stream: YamuxStream,
     public_key: PublicKey,
     laddr: Multiaddr,
@@ -353,6 +354,7 @@ struct P2pTcpStream {
 impl P2pTcpStream {
     fn new(stream: YamuxStream, public_key: PublicKey, laddr: Multiaddr, raddr: Multiaddr) -> Self {
         Self {
+            id: Uuid::new_v4().to_string(),
             stream,
             public_key,
             laddr,
@@ -363,6 +365,10 @@ impl P2pTcpStream {
 
 #[async_trait]
 impl DriverStream for P2pTcpStream {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
     /// Return the remote peer's public key.
     fn public_key(&self) -> &PublicKey {
         &self.public_key

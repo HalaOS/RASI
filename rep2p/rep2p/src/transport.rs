@@ -16,7 +16,6 @@ pub mod syscall {
     use async_trait::async_trait;
     use identity::PublicKey;
     use multiaddr::Multiaddr;
-    use uuid::Uuid;
 
     use crate::switch::Switch;
 
@@ -48,7 +47,7 @@ pub mod syscall {
     #[async_trait]
     pub trait DriverConnection: Send + Sync + Unpin {
         /// The app scope unique id for this driver connection .
-        fn id(&self) -> &Uuid;
+        fn id(&self) -> &str;
 
         /// Return the remote peer's public key.
         fn public_key(&self) -> &PublicKey;
@@ -76,6 +75,8 @@ pub mod syscall {
     }
 
     pub trait DriverStream: Sync + Send + Unpin {
+        /// Get the stream's uuid.
+        fn id(&self) -> &str;
         /// Return the remote peer's public key.
         fn public_key(&self) -> &PublicKey;
 

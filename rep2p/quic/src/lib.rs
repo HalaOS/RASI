@@ -31,7 +31,6 @@ use rep2p::{
     },
     Switch,
 };
-use uuid::Uuid;
 
 fn to_sockaddr(addr: &Multiaddr) -> Option<SocketAddr> {
     let mut iter = addr.iter();
@@ -228,7 +227,7 @@ struct QuicP2pConn {
     conn: QuicConn,
     public_key: PublicKey,
     is_closed: Arc<AtomicBool>,
-    id: Uuid,
+    id: String,
 }
 
 impl QuicP2pConn {
@@ -242,19 +241,19 @@ impl QuicP2pConn {
         m_raddr.push(Protocol::QuicV1);
 
         Self {
+            id: format!("quic({:?})", conn.scid()),
             laddr: m_laddr,
             raddr: m_raddr,
             conn,
             public_key,
             is_closed: Default::default(),
-            id: Uuid::new_v4(),
         }
     }
 }
 
 #[async_trait]
 impl DriverConnection for QuicP2pConn {
-    fn id(&self) -> &Uuid {
+    fn id(&self) -> &str {
         &self.id
     }
 
@@ -323,6 +322,7 @@ impl DriverConnection for QuicP2pConn {
 }
 
 struct QuicP2pStream {
+    id: String,
     stream: QuicStream,
     public_key: PublicKey,
     laddr: Multiaddr,
@@ -332,6 +332,7 @@ struct QuicP2pStream {
 impl QuicP2pStream {
     fn new(stream: QuicStream, public_key: PublicKey, laddr: Multiaddr, raddr: Multiaddr) -> Self {
         Self {
+            id: format!("quic({:?},{})", stream.scid(), stream.id()),
             stream,
             public_key,
             laddr,
@@ -342,6 +343,9 @@ impl QuicP2pStream {
 
 #[async_trait]
 impl DriverStream for QuicP2pStream {
+    fn id(&self) -> &str {
+        &self.id
+    }
     /// Return the remote peer's public key.
     fn public_key(&self) -> &PublicKey {
         &self.public_key

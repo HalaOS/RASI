@@ -13,7 +13,6 @@ use multistream_select::{dialer_select_proto, listener_select_proto, Version};
 use protobuf::Message;
 use rand::thread_rng;
 use rasi::{task::spawn_ok, timer::TimeoutExt};
-use uuid::Uuid;
 
 use crate::{
     keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
@@ -144,7 +143,7 @@ impl SwitchBuilder {
     }
 
     /// Add a new listener which is bound to `laddr`.
-    pub fn bind<T>(self, laddr: Multiaddr) -> Self {
+    pub fn bind(self, laddr: Multiaddr) -> Self {
         self.and_then(|mut cfg| {
             cfg.laddrs.push(laddr);
 
@@ -203,8 +202,8 @@ impl SwitchBuilder {
 }
 
 struct MutableSwitch {
-    peer_conns: HashMap<PeerId, Vec<Uuid>>,
-    uuid_conns: HashMap<Uuid, Connection>,
+    peer_conns: HashMap<PeerId, Vec<String>>,
+    uuid_conns: HashMap<String, Connection>,
     incoming_streams: VecDeque<(Stream, String)>,
 }
 
@@ -226,14 +225,14 @@ impl MutableSwitch {
     fn add_conn(&mut self, conn: Connection) -> Result<()> {
         let peer_id = conn.public_key().to_peer_id();
 
-        let uuid = conn.id().clone();
+        let uuid = conn.id().to_string();
 
         if let Some(ids) = self.peer_conns.get_mut(&peer_id) {
             if ids.iter().find(|v| **v == uuid).is_some() {
                 return Ok(());
             }
 
-            ids.push(uuid);
+            ids.push(uuid.clone());
         }
 
         self.uuid_conns.insert(uuid, conn);
