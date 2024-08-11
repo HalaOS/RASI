@@ -1,25 +1,25 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
+    collections::{HashMap, VecDeque},
+    ops::Deref,
+    sync::Arc,
     time::Duration,
 };
 
-use futures::{AsyncReadExt, AsyncWriteExt, TryStreamExt};
+use futures::{lock::Mutex, AsyncReadExt, AsyncWriteExt, TryStreamExt};
+use futures_map::KeyWaitMap;
 use identity::{PeerId, PublicKey};
 use multiaddr::Multiaddr;
 use multistream_select::{dialer_select_proto, listener_select_proto, Version};
 use protobuf::Message;
+use rand::thread_rng;
 use rasi::{task::spawn_ok, timer::TimeoutExt};
+use uuid::Uuid;
 
 use crate::{
     keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
     proto::identity::Identity,
-    protocol::{syscall::DriverProtocol, Protocol, ProtocolHandler},
     routetable::{syscall::DriverRouteTable, MemoryRouteTable, RouteTable},
-    transport::{
-        syscall::{DriverConnection, DriverTransport},
-        Connection, Listener, Stream, Transport,
-    },
+    transport::{syscall::DriverTransport, Connection, Listener, Stream, Transport},
     Error, Result,
 };
 
@@ -29,18 +29,19 @@ const PROTOCOL_IPFS_PING: &str = "/ipfs/ping/1.0.0";
 
 /// immutable context data for one switch.
 struct ImmutableSwitch {
+    /// The maximun length of queue for incoming streams.
+    max_incoming_queue_size: usize,
+    /// addresses that this switch is bound to.
     laddrs: Vec<Multiaddr>,
     /// The value of rpc timeout.
     timeout: Duration,
     /// A list of protocols that the switch accepts.
     protos: Vec<String>,
-    /// Created protocol handlers.
-    proto_handlers: HashMap<String, ProtocolHandler>,
     /// This is a free-form string, identitying the implementation of the peer. The usual format is agent-name/version,
     /// where agent-name is the name of the program or library and version is its semantic version.
     agent_version: String,
     /// The max length of identity packet.
-    max_identity_len: usize,
+    max_identity_packet_size: usize,
     /// A list of transport that this switch registered.
     transports: Vec<Transport>,
     /// Keystore registered to this switch.
@@ -52,14 +53,14 @@ struct ImmutableSwitch {
 impl ImmutableSwitch {
     fn new(agent_version: String) -> Self {
         Self {
+            max_incoming_queue_size: 200,
             agent_version,
             timeout: Duration::from_secs(10),
             protos: [PROTOCOL_IPFS_ID, PROTOCOL_IPFS_PUSH_ID, PROTOCOL_IPFS_PING]
                 .into_iter()
                 .map(|v| v.to_owned())
                 .collect(),
-            proto_handlers: Default::default(),
-            max_identity_len: 4096,
+            max_identity_packet_size: 4096,
             transports: vec![],
             keystore: MemoryKeyStore::random().into(),
             route_table: MemoryRouteTable::default().into(),
@@ -74,34 +75,20 @@ impl ImmutableSwitch {
     }
 }
 
-struct MutableSwitch {
-    conn_pool: HashMap<PeerId, Box<dyn DriverConnection>>,
-}
-
-impl MutableSwitch {
-    fn new() -> Self {
-        Self {
-            conn_pool: HashMap::new(),
-        }
-    }
-
-    fn put_conn(&mut self, conn: Box<dyn DriverConnection>) -> Result<()> {
-        self.conn_pool.insert(conn.public_key()?.to_peer_id(), conn);
-
-        Ok(())
-    }
-
-    fn get_conn(&mut self, id: &PeerId) -> Option<Box<dyn DriverConnection>> {
-        self.conn_pool.remove(id)
-    }
-}
-
 /// A builder to create the `Switch` instance.
 pub struct SwitchBuilder {
     ops: Result<ImmutableSwitch>,
 }
 
 impl SwitchBuilder {
+    /// Set the `max_incoming_queue_size`, the default value is `200`
+    pub fn max_incoming_queue_size(self, value: usize) -> Self {
+        self.and_then(|mut cfg| {
+            cfg.max_incoming_queue_size = value;
+
+            Ok(cfg)
+        })
+    }
     /// Replace default [`MemoryKeyStore`].
     pub fn keystore<K>(self, value: K) -> Self
     where
@@ -136,9 +123,9 @@ impl SwitchBuilder {
     }
 
     /// Set the receive max buffer length of identity protocol.
-    pub fn max_identity_len(self, value: usize) -> Self {
+    pub fn max_identity_packet_size(self, value: usize) -> Self {
         self.and_then(|mut cfg| {
-            cfg.max_identity_len = value;
+            cfg.max_identity_packet_size = value;
 
             Ok(cfg)
         })
@@ -166,17 +153,18 @@ impl SwitchBuilder {
     }
 
     /// Set the protocol list of this switch accepts.
-    pub fn proto<P>(self, value: P) -> Self
+    pub fn protos<I>(self, value: I) -> Self
     where
-        P: DriverProtocol + 'static,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
     {
         self.and_then(|mut cfg| {
-            let protocol: Protocol = value.into();
+            let mut protos = value
+                .into_iter()
+                .map(|item| item.as_ref().to_owned())
+                .collect::<Vec<_>>();
 
-            cfg.proto_handlers
-                .insert(protocol.name().to_owned(), protocol.create()?);
-
-            cfg.protos.push(protocol.name().to_owned());
+            cfg.protos.append(&mut protos);
 
             Ok(cfg)
         })
@@ -189,17 +177,16 @@ impl SwitchBuilder {
         let public_key = ops.keystore.public_key().await?;
 
         let switch = Switch {
-            public_key: Arc::new(public_key),
-            immutable: Arc::new(ops),
-            mutable: Arc::new(Mutex::new(MutableSwitch::new())),
+            inner: Arc::new(InnerSwitch {
+                public_key: public_key,
+                immutable: ops,
+                mutable: Mutex::new(MutableSwitch::new()),
+                event_map: KeyWaitMap::new(),
+            }),
         };
 
         for laddr in switch.immutable.laddrs.iter() {
             switch.listen(&laddr).await?;
-        }
-
-        for handler in switch.immutable.proto_handlers.values() {
-            handler.start(&switch).await?;
         }
 
         Ok(switch)
@@ -215,12 +202,105 @@ impl SwitchBuilder {
     }
 }
 
+struct MutableSwitch {
+    peer_conns: HashMap<PeerId, Vec<Uuid>>,
+    uuid_conns: HashMap<Uuid, Connection>,
+    incoming_streams: VecDeque<(Stream, String)>,
+}
+
+impl MutableSwitch {
+    fn new() -> Self {
+        Self {
+            peer_conns: HashMap::new(),
+            uuid_conns: HashMap::new(),
+            incoming_streams: Default::default(),
+        }
+    }
+
+    fn add_conn_by_ref(&mut self, conn: &Connection) -> Result<()> {
+        let conn = conn.clone();
+
+        self.add_conn(conn)
+    }
+
+    fn add_conn(&mut self, conn: Connection) -> Result<()> {
+        let peer_id = conn.public_key().to_peer_id();
+
+        let uuid = conn.id().clone();
+
+        if let Some(ids) = self.peer_conns.get_mut(&peer_id) {
+            if ids.iter().find(|v| **v == uuid).is_some() {
+                return Ok(());
+            }
+
+            ids.push(uuid);
+        }
+
+        self.uuid_conns.insert(uuid, conn);
+
+        Ok(())
+    }
+
+    fn get_conn(&mut self, id: &PeerId) -> Option<Connection> {
+        if let Some(ids) = self.peer_conns.get(id) {
+            use rand::seq::SliceRandom;
+
+            let mut ids = ids.iter().collect::<Vec<_>>();
+
+            ids.shuffle(&mut thread_rng());
+
+            for id in ids {
+                return Some(
+                    self.uuid_conns
+                        .get(id)
+                        .expect("connection pool consistency guarantee")
+                        .clone(),
+                );
+            }
+        }
+
+        None
+    }
+
+    fn remove_conn(&mut self, conn: &Connection) -> Result<()> {
+        let peer_id = conn.public_key().to_peer_id();
+
+        if let Some(ids) = self.peer_conns.get_mut(&peer_id) {
+            if let Some((index, _)) = ids.iter().enumerate().find(|(_, v)| **v == *conn.id()) {
+                ids.remove(index);
+            }
+        }
+
+        self.uuid_conns.remove(conn.id());
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+enum SwitchEvent {
+    Accept,
+}
+
+pub struct InnerSwitch {
+    public_key: PublicKey,
+    immutable: ImmutableSwitch,
+    mutable: Mutex<MutableSwitch>,
+    event_map: KeyWaitMap<SwitchEvent, ()>,
+}
+
 /// `Switch` is the protocol stack entry point of the libp2p network.
 #[derive(Clone)]
 pub struct Switch {
-    public_key: Arc<PublicKey>,
-    immutable: Arc<ImmutableSwitch>,
-    mutable: Arc<Mutex<MutableSwitch>>,
+    inner: Arc<InnerSwitch>,
+}
+
+impl Deref for Switch {
+    type Target = InnerSwitch;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl Switch {
@@ -228,18 +308,25 @@ impl Switch {
         let mut incoming = listener.into_incoming();
 
         while let Some(mut conn) = incoming.try_next().await? {
-            let peer_addr = conn.peer_addr()?;
-            let local_addr = conn.local_addr()?;
-            log::trace!(target:"switch","accept a new incoming connection, peer={}, local={}", peer_addr,local_addr);
+            log::trace!(target:"switch","accept a new incoming connection, peer={}, local={}", conn.peer_addr(),conn.local_addr());
 
             let this = self.clone();
 
             spawn_ok(async move {
                 if let Err(err) = this.setup_conn(&mut conn).await {
-                    log::error!(target:"switch","connection stop, peer={}, local={}, err={}", peer_addr,local_addr,err);
-                    _ = conn.close().await;
+                    log::error!(target:"switch","setup connection, peer={}, local={}, err={}", conn.peer_addr(),conn.local_addr(),err);
+                    _ = conn.close(&this).await;
                 } else {
-                    log::trace!(target:"switch","connection stop, peer={}, local={}", peer_addr,local_addr);
+                    log::trace!(target:"switch","setup connection, peer={}, local={}", conn.peer_addr(),conn.local_addr());
+
+                    let peer_addr = conn.peer_addr().clone();
+                    let local_addr = conn.local_addr().clone();
+
+                    if let Err(err) = this.mutable.lock().await.add_conn(conn) {
+                        log::error!(target:"switch","add connection to cache, peer={}, local={}, err={}", peer_addr,local_addr,err);
+                    } else {
+                        log::info!(target:"switch","add connection to cache, peer={}, local={}", peer_addr,local_addr);
+                    }
                 }
             })
         }
@@ -250,17 +337,14 @@ impl Switch {
     async fn setup_conn(&self, conn: &mut Connection) -> Result<()> {
         let this = self.clone();
 
-        let peer_addr = conn.peer_addr()?;
-        let local_addr = conn.local_addr()?;
-
-        let mut this_conn = conn.try_clone()?;
+        let mut this_conn = conn.clone();
 
         spawn_ok(async move {
             if let Err(err) = this.handle_incoming_stream(&mut this_conn).await {
-                log::error!(target:"switch","handle incoming stream, peer={}, local={}, error={}",peer_addr,local_addr,err);
-                _ = this_conn.close().await;
+                log::error!(target:"switch","handle incoming stream, peer={}, local={}, error={}",this_conn.peer_addr(),this_conn.local_addr(),err);
+                _ = this_conn.close(&this).await;
             } else {
-                log::info!(target:"switch","handle incoming stream ok, peer={}, local={}",peer_addr,local_addr);
+                log::info!(target:"switch","handle incoming stream ok, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
             }
         });
 
@@ -282,23 +366,20 @@ impl Switch {
                 .await
                 .ok_or(Error::Timeout)??;
 
-            let peer_addr = conn.peer_addr()?;
-            let local_addr = conn.local_addr()?;
-
             let this = self.clone();
             let protoco_id = protoco_id.clone();
 
-            let mut this_conn = conn.try_clone()?;
+            let mut this_conn = conn.clone();
 
             spawn_ok(async move {
                 if let Err(err) = this
                     .dispatch_stream(protoco_id, stream, &mut this_conn)
                     .await
                 {
-                    log::error!(target:"switch","dispatch stream, peer={}, local={}, err={}",peer_addr,local_addr,err);
-                    _ = this_conn.close();
+                    log::error!(target:"switch","dispatch stream, peer={}, local={}, err={}",this_conn.peer_addr(),this_conn.local_addr(),err);
+                    _ = this_conn.close(&this);
                 } else {
-                    log::error!(target:"switch","dispatch stream ok, peer={}, local={}",peer_addr,local_addr);
+                    log::error!(target:"switch","dispatch stream ok, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
                 }
             })
         }
@@ -310,20 +391,29 @@ impl Switch {
         stream: Stream,
         conn: &mut Connection,
     ) -> Result<()> {
-        let peer_addr = conn.peer_addr()?;
-        let conn_peer_id = conn.public_key()?.to_peer_id();
+        let conn_peer_id = conn.public_key().to_peer_id();
 
         match protoco_id.as_str() {
-            PROTOCOL_IPFS_ID => self.identity_response(&peer_addr, stream).await?,
+            PROTOCOL_IPFS_ID => self.identity_response(conn.peer_addr(), stream).await?,
             PROTOCOL_IPFS_PUSH_ID => self.identity_push(&conn_peer_id, stream).await?,
             PROTOCOL_IPFS_PING => self.ping_echo(stream).await?,
             _ => {
-                self.immutable
-                    .proto_handlers
-                    .get(&protoco_id)
-                    .expect("select_proto should work fine.")
-                    .dispatch(&protoco_id, stream)
-                    .await?;
+                let mut mutable = self.mutable.lock().await;
+
+                if mutable.incoming_streams.len() > self.immutable.max_incoming_queue_size {
+                    log::warn!(
+                        "The maximun incoming queue size is reached({})",
+                        self.immutable.max_incoming_queue_size
+                    );
+
+                    return Ok(());
+                }
+
+                mutable.incoming_streams.push_back((stream, protoco_id));
+
+                drop(mutable);
+
+                self.event_map.insert(SwitchEvent::Accept, ());
             }
         }
 
@@ -367,8 +457,10 @@ impl Switch {
 
             log::trace!("identity_request: read varint length");
 
-            if self.immutable.max_identity_len < body_len {
-                return Err(Error::IdentityOverflow(self.immutable.max_identity_len));
+            if self.immutable.max_identity_packet_size < body_len {
+                return Err(Error::IdentityOverflow(
+                    self.immutable.max_identity_packet_size,
+                ));
             }
 
             log::trace!("identity_request recv body: {}", body_len);
@@ -410,7 +502,7 @@ impl Switch {
     async fn identity_request(&self, conn: &mut Connection) -> Result<()> {
         let stream = conn.connect().await?;
 
-        let conn_peer_id = conn.public_key()?.to_peer_id();
+        let conn_peer_id = conn.public_key().to_peer_id();
 
         self.identity_push(&conn_peer_id, stream).await
     }
@@ -484,8 +576,8 @@ impl Switch {
     ///
     async fn connect_peer_to(&self, raddr: &Multiaddr) -> Result<Connection> {
         if let Some(id) = self.immutable.route_table.peer_id_of(raddr).await? {
-            if let Some(conn) = self.mutable.lock().unwrap().get_conn(&id) {
-                return Ok((conn, self.clone()).into());
+            if let Some(conn) = self.mutable.lock().await.get_conn(&id) {
+                return Ok(conn);
             }
         }
 
@@ -500,7 +592,15 @@ impl Switch {
 
         let mut conn = transport.connect(raddr, self.clone()).await?;
 
-        self.setup_conn(&mut conn).await?;
+        if let Err(err) = self.setup_conn(&mut conn).await {
+            log::error!(target:"switch","setup connection, peer={}, local={}, err={}",conn.peer_addr(),conn.local_addr(),err);
+        } else {
+            if let Err(err) = self.mutable.lock().await.add_conn_by_ref(&conn) {
+                log::error!(target:"switch","add connection to cache, peer={}, local={}, err={}", conn.peer_addr(),conn.local_addr(),err);
+            } else {
+                log::info!(target:"switch","add connection to cache, peer={}, local={}", conn.peer_addr(),conn.local_addr());
+            }
+        }
 
         Ok(conn)
     }
@@ -510,8 +610,8 @@ impl Switch {
     /// This function will first check for a local connection cache,
     /// and if there is one, it will directly return the cached connection
     async fn connect_peer(&self, id: &PeerId) -> Result<Connection> {
-        if let Some(conn) = self.mutable.lock().unwrap().get_conn(id) {
-            return Ok((conn, self.clone()).into());
+        if let Some(conn) = self.mutable.lock().await.get_conn(id) {
+            return Ok(conn);
         }
 
         let mut raddrs = self.immutable.route_table.get(id).await?;
@@ -528,10 +628,6 @@ impl Switch {
         }
 
         Err(last_error.unwrap_or(Error::ConnectPeer(id.to_owned())))
-    }
-
-    pub(crate) fn return_unused_conn(&self, conn: Box<dyn DriverConnection>) -> Result<()> {
-        self.mutable.lock().unwrap().put_conn(conn)
     }
 }
 
@@ -599,8 +695,35 @@ impl Switch {
         Ok((stream, protocol_id.as_ref().to_owned()))
     }
 
+    /// Accept a new incoming stream.
+    pub async fn accept(&self) -> Result<(Stream, String)> {
+        loop {
+            let mut mutable = self.mutable.lock().await;
+
+            if let Some(r) = mutable.incoming_streams.pop_front() {
+                return Ok(r);
+            }
+
+            drop(mutable);
+
+            self.event_map.wait(&SwitchEvent::Accept).await;
+        }
+    }
+
+    /// Conver the switch into a [`Stream`](futures::Stream) object.
+    pub fn into_incoming(self) -> impl futures::Stream<Item = Result<(Stream, String)>> + Unpin {
+        Box::pin(futures::stream::unfold(self, |listener| async move {
+            let res = listener.accept().await;
+            Some((res, listener))
+        }))
+    }
+
     /// Get associated keystore instance.
     pub fn keystore(&self) -> &KeyStore {
         &self.immutable.keystore
+    }
+
+    pub(crate) async fn remove_conn(&self, conn: &Connection) {
+        _ = self.mutable.lock().await.remove_conn(conn);
     }
 }

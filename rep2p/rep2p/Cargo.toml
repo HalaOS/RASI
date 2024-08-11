@@ -19,6 +19,9 @@ rasi = { workspace = true, features = ["task-futures"] }
 log = { workspace = true }
 protobuf = { workspace = true }
 unsigned-varint = { workspace = true, features = ["futures"] }
+uuid = { workspace = true }
+rand = { workspace = true }
+futures-map = { workspace = true }
 
 [build-dependencies]
 protobuf-codegen = { workspace = true }

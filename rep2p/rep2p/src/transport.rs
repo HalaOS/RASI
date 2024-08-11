@@ -16,6 +16,7 @@ pub mod syscall {
     use async_trait::async_trait;
     use identity::PublicKey;
     use multiaddr::Multiaddr;
+    use uuid::Uuid;
 
     use crate::switch::Switch;
 
@@ -46,14 +47,17 @@ pub mod syscall {
 
     #[async_trait]
     pub trait DriverConnection: Send + Sync + Unpin {
+        /// The app scope unique id for this driver connection .
+        fn id(&self) -> &Uuid;
+
         /// Return the remote peer's public key.
-        fn public_key(&self) -> Result<PublicKey>;
+        fn public_key(&self) -> &PublicKey;
 
         /// Returns the local address that this stream is bound to.
-        fn local_addr(&self) -> Result<Multiaddr>;
+        fn local_addr(&self) -> &Multiaddr;
 
         /// Returns the remote address that this stream is connected to.
-        fn peer_addr(&self) -> Result<Multiaddr>;
+        fn peer_addr(&self) -> &Multiaddr;
 
         /// Accept a new incoming stream with protocol selection.
         async fn accept(&mut self) -> Result<super::Stream>;
@@ -68,18 +72,18 @@ pub mod syscall {
         fn is_closed(&self) -> bool;
 
         /// Creates a new independently owned handle to the underlying socket.
-        fn try_clone(&self) -> Result<Connection>;
+        fn clone(&self) -> Connection;
     }
 
     pub trait DriverStream: Sync + Send + Unpin {
         /// Return the remote peer's public key.
-        fn public_key(&self) -> Result<PublicKey>;
+        fn public_key(&self) -> &PublicKey;
 
         /// Returns the local address that this stream is bound to.
-        fn local_addr(&self) -> Result<Multiaddr>;
+        fn local_addr(&self) -> &Multiaddr;
 
         /// Returns the remote address that this stream is connected to.
-        fn peer_addr(&self) -> Result<Multiaddr>;
+        fn peer_addr(&self) -> &Multiaddr;
         /// Attempt to read data via this stream.
         fn poll_read(
             self: std::pin::Pin<&mut Self>,
@@ -121,55 +125,22 @@ impl Listener {
     }
 }
 
-/// A type wrapper of [`DriverConnection`](syscall::DriverConnection)
-pub struct Connection {
-    switch: Switch,
-    driver_conn: Option<Box<dyn syscall::DriverConnection>>,
-}
-
-impl<D: syscall::DriverConnection + 'static> From<(D, Switch)> for Connection {
-    fn from(value: (D, Switch)) -> Self {
-        Self {
-            switch: value.1,
-            driver_conn: Some(Box::new(value.0)),
-        }
-    }
-}
-impl From<(Box<dyn syscall::DriverConnection>, Switch)> for Connection {
-    fn from(value: (Box<dyn syscall::DriverConnection>, Switch)) -> Self {
-        Self {
-            switch: value.1,
-            driver_conn: Some(value.0),
-        }
-    }
-}
-
-impl std::ops::Deref for Connection {
-    type Target = dyn syscall::DriverConnection;
-    fn deref(&self) -> &Self::Target {
-        self.driver_conn.as_deref().unwrap()
-    }
-}
-
-impl std::ops::DerefMut for Connection {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.driver_conn.as_deref_mut().unwrap()
-    }
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        if !self.is_closed() {
-            _ = self
-                .switch
-                .return_unused_conn(self.driver_conn.take().unwrap());
-        }
-    }
-}
+driver_wrapper!(
+    ["A type wrapper of [`DriverConnection`](syscall::DriverConnection)"]
+    Connection[syscall::DriverConnection]
+);
 
 impl Connection {
-    pub fn as_driver(&mut self) -> &mut dyn syscall::DriverConnection {
-        self.driver_conn.as_deref_mut().unwrap()
+    /// A facade function for driver's [`close`](syscall::DriverConnection::close) function.
+    ///
+    /// This function also remove this connection from switch's connection pool.
+    pub async fn close(&mut self, switch: &Switch) {
+        switch.remove_conn(self).await;
+        _ = self.as_driver().close().await;
+    }
+
+    pub fn clone(&self) -> Connection {
+        self.0.clone()
     }
 }
 

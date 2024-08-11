@@ -20,6 +20,7 @@ use rep2p::transport::syscall::{DriverConnection, DriverListener, DriverStream, 
 use rep2p::transport::{Connection, Listener, Stream};
 use rep2p::Switch;
 use rep2p_mux::{Reason, YamuxConn, YamuxStream, INIT_WINDOW_SIZE};
+use uuid::Uuid;
 
 fn to_sockaddr(addr: &Multiaddr) -> Option<SocketAddr> {
     let mut iter = addr.iter();
@@ -97,7 +98,7 @@ impl DriverTransport for TcpTransport {
 
         let laddr = listener.local_addr()?;
 
-        Ok(P2pTcpListener::new(switch, ssl_acceptor, listener, laddr).into())
+        Ok(P2pTcpListener::new(ssl_acceptor, listener, laddr).into())
     }
 
     /// Connect to peer with remote peer [`raddr`](Multiaddr).
@@ -160,9 +161,9 @@ impl DriverTransport for TcpTransport {
 
         let (_, _) = dialer_select_proto(&mut stream, ["/yamux/1.0.0"], Version::V1).await?;
 
-        let conn = P2pTcpConn::new(switch.clone(), laddr, addr, public_key, stream, false)?;
+        let conn = P2pTcpConn::new(laddr, addr, public_key, stream, false)?;
 
-        Ok((conn, switch).into())
+        Ok(conn.into())
     }
 
     /// Check if this transport support the protocol stack represented by the `addr`.
@@ -183,21 +184,14 @@ struct P2pTcpListener {
     laddr: SocketAddr,
     ssl_acceptor: SslAcceptor,
     listener: TcpListener,
-    switch: Switch,
 }
 
 impl P2pTcpListener {
-    fn new(
-        switch: Switch,
-        ssl_acceptor: SslAcceptor,
-        listener: TcpListener,
-        laddr: SocketAddr,
-    ) -> Self {
+    fn new(ssl_acceptor: SslAcceptor, listener: TcpListener, laddr: SocketAddr) -> Self {
         Self {
             laddr,
             ssl_acceptor,
             listener,
-            switch,
         }
     }
 }
@@ -223,16 +217,9 @@ impl DriverListener for P2pTcpListener {
 
         let (_, _) = listener_select_proto(&mut stream, ["/yamux/1.0.0"]).await?;
 
-        let conn = P2pTcpConn::new(
-            self.switch.clone(),
-            self.laddr,
-            raddr,
-            public_key,
-            stream,
-            true,
-        )?;
+        let conn = P2pTcpConn::new(self.laddr, raddr, public_key, stream, true)?;
 
-        Ok((conn, self.switch.clone()).into())
+        Ok(conn.into())
     }
 
     /// Returns the local address that this listener is bound to.
@@ -247,16 +234,15 @@ impl DriverListener for P2pTcpListener {
 #[derive(Clone)]
 struct P2pTcpConn {
     public_key: PublicKey,
-    laddr: SocketAddr,
-    raddr: SocketAddr,
+    laddr: Multiaddr,
+    raddr: Multiaddr,
     conn: YamuxConn,
-    switch: Switch,
     is_closed: Arc<AtomicBool>,
+    id: Uuid,
 }
 
 impl P2pTcpConn {
     fn new<S>(
-        switch: Switch,
         laddr: SocketAddr,
         raddr: SocketAddr,
         public_key: PublicKey,
@@ -266,39 +252,44 @@ impl P2pTcpConn {
     where
         S: AsyncWrite + AsyncRead + 'static + Sync + Send,
     {
+        let mut m_laddr = Multiaddr::from(laddr.ip());
+        m_laddr.push(Protocol::Tcp(laddr.port()));
+        m_laddr.push(Protocol::Tls);
+
+        let mut m_raddr = Multiaddr::from(raddr.ip());
+        m_raddr.push(Protocol::Tcp(raddr.port()));
+        m_raddr.push(Protocol::Tls);
+
         let (read, write) = stream.split();
         let conn = rep2p_mux::YamuxConn::new_with(INIT_WINDOW_SIZE, is_server, read, write);
 
         Ok(Self {
-            switch,
-            laddr,
-            raddr,
+            laddr: m_laddr,
+            raddr: m_raddr,
             conn,
             public_key,
             is_closed: Default::default(),
+            id: Uuid::new_v4(),
         })
     }
 }
 
 #[async_trait]
 impl DriverConnection for P2pTcpConn {
+    fn id(&self) -> &Uuid {
+        &self.id
+    }
     /// Returns local bind address.
     ///
     /// This can be useful, for example, when binding to port 0 to figure out which port was
     /// actually bound.
-    fn local_addr(&self) -> io::Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.laddr.ip());
-        addr.push(Protocol::Tcp(self.laddr.port()));
-
-        Ok(addr)
+    fn local_addr(&self) -> &Multiaddr {
+        &self.laddr
     }
 
     /// Returns the remote address that this connection is connected to.
-    fn peer_addr(&self) -> io::Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.raddr.ip());
-        addr.push(Protocol::Tcp(self.raddr.port()));
-
-        Ok(addr)
+    fn peer_addr(&self) -> &Multiaddr {
+        &self.raddr
     }
 
     /// Accept newly incoming stream for reading/writing.
@@ -342,30 +333,25 @@ impl DriverConnection for P2pTcpConn {
     }
 
     /// Creates a new independently owned handle to the underlying socket.
-    fn try_clone(&self) -> Result<Connection> {
-        Ok((self.clone(), self.switch.clone()).into())
+    fn clone(&self) -> Connection {
+        Clone::clone(self).into()
     }
 
     /// Return the remote peer's public key.
-    fn public_key(&self) -> Result<PublicKey> {
-        Ok(self.public_key.clone())
+    fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 }
 
 struct P2pTcpStream {
     stream: YamuxStream,
     public_key: PublicKey,
-    laddr: SocketAddr,
-    raddr: SocketAddr,
+    laddr: Multiaddr,
+    raddr: Multiaddr,
 }
 
 impl P2pTcpStream {
-    fn new(
-        stream: YamuxStream,
-        public_key: PublicKey,
-        laddr: SocketAddr,
-        raddr: SocketAddr,
-    ) -> Self {
+    fn new(stream: YamuxStream, public_key: PublicKey, laddr: Multiaddr, raddr: Multiaddr) -> Self {
         Self {
             stream,
             public_key,
@@ -378,24 +364,18 @@ impl P2pTcpStream {
 #[async_trait]
 impl DriverStream for P2pTcpStream {
     /// Return the remote peer's public key.
-    fn public_key(&self) -> Result<PublicKey> {
-        Ok(self.public_key.clone())
+    fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 
     /// Returns the local address that this stream is bound to.
-    fn local_addr(&self) -> Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.laddr.ip());
-        addr.push(Protocol::Tcp(self.laddr.port()));
-
-        Ok(addr)
+    fn local_addr(&self) -> &Multiaddr {
+        &self.laddr
     }
 
     /// Returns the remote address that this stream is connected to.
-    fn peer_addr(&self) -> Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.raddr.ip());
-        addr.push(Protocol::Tcp(self.raddr.port()));
-
-        Ok(addr)
+    fn peer_addr(&self) -> &Multiaddr {
+        &self.raddr
     }
     /// Attempt to read data via this stream.
     fn poll_read(
@@ -465,11 +445,7 @@ mod tests {
         spawn_ok(async move {
             let mut conn = listener.accept().await.unwrap();
 
-            log::info!(
-                "server {:?} => {:?}",
-                conn.local_addr().unwrap(),
-                conn.peer_addr().unwrap()
-            );
+            log::info!("server {:?} => {:?}", conn.local_addr(), conn.peer_addr());
 
             log::trace!("server accept next");
 
@@ -497,11 +473,7 @@ mod tests {
             .await
             .unwrap();
 
-        log::info!(
-            "client {:?} => {:?}",
-            conn.local_addr().unwrap(),
-            conn.peer_addr().unwrap()
-        );
+        log::info!("client {:?} => {:?}", conn.local_addr(), conn.peer_addr());
 
         let mut stream = conn.connect().await.unwrap();
 

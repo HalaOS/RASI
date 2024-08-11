@@ -31,6 +31,7 @@ use rep2p::{
     },
     Switch,
 };
+use uuid::Uuid;
 
 fn to_sockaddr(addr: &Multiaddr) -> Option<SocketAddr> {
     let mut iter = addr.iter();
@@ -129,7 +130,7 @@ impl DriverTransport for QuicTransport {
 
         let laddr = listener.local_addrs().next().unwrap().clone();
 
-        Ok(QuicP2pListener::new(switch, listener, laddr).into())
+        Ok(QuicP2pListener::new(listener, laddr).into())
     }
 
     /// Connect to peer with remote peer [`raddr`](Multiaddr).
@@ -159,9 +160,9 @@ impl DriverTransport for QuicTransport {
 
         let public_key = rep2p_x509::verify(cert)?;
 
-        let conn = QuicP2pConn::new(switch.clone(), laddr, raddr, conn, public_key);
+        let conn = QuicP2pConn::new(laddr, raddr, conn, public_key);
 
-        Ok((conn, switch).into())
+        Ok(conn.into())
     }
 
     /// Check if this transport support the protocol stack represented by the `addr`.
@@ -181,16 +182,11 @@ impl DriverTransport for QuicTransport {
 struct QuicP2pListener {
     listener: QuicListener,
     laddr: SocketAddr,
-    switch: Switch,
 }
 
 impl QuicP2pListener {
-    fn new(switch: Switch, listener: QuicListener, laddr: SocketAddr) -> Self {
-        Self {
-            switch,
-            laddr,
-            listener,
-        }
+    fn new(listener: QuicListener, laddr: SocketAddr) -> Self {
+        Self { laddr, listener }
     }
 }
 
@@ -212,17 +208,7 @@ impl DriverListener for QuicP2pListener {
             "quic: peer path not found",
         ))?;
 
-        Ok((
-            QuicP2pConn::new(
-                self.switch.clone(),
-                self.laddr.clone(),
-                peer_addr,
-                conn,
-                public_key,
-            ),
-            self.switch.clone(),
-        )
-            .into())
+        Ok(QuicP2pConn::new(self.laddr.clone(), peer_addr, conn, public_key).into())
     }
 
     /// Returns the local address that this listener is bound to.
@@ -237,52 +223,52 @@ impl DriverListener for QuicP2pListener {
 
 #[derive(Clone)]
 struct QuicP2pConn {
-    laddr: SocketAddr,
-    raddr: SocketAddr,
+    laddr: Multiaddr,
+    raddr: Multiaddr,
     conn: QuicConn,
     public_key: PublicKey,
     is_closed: Arc<AtomicBool>,
-    switch: Switch,
+    id: Uuid,
 }
 
 impl QuicP2pConn {
-    fn new(
-        switch: Switch,
-        laddr: SocketAddr,
-        raddr: SocketAddr,
-        conn: QuicConn,
-        public_key: PublicKey,
-    ) -> Self {
+    fn new(laddr: SocketAddr, raddr: SocketAddr, conn: QuicConn, public_key: PublicKey) -> Self {
+        let mut m_laddr = Multiaddr::from(laddr.ip());
+        m_laddr.push(Protocol::Udp(laddr.port()));
+        m_laddr.push(Protocol::QuicV1);
+
+        let mut m_raddr = Multiaddr::from(raddr.ip());
+        m_raddr.push(Protocol::Udp(raddr.port()));
+        m_raddr.push(Protocol::QuicV1);
+
         Self {
-            switch,
-            laddr,
-            raddr,
+            laddr: m_laddr,
+            raddr: m_raddr,
             conn,
             public_key,
             is_closed: Default::default(),
+            id: Uuid::new_v4(),
         }
     }
 }
 
 #[async_trait]
 impl DriverConnection for QuicP2pConn {
+    fn id(&self) -> &Uuid {
+        &self.id
+    }
+
     /// Returns local bind address.
     ///
     /// This can be useful, for example, when binding to port 0 to figure out which port was
     /// actually bound.
-    fn local_addr(&self) -> io::Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.laddr.ip());
-        addr.push(Protocol::Tcp(self.laddr.port()));
-
-        Ok(addr)
+    fn local_addr(&self) -> &Multiaddr {
+        &self.laddr
     }
 
     /// Returns the remote address that this connection is connected to.
-    fn peer_addr(&self) -> io::Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.raddr.ip());
-        addr.push(Protocol::Tcp(self.raddr.port()));
-
-        Ok(addr)
+    fn peer_addr(&self) -> &Multiaddr {
+        &self.raddr
     }
 
     /// Accept newly incoming stream for reading/writing.
@@ -326,30 +312,25 @@ impl DriverConnection for QuicP2pConn {
     }
 
     /// Creates a new independently owned handle to the underlying socket.
-    fn try_clone(&self) -> Result<Connection> {
-        Ok((self.clone(), self.switch.clone()).into())
+    fn clone(&self) -> Connection {
+        Clone::clone(self).into()
     }
 
     /// Return the remote peer's public key.
-    fn public_key(&self) -> Result<PublicKey> {
-        Ok(self.public_key.clone())
+    fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 }
 
 struct QuicP2pStream {
     stream: QuicStream,
     public_key: PublicKey,
-    laddr: SocketAddr,
-    raddr: SocketAddr,
+    laddr: Multiaddr,
+    raddr: Multiaddr,
 }
 
 impl QuicP2pStream {
-    fn new(
-        stream: QuicStream,
-        public_key: PublicKey,
-        laddr: SocketAddr,
-        raddr: SocketAddr,
-    ) -> Self {
+    fn new(stream: QuicStream, public_key: PublicKey, laddr: Multiaddr, raddr: Multiaddr) -> Self {
         Self {
             stream,
             public_key,
@@ -362,24 +343,18 @@ impl QuicP2pStream {
 #[async_trait]
 impl DriverStream for QuicP2pStream {
     /// Return the remote peer's public key.
-    fn public_key(&self) -> Result<PublicKey> {
-        Ok(self.public_key.clone())
+    fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 
     /// Returns the local address that this stream is bound to.
-    fn local_addr(&self) -> Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.laddr.ip());
-        addr.push(Protocol::Tcp(self.laddr.port()));
-
-        Ok(addr)
+    fn local_addr(&self) -> &Multiaddr {
+        &self.laddr
     }
 
     /// Returns the remote address that this stream is connected to.
-    fn peer_addr(&self) -> Result<Multiaddr> {
-        let mut addr = Multiaddr::from(self.raddr.ip());
-        addr.push(Protocol::Tcp(self.raddr.port()));
-
-        Ok(addr)
+    fn peer_addr(&self) -> &Multiaddr {
+        &self.raddr
     }
     /// Attempt to read data via this stream.
     fn poll_read(
@@ -451,11 +426,7 @@ mod tests {
         spawn_ok(async move {
             let mut conn = listener.accept().await.unwrap();
 
-            log::info!(
-                "server {:?} => {:?}",
-                conn.local_addr().unwrap(),
-                conn.peer_addr().unwrap()
-            );
+            log::info!("server {:?} => {:?}", conn.local_addr(), conn.peer_addr());
 
             log::trace!("server accept next");
 
@@ -483,11 +454,7 @@ mod tests {
             .await
             .unwrap();
 
-        log::info!(
-            "client {:?} => {:?}",
-            conn.local_addr().unwrap(),
-            conn.peer_addr().unwrap()
-        );
+        log::info!("client {:?} => {:?}", conn.local_addr(), conn.peer_addr());
 
         let mut stream = conn.connect().await.unwrap();
 
