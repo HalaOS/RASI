@@ -235,6 +235,8 @@ impl MutableSwitch {
             }
 
             ids.push(uuid.clone());
+        } else {
+            self.peer_conns.insert(peer_id, vec![uuid.clone()]);
         }
 
         self.uuid_conns.insert(uuid, conn);
@@ -289,6 +291,12 @@ pub struct InnerSwitch {
     immutable: ImmutableSwitch,
     mutable: Mutex<MutableSwitch>,
     event_map: KeyWaitMap<SwitchEvent, ()>,
+}
+
+impl Drop for InnerSwitch {
+    fn drop(&mut self) {
+        log::trace!("Switch dropping.");
+    }
 }
 
 /// `Switch` is the entry point of the libp2p network.
@@ -391,7 +399,7 @@ impl Switch {
                     log::error!(target:"switch","dispatch stream, peer={}, local={}, err={}",this_conn.peer_addr(),this_conn.local_addr(),err);
                     _ = this_conn.close(&this);
                 } else {
-                    log::error!(target:"switch","dispatch stream ok, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
+                    log::trace!(target:"switch","dispatch stream ok, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
                 }
             })
         }
@@ -505,7 +513,7 @@ impl Switch {
             .collect::<Result<Vec<_>>>()?;
 
         //TODO: add nat codes
-        log::info!(target:"switch","{} observed addrs: {:#?}", peer_id, observed_addrs);
+        log::info!(target:"switch","{} observed addrs: {:?}", peer_id, observed_addrs);
 
         self.update_routes(peer_id, &raddrs).await
     }
@@ -611,11 +619,16 @@ impl Switch {
         if let Err(err) = self.setup_conn(&mut conn).await {
             log::error!(target:"switch","setup connection, peer={}, local={}, err={}",conn.peer_addr(),conn.local_addr(),err);
         } else {
-            if let Err(err) = self.mutable.lock().await.add_conn_by_ref(&conn) {
-                log::error!(target:"switch","add connection to cache, peer={}, local={}, err={}", conn.peer_addr(),conn.local_addr(),err);
-            } else {
-                log::info!(target:"switch","add connection to cache, peer={}, local={}", conn.peer_addr(),conn.local_addr());
-            }
+            let peer_id = conn.public_key().to_peer_id();
+
+            self.immutable
+                .route_table
+                .put(peer_id, &[raddr.clone()])
+                .await?;
+
+            self.mutable.lock().await.add_conn_by_ref(&conn)?;
+
+            log::info!(target:"switch","add connection to cache, peer={}, local={}", conn.peer_addr(),conn.local_addr());
         }
 
         Ok(conn)

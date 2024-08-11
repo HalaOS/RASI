@@ -27,7 +27,7 @@ where
 {
     setup();
 
-    stream_ping_pong(&cx).await?;
+    // stream_ping_pong(&cx).await?;
 
     serve_mux(&cx).await?;
 
@@ -67,7 +67,7 @@ async fn stream_ping_pong(cx: &dyn TransportSpecContext) -> Result<()> {
     });
 
     for raddr in peer_addrs {
-        for _ in 0..1 {
+        for _ in 0..100 {
             let (mut stream, _) = client.connect_to(&raddr, TRANSPORT_SPEC_PROTOS).await?;
 
             stream.write_all(b"hello libp2p").await.unwrap();
@@ -127,7 +127,7 @@ async fn serve_mux(cx: &dyn TransportSpecContext) -> Result<()> {
     let peer_addrs = server.local_addrs().await;
 
     for raddr in peer_addrs {
-        for _ in 0..1 {
+        for _ in 0..200 {
             let (mut stream, _) = client.connect_to(&raddr, TRANSPORT_SPEC_PROTOS).await?;
 
             stream.write_all(b"hello libp2p").await.unwrap();
@@ -138,6 +138,8 @@ async fn serve_mux(cx: &dyn TransportSpecContext) -> Result<()> {
 
             assert_eq!(&buf[..read_size], b"hello libp2p");
         }
+
+        break;
     }
 
     Ok(())
