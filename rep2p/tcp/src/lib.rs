@@ -415,7 +415,7 @@ impl DriverStream for P2pTcpStream {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use rep2p::{Result, Switch};
+    use rep2p::{Result, Switch, SwitchBuilder};
     use rep2p_spec::transport::{transport_specs, TransportSpecContext};
 
     use super::*;
@@ -424,13 +424,10 @@ mod tests {
 
     #[async_trait]
     impl TransportSpecContext for TcpMock {
-        async fn create_switch(&self, protos: &[&str]) -> Result<Switch> {
-            Switch::new("test")
-                .protos(protos)
+        async fn create_switch(&self) -> Result<SwitchBuilder> {
+            Ok(Switch::new("test")
                 .bind("/ip4/127.0.0.1/tcp/0".parse()?)
-                .transport(TcpTransport)
-                .create()
-                .await
+                .transport(TcpTransport))
         }
     }
 

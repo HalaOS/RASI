@@ -716,7 +716,7 @@ impl Switch {
     ///
     /// # Take over the handle of incoming stream
     ///
-    /// If this instance belongs to [`ServeMux`](crate::protocol::ServeMux),
+    /// If this instance belongs to [`ServeMux`](crate::serve::ServeMux),
     /// this function or [`into_incoming`](Self::into_incoming) should not be called.
     pub async fn accept(&self) -> Result<(Stream, String)> {
         loop {

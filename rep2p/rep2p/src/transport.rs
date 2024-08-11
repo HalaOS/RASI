@@ -132,9 +132,9 @@ driver_wrapper!(
 );
 
 impl Connection {
-    /// A facade function for driver's [`close`](syscall::DriverConnection::close) function.
+    /// A wrapper of driver's [`close`](syscall::DriverConnection::close) function.
     ///
-    /// This function also remove this connection from switch's connection pool.
+    /// This function first removes self from [`Switch`] before calling the driver `close` function.
     pub async fn close(&mut self, switch: &Switch) {
         switch.remove_conn(self).await;
         _ = self.as_driver().close().await;

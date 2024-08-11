@@ -46,7 +46,7 @@ driver_wrapper!(
 ProtocolHandler[syscall::DriverProtocolHandler]
 );
 
-/// `ServeMux` is a libp2p request mulitplexer.
+/// `ServeMux` is a protocol request mulitplexer.
 pub struct ServeMux {
     protocols: Vec<Protocol>,
 }
