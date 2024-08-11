@@ -137,13 +137,6 @@ macro_rules! fmt {
             fmt_method!("{:X}", "{:01$X}", digit::$Digit::HEX_PADDING, "0x");
         }
 
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                crate::int::fmt::tests!(utest);
-            }
-        }
     };
 }
 

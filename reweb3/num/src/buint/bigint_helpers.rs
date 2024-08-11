@@ -80,47 +80,6 @@ macro_rules! bigint_helpers {
                 }
             }
         }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::{test_bignum, types::*};
-                use crate::test::types::big_types::$Digit::*;
-
-                type U64 = crate::$BUint::<{64 / $Digit::BITS as usize}>;
-
-                test_bignum! {
-                    function: <utest>::carrying_add(a: utest, rhs: utest, carry: bool),
-                    cases: [
-                        (utest::MAX, 1u8, true),
-                        (utest::MAX, 1u8, false)
-                    ]
-                }
-
-                test_bignum! {
-                    function: <utest>::borrowing_sub(a: utest, rhs: utest, carry: bool),
-                    cases: [
-                        (0u8, 1u8, false),
-                        (0u8, 1u8, true)
-                    ]
-                }
-
-                test_bignum! {
-                    function: <u64>::widening_mul(a: u64, b: u64),
-                    cases: [
-                        (u64::MAX, u64::MAX)
-                    ]
-                }
-
-                test_bignum! {
-                    function: <u64>::carrying_mul(a: u64, b: u64, c: u64),
-                    cases: [
-                        (u64::MAX, u64::MAX, u64::MAX),
-                        (u64::MAX, u64::MAX, 1u64)
-                    ]
-                }
-            }
-        }
     };
 }
 

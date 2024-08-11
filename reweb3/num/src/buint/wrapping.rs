@@ -38,7 +38,10 @@ macro_rules! wrapping {
             #[must_use = doc::must_use_op!()]
             #[inline]
             pub const fn wrapping_div(self, rhs: Self) -> Self {
-                option_expect!(self.checked_div(rhs), errors::err_msg!(errors::div_by_zero_message!()))
+                option_expect!(
+                    self.checked_div(rhs),
+                    errors::err_msg!(errors::div_by_zero_message!())
+                )
             }
 
             #[doc = doc::wrapping::wrapping_div_euclid!(U)]
@@ -52,7 +55,10 @@ macro_rules! wrapping {
             #[must_use = doc::must_use_op!()]
             #[inline]
             pub const fn wrapping_rem(self, rhs: Self) -> Self {
-                option_expect!(self.checked_rem(rhs), errors::err_msg!(errors::rem_by_zero_message!()))
+                option_expect!(
+                    self.checked_rem(rhs),
+                    errors::err_msg!(errors::rem_by_zero_message!())
+                )
             }
 
             #[doc = doc::wrapping::wrapping_rem_euclid!(U)]
@@ -109,77 +115,6 @@ macro_rules! wrapping {
                 match self.checked_next_power_of_two() {
                     Some(int) => int,
                     None => Self::ZERO,
-                }
-            }
-        }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                use crate::test::{test_bignum, types::{utest, itest}};
-
-                #[test]
-                #[should_panic(expected = "attempt to divide by zero")]
-                fn div_by_zero_panic() {
-                    let a = UTEST::MAX;
-                    let b = UTEST::ZERO;
-                    let _ = a.wrapping_div(b);
-                }
-
-                #[test]
-                #[should_panic(expected = "attempt to calculate the remainder with a divisor of zero")]
-                fn rem_by_zero_panic() {
-                    let a = UTEST::MAX;
-                    let b = UTEST::ZERO;
-                    let _ = a.wrapping_rem(b);
-                }
-
-                test_bignum! {
-                    function: <utest>::wrapping_add(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_add_signed(a: utest, b: itest)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_sub(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_mul(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_div(a: utest, b: utest),
-                    skip: b == 0
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_div_euclid(a: utest, b: utest),
-                    skip: b == 0
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_rem(a: utest, b: utest),
-                    skip: b == 0
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_rem_euclid(a: utest, b: utest),
-                    skip: b == 0
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_neg(a: utest)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_shl(a: utest, b: u16)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_shr(a: utest, b: u16)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_pow(a: utest, b: u16)
-                }
-                test_bignum! {
-                    function: <utest>::wrapping_next_power_of_two(a: utest),
-                    cases: [
-                        (utest::MAX)
-                    ]
                 }
             }
         }

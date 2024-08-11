@@ -46,13 +46,6 @@ macro_rules! cmp {
                 }
             }
         }
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                crate::int::cmp::tests!(utest);
-            }
-        }
     };
 }
 

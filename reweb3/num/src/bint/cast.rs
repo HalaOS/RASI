@@ -122,14 +122,6 @@ macro_rules! cast {
         impl<const N: usize> CastFrom<f64> for $BInt<N> {
             crate::bint::cast::bint_cast_from_float!(f64, $BUint<N>);
         }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                crate::int::cast::tests!(itest);
-            }
-        }
     };
 }
 

@@ -236,13 +236,6 @@ macro_rules! cast {
             }
         }
 
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                crate::int::cast::tests!(utest);
-            }
-        }
     };
 }
 

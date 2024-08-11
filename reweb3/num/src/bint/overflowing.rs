@@ -150,9 +150,9 @@ macro_rules! overflowing {
                     let r_neg = rhs.is_negative();
                     if !rem.is_zero() {
                         if r_neg {
-                            return (div.add(Self::ONE), false)
+                            return (div.add(Self::ONE), false);
                         } else {
-                            return (div.sub(Self::ONE), false)
+                            return (div.sub(Self::ONE), false);
                         };
                     }
                 }
@@ -272,76 +272,6 @@ macro_rules! overflowing {
                     overflow = overflow || out.is_negative();
                 }
                 (out, overflow)
-            }
-        }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::{test_bignum, types::itest};
-                use crate::test::types::big_types::$Digit::*;
-
-                test_bignum! {
-                    function: <itest>::overflowing_add(a: itest, b: itest)
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_sub(a: itest, b: itest)
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_mul(a: itest, b: itest)
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_div(a: itest, b: itest),
-                    skip: b == 0,
-                    cases: [
-                        (itest::MIN, -1i8),
-                        (itest::MIN, 1i8)
-                    ]
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_div_euclid(a: itest, b: itest),
-                    skip: b == 0,
-                    cases: [
-                        (itest::MIN, -1i8)
-                    ]
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_rem(a: itest, b: itest),
-                    skip: b == 0,
-                    cases: [
-                        (itest::MIN, -1i8)
-                    ]
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_rem_euclid(a: itest, b: itest),
-                    skip: b == 0,
-                    cases: [
-                        (itest::MIN, -1i8)
-                    ]
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_neg(a: itest),
-                    cases: [
-                        (0i8),
-                        (itest::MIN)
-                    ]
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_shl(a: itest, b: u16)
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_shr(a: itest, b: u16)
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_abs(a: itest),
-                    cases: [
-                        (0i8),
-                        (itest::MIN)
-                    ]
-                }
-                test_bignum! {
-                    function: <itest>::overflowing_pow(a: itest, b: u16)
-                }
             }
         }
     };

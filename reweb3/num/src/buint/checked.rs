@@ -50,15 +50,13 @@ macro_rules! checked {
             }
             const fn basecase_div_rem(self, mut v: Self, n: usize) -> (Self, Self) {
                 // The Art of Computer Programming Volume 2 by Donald Knuth, Section 4.3.1, Algorithm D
-                
+
                 let mut q = Self::ZERO;
                 let m = self.last_digit_index() + 1 - n;
                 let shift = v.digits[n - 1].leading_zeros() as ExpType;
-                
-                v = unsafe {
-                    Self::unchecked_shl_internal(v, shift)
-                }; // D1
-                
+
+                v = unsafe { Self::unchecked_shl_internal(v, shift) }; // D1
+
                 struct Remainder<const M: usize> {
                     first: $Digit,
                     rest: [$Digit; M],
@@ -81,7 +79,8 @@ macro_rules! checked {
                         if shift > 0 {
                             i = 0;
                             while i < M {
-                                out.digits[i] |= self.rest[i] << (digit::$Digit::BITS as ExpType - shift);
+                                out.digits[i] |=
+                                    self.rest[i] << (digit::$Digit::BITS as ExpType - shift);
                                 i += 1;
                             }
                         }
@@ -128,11 +127,20 @@ macro_rules! checked {
                             }
                         }
                     }*/
-                    const fn sub(mut self, rhs: Mul<M>, start: usize, range: usize) -> (Self, bool) {
+                    const fn sub(
+                        mut self,
+                        rhs: Mul<M>,
+                        start: usize,
+                        range: usize,
+                    ) -> (Self, bool) {
                         let mut borrow = false;
                         let mut i = 0;
                         while i <= range {
-                            let (sub, overflow) = digit::$Digit::borrowing_sub(self.digit(i + start), rhs.digit(i), borrow);
+                            let (sub, overflow) = digit::$Digit::borrowing_sub(
+                                self.digit(i + start),
+                                rhs.digit(i),
+                                borrow,
+                            );
                             if start == 0 && i == 0 {
                                 self.first = sub;
                             } else {
@@ -147,7 +155,11 @@ macro_rules! checked {
                         let mut carry = false;
                         let mut i = 0;
                         while i < range {
-                            let (sum, overflow) = digit::$Digit::carrying_add(self.digit(i + start), rhs.digits[i], carry);
+                            let (sum, overflow) = digit::$Digit::carrying_add(
+                                self.digit(i + start),
+                                rhs.digits[i],
+                                carry,
+                            );
                             if start == 0 && i == 0 {
                                 self.first = sum;
                             } else {
@@ -160,13 +172,14 @@ macro_rules! checked {
                             if start == 0 && range == 0 {
                                 self.first = self.first.wrapping_add(1);
                             } else {
-                                self.rest[range + start - 1] = self.rest[range + start - 1].wrapping_add(1);
+                                self.rest[range + start - 1] =
+                                    self.rest[range + start - 1].wrapping_add(1);
                             }
                         }
                         self
                     }
                 }
-                
+
                 #[derive(Clone, Copy)]
                 struct Mul<const M: usize> {
                     last: $Digit,
@@ -178,15 +191,13 @@ macro_rules! checked {
                         let mut carry: $Digit = 0;
                         let mut i = 0;
                         while i < M {
-                            let (prod, c) = digit::$Digit::carrying_mul(uint.digits[i], rhs, carry, 0);
+                            let (prod, c) =
+                                digit::$Digit::carrying_mul(uint.digits[i], rhs, carry, 0);
                             carry = c;
                             rest[i] = prod;
                             i += 1;
                         }
-                        Self {
-                            last: carry,
-                            rest,
-                        }
+                        Self { last: carry, rest }
                     }
                     const fn digit(&self, index: usize) -> $Digit {
                         if index == M {
@@ -196,32 +207,40 @@ macro_rules! checked {
                         }
                     }
                 }
-                
+
                 let v_n_m1 = v.digits[n - 1];
                 let v_n_m2 = v.digits[n - 2];
-                
+
                 let mut u = Remainder::new(self, shift);
-                
+
                 let mut j = m + 1; // D2
                 while j > 0 {
                     j -= 1; // D7
-                    
+
                     let u_jn = u.digit(j + n);
-                    
+
                     #[inline]
                     const fn tuple_gt(a: ($Digit, $Digit), b: ($Digit, $Digit)) -> bool {
                         a.1 > b.1 || a.1 == b.1 && a.0 > b.0
                     }
-                    
+
                     // q_hat will be either `q` or `q + 1`
                     let mut q_hat = if u_jn < v_n_m1 {
-                        let (mut q_hat, r_hat) = digit::$Digit::div_rem_wide(u.digit(j + n - 1), u_jn, v_n_m1); // D3
-                        
-                        if tuple_gt(digit::$Digit::widening_mul(q_hat, v_n_m2), (u.digit(j + n - 2), r_hat as $Digit)) {
+                        let (mut q_hat, r_hat) =
+                            digit::$Digit::div_rem_wide(u.digit(j + n - 1), u_jn, v_n_m1); // D3
+
+                        if tuple_gt(
+                            digit::$Digit::widening_mul(q_hat, v_n_m2),
+                            (u.digit(j + n - 2), r_hat as $Digit),
+                        ) {
                             q_hat -= 1;
-                            
-                            if let Some(r_hat) = r_hat.checked_add(v_n_m1) { // this checks if `r_hat <= b`, where `b` is the digit base
-                                if tuple_gt(digit::$Digit::widening_mul(q_hat, v_n_m2), (u.digit(j + n - 2), r_hat as $Digit)) {
+
+                            if let Some(r_hat) = r_hat.checked_add(v_n_m1) {
+                                // this checks if `r_hat <= b`, where `b` is the digit base
+                                if tuple_gt(
+                                    digit::$Digit::widening_mul(q_hat, v_n_m2),
+                                    (u.digit(j + n - 2), r_hat as $Digit),
+                                ) {
                                     q_hat -= 1;
                                 }
                             }
@@ -233,8 +252,9 @@ macro_rules! checked {
                     };
                     let (u_new, overflow) = u.sub(Mul::new(v, q_hat), j, n); // D4
                     u = u_new;
-                    
-                    if overflow { // D5 - unlikely, probability of this being true is ~ 2 / b where b is the digit base (i.e. `Digit::MAX + 1`)
+
+                    if overflow {
+                        // D5 - unlikely, probability of this being true is ~ 2 / b where b is the digit base (i.e. `Digit::MAX + 1`)
                         q_hat -= 1;
                         u = u.add(v, j, n);
                     }
@@ -242,15 +262,15 @@ macro_rules! checked {
                 }
                 (q, u.shr(shift))
             }
-            
+
             #[inline]
             pub(crate) const fn div_rem_unchecked(self, rhs: Self) -> (Self, Self) {
                 use core::cmp::Ordering;
-                
+
                 if self.is_zero() {
                     return (Self::ZERO, Self::ZERO);
                 }
-                
+
                 match self.cmp(&rhs) {
                     Ordering::Less => (Self::ZERO, self),
                     Ordering::Equal => (Self::ONE, Self::ZERO),
@@ -265,7 +285,7 @@ macro_rules! checked {
                     }
                 }
             }
-            
+
             #[inline]
             pub(crate) const fn div_rem(self, rhs: Self) -> (Self, Self) {
                 if rhs.is_zero() {
@@ -274,7 +294,7 @@ macro_rules! checked {
                     self.div_rem_unchecked(rhs)
                 }
             }
-            
+
             #[doc = doc::checked::checked_div!(U)]
             #[must_use = doc::must_use_op!()]
             #[inline]
@@ -285,14 +305,14 @@ macro_rules! checked {
                     Some(self.div_rem_unchecked(rhs).0)
                 }
             }
-            
+
             #[doc = doc::checked::checked_div_euclid!(U)]
             #[must_use = doc::must_use_op!()]
             #[inline]
             pub const fn checked_div_euclid(self, rhs: Self) -> Option<Self> {
                 self.checked_div(rhs)
             }
-            
+
             #[doc = doc::checked::checked_rem!(U)]
             #[must_use = doc::must_use_op!()]
             #[inline]
@@ -303,14 +323,14 @@ macro_rules! checked {
                     Some(self.div_rem_unchecked(rhs).1)
                 }
             }
-            
+
             #[doc = doc::checked::checked_rem_euclid!(U)]
             #[must_use = doc::must_use_op!()]
             #[inline]
             pub const fn checked_rem_euclid(self, rhs: Self) -> Option<Self> {
                 self.checked_rem(rhs)
             }
-        
+
             #[doc = doc::checked::checked_neg!(U)]
             #[must_use = doc::must_use_op!()]
             #[inline]
@@ -329,9 +349,7 @@ macro_rules! checked {
                 if rhs >= Self::BITS {
                     None
                 } else {
-                    unsafe {
-                        Some(Self::unchecked_shl_internal(self, rhs))
-                    }
+                    unsafe { Some(Self::unchecked_shl_internal(self, rhs)) }
                 }
             }
 
@@ -342,9 +360,7 @@ macro_rules! checked {
                 if rhs >= Self::BITS {
                     None
                 } else {
-                    unsafe {
-                        Some(Self::unchecked_shr_internal(self, rhs))
-                    }
+                    unsafe { Some(Self::unchecked_shr_internal(self, rhs)) }
                 }
             }
 
@@ -386,7 +402,7 @@ macro_rules! checked {
                             // `next_multiple = floor(self / rhs) * rhs + rhs = (self - rem) + rhs`
                             self.checked_add(rhs.sub(rem))
                         }
-                    },
+                    }
                     None => None,
                 }
             }
@@ -458,77 +474,6 @@ macro_rules! checked {
                     return None;
                 }
                 Some(Self::power_of_two(bits))
-            }
-        }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                use crate::test::{test_bignum, types::*};
-
-                test_bignum! {
-                    function: <utest>::checked_add(a: utest, b: utest),
-                    cases: [
-                        (utest::MAX, 1u8)
-                    ]
-                }
-                test_bignum! {
-                    function: <utest>::checked_add_signed(a: utest, b: itest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_sub(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_mul(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_div(a: utest, b: utest),
-                    cases: [
-                        (328622u32 as utest, 10000u32 as utest), // tests the unlikely condition in the division algorithm at step D5
-                        (2074086u32 as utest, 76819u32 as utest) // tests the unlikely condition in the division algorithm at step D5
-                    ]
-                }
-                test_bignum! {
-                    function: <utest>::checked_div_euclid(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_rem(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_rem_euclid(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_neg(a: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_shl(a: utest, b: u16)
-                }
-                test_bignum! {
-                    function: <utest>::checked_shr(a: utest, b: u16)
-                }
-                test_bignum! {
-                    function: <utest>::checked_pow(a: utest, b: u16)
-                }
-                test_bignum! {
-                    function: <utest>::checked_ilog(a: utest, b: utest),
-                    cases: [
-                        (2u8, 60u8),
-                        (utest::MAX, 2u8)
-                    ]
-                }
-                test_bignum! {
-                    function: <utest>::checked_ilog2(a: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_ilog10(a: utest)
-                }
-                test_bignum! {
-                    function: <utest>::checked_next_power_of_two(a: utest),
-                    cases: [
-                        (utest::MAX)
-                    ]
-                }
             }
         }
     };

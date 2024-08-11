@@ -281,6 +281,7 @@ enum SwitchEvent {
     Accept,
 }
 
+#[doc(hidden)]
 pub struct InnerSwitch {
     public_key: PublicKey,
     immutable: ImmutableSwitch,
@@ -288,7 +289,13 @@ pub struct InnerSwitch {
     event_map: KeyWaitMap<SwitchEvent, ()>,
 }
 
-/// `Switch` is the protocol stack entry point of the libp2p network.
+/// `Switch` is the entry point of the libp2p network.
+///
+/// via `Switch` instance, you can:
+/// - create a outbound stream to peer.
+/// - accept a inbound stream from peer.
+///
+/// # Multiaddr hit
 #[derive(Clone)]
 pub struct Switch {
     inner: Arc<InnerSwitch>,

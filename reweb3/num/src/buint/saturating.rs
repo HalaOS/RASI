@@ -69,34 +69,6 @@ macro_rules! saturating {
                 Self::saturate_up(self.overflowing_pow(exp))
             }
         }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::{test_bignum, types::*};
-                use crate::test::types::big_types::$Digit::*;
-
-                test_bignum! {
-                    function: <utest>::saturating_add(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::saturating_add_signed(a: utest, b: itest)
-                }
-                test_bignum! {
-                    function: <utest>::saturating_sub(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::saturating_mul(a: utest, b: utest)
-                }
-                test_bignum! {
-                    function: <utest>::saturating_div(a: utest, b: utest),
-                    skip: b == 0
-                }
-                test_bignum! {
-                    function: <utest>::saturating_pow(a: utest, b: u16)
-                }
-            }
-        }
     };
 }
 

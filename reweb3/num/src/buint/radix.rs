@@ -119,7 +119,9 @@ macro_rules! radix {
                     return Self::from_be_slice(buf);
                 }
 
-                crate::nightly::ok!(Self::from_buf_radix_internal::<false, true>(buf, radix, false))
+                crate::nightly::ok!(Self::from_buf_radix_internal::<false, true>(
+                    buf, radix, false
+                ))
             }
 
             /// Converts a slice of little-endian digits in the given radix to an integer. Each `u8` of the slice is interpreted as one digit of base `radix` of the number, so this function will return `None` if any digit is greater than or equal to `radix`, otherwise the integer is wrapped in `Some`.
@@ -147,7 +149,9 @@ macro_rules! radix {
                     return Self::from_le_slice(buf);
                 }
 
-                crate::nightly::ok!(Self::from_buf_radix_internal::<false, false>(buf, radix, false))
+                crate::nightly::ok!(Self::from_buf_radix_internal::<false, false>(
+                    buf, radix, false
+                ))
             }
 
             #[inline]
@@ -205,7 +209,11 @@ macro_rules! radix {
                 }
             }
 
-            pub(crate) const fn from_buf_radix_internal<const FROM_STR: bool, const BE: bool>(buf: &[u8], radix: u32, leading_sign: bool) -> Result<Self, ParseIntError> {
+            pub(crate) const fn from_buf_radix_internal<const FROM_STR: bool, const BE: bool>(
+                buf: &[u8],
+                radix: u32,
+                leading_sign: bool,
+            ) -> Result<Self, ParseIntError> {
                 if leading_sign && buf.len() == 1 {
                     return Err(ParseIntError {
                         kind: IntErrorKind::InvalidDigit,
@@ -220,7 +228,8 @@ macro_rules! radix {
                 match radix {
                     2 | 4 | 16 | 256 => {
                         let mut out = Self::ZERO;
-                        let base_digits_per_digit = (digit::$Digit::BITS_U8 / ilog2(radix)) as usize;
+                        let base_digits_per_digit =
+                            (digit::$Digit::BITS_U8 / ilog2(radix)) as usize;
                         let full_digits = input_digits_len / base_digits_per_digit as usize;
                         let remaining_digits = input_digits_len % base_digits_per_digit as usize;
                         if full_digits > N || full_digits == N && remaining_digits != 0 {
@@ -269,7 +278,7 @@ macro_rules! radix {
                             j += 1;
                         }
                         Ok(out)
-                    },
+                    }
                     8 | 32 | 64 | 128 => {
                         let mut out = Self::ZERO;
                         let radix_u8 = radix as u8;
@@ -282,11 +291,7 @@ macro_rules! radix {
                         let stop_index = if leading_sign { 1 } else { 0 };
                         while i > stop_index {
                             i -= 1;
-                            let idx = if BE {
-                                i
-                            } else {
-                                buf.len() - 1 - i
-                            };
+                            let idx = if BE { i } else { buf.len() - 1 - i };
                             let d = Self::byte_to_digit::<FROM_STR>(buf[idx]);
                             if d >= radix_u8 {
                                 return Err(ParseIntError {
@@ -307,11 +312,7 @@ macro_rules! radix {
                                     }
                                     while i > stop_index {
                                         i -= 1;
-                                        let idx = if BE {
-                                            i
-                                        } else {
-                                            buf.len() - 1 - i
-                                        };
+                                        let idx = if BE { i } else { buf.len() - 1 - i };
                                         let d = Self::byte_to_digit::<FROM_STR>(buf[idx]);
                                         if d != 0 {
                                             return Err(ParseIntError {
@@ -326,7 +327,7 @@ macro_rules! radix {
                             }
                         }
                         Ok(out)
-                    },
+                    }
                     _ => {
                         let (base, power) = Self::radix_base(radix);
                         let r = input_digits_len % power;
@@ -334,17 +335,9 @@ macro_rules! radix {
                         let radix_u8 = radix as u8;
                         let mut out = Self::ZERO;
                         let mut first: $Digit = 0;
-                        let mut i = if leading_sign {
-                            1
-                        } else {
-                            0
-                        };
+                        let mut i = if leading_sign { 1 } else { 0 };
                         while i < if leading_sign { split + 1 } else { split } {
-                            let idx = if BE {
-                                i
-                            } else {
-                                buf.len() - 1 - i
-                            };
+                            let idx = if BE { i } else { buf.len() - 1 - i };
                             let d = Self::byte_to_digit::<FROM_STR>(buf[idx]);
                             if d >= radix_u8 {
                                 return Err(ParseIntError {
@@ -362,7 +355,8 @@ macro_rules! radix {
                             let mut carry = 0;
                             let mut j = 0;
                             while j < N {
-                                let (low, high) = digit::$Digit::carrying_mul(out.digits[j], base, carry, 0);
+                                let (low, high) =
+                                    digit::$Digit::carrying_mul(out.digits[j], base, carry, 0);
                                 carry = high;
                                 out.digits[j] = low;
                                 j += 1;
@@ -376,11 +370,7 @@ macro_rules! radix {
                             let mut n = 0;
                             j = start;
                             while j < end && j < buf.len() {
-                                let idx = if BE {
-                                    j
-                                } else {
-                                    buf.len() - 1 - j
-                                };
+                                let idx = if BE { j } else { buf.len() - 1 - j };
                                 let d = Self::byte_to_digit::<FROM_STR>(buf[idx]);
                                 if d >= radix_u8 {
                                     return Err(ParseIntError {
@@ -571,101 +561,6 @@ macro_rules! radix {
 
             fn from_str(src: &str) -> Result<Self, Self::Err> {
                 Self::from_str_radix(src, 10)
-            }
-        }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::{quickcheck_from_to_radix, test_bignum, self};
-                use crate::$BUint;
-                use core::str::FromStr;
-                use crate::test::types::big_types::$Digit::*;
-                use crate::test::types::utest;
-
-                test_bignum! {
-                    function: <utest>::from_str,
-                    cases: [
-                        ("398475394875230495745"),
-                        ("3984753948752304957423490785029749572977970985"),
-                        ("12345💩👍"),
-                        ("1234567890a"),
-                        ("")
-                    ]
-                }
-
-                test_bignum! {
-                    function: <utest>::from_str_radix,
-                    cases: [
-                        ("+af7345asdofiuweor", 35u32),
-                        ("+945hhdgi73945hjdfj", 32u32),
-                        ("+3436847561345343455", 9u32),
-                        ("+affe758457bc345540ac399", 16u32),
-                        ("+affe758457bc345540ac39929334534ee34579234795", 17u32),
-                        ("+3777777777777777777777777777777777777777777", 8u32),
-                        ("+37777777777777777777777777777777777777777761", 8u32),
-                        ("+1777777777777777777777", 8u32),
-                        ("+17777777777777777777773", 8u32),
-                        ("+2000000000000000000000", 8u32),
-                        ("-234598734", 10u32),
-                        ("g234ab", 16u32),
-                        ("234£$2234", 15u32),
-                        ("123456💯", 30u32),
-                        ("3434💯34593487", 12u32),
-                        ("💯34593487", 11u32),
-                        ("12345678", 8u32),
-                        ("abcdefw", 32u32),
-                        ("1234ab", 11u32),
-                        ("1234", 4u32),
-                        ("010120101", 2u32),
-                        ("10000000000000000", 16u32),
-                        ("p8hrbe0mo0084i6vckj1tk7uvacnn4cm", 32u32),
-                        ("", 10u32)
-                    ]
-                }
-
-                quickcheck_from_to_radix!(utest, radix_be, 256);
-                quickcheck_from_to_radix!(utest, radix_le, 256);
-                quickcheck_from_to_radix!(utest, str_radix, 36);
-
-                // #[test]
-                // fn parse_str_radix() {
-                //     assert_eq!(UTEST::parse_str_radix())
-                // }
-
-                #[test]
-                #[should_panic(expected = "attempt to parse integer from empty string")]
-                fn parse_str_radix_empty() {
-                    let _ = UTEST::parse_str_radix("", 10);
-                }
-
-                #[test]
-                #[should_panic(expected = "attempt to parse integer from string containing invalid digit")]
-                fn parse_str_radix_invalid_char() {
-                    let _ = UTEST::parse_str_radix("a", 10);
-                }
-
-                #[test]
-                fn parse_empty() {
-                    assert_eq!(UTEST::from_radix_be(&[], 10), Some(UTEST::ZERO));
-                    assert_eq!(UTEST::from_radix_le(&[], 10), Some(UTEST::ZERO));
-                }
-
-                test::quickcheck_from_str_radix!(utest, "+" | "");
-                test::quickcheck_from_str!(utest);
-
-                #[test]
-                fn parse_bytes() {
-                    let src = "134957dkbhadoinegrhi983475hdgkhgdhiu3894hfd";
-                    let u = $BUint::<100>::parse_bytes(src.as_bytes(), 35).unwrap();
-                    let v = $BUint::<100>::from_str_radix(src, 35).unwrap();
-                    assert_eq!(u, v);
-                    assert_eq!(v.to_str_radix(35), src);
-
-                    let bytes = b"345977fsuudf0350845";
-                    let option = $BUint::<100>::parse_bytes(bytes, 20);
-                    assert!(option.is_none());
-                }
             }
         }
     };

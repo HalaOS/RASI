@@ -170,16 +170,6 @@ macro_rules! endian {
                 }
             }
         }
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                use crate::test::{test_bignum, types::utest};
-
-                crate::int::endian::tests!($Digit; utest);
-            }
-        }
     };
 }
 

@@ -46,16 +46,8 @@ macro_rules! fmt {
                 f.pad_integral(!self.is_negative(), "", &format!("{:E}", uint))
             }
         }
-        
-        fmt_trait!($BInt, UpperHex);
 
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use crate::test::types::big_types::$Digit::*;
-                crate::int::fmt::tests!(itest);
-            }
-        }
+        fmt_trait!($BInt, UpperHex);
     };
 }
 

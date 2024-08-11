@@ -101,7 +101,7 @@ const P2P_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.6.1.4.1.5359
 ///    publicKey OCTET STRING,
 ///    signature OCTET STRING
 /// }
-#[derive(Sequence)]
+// #[derive(Sequence)]
 pub struct Libp2pExtension {
     public_key: OctetString,
     signature: OctetString,

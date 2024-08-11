@@ -69,7 +69,8 @@ uuid = { version = "1.2.2", features = ["serde", "v4"] }
 ecdsa = { version = "^0.16" }
 termcolor = "^1.4"
 const-oid = "0.9.6"
-der = "0.7.8"
+der = { version = "=0.7.9" }
+der_derive = { version = "=0.7.3" }
 p256 = "^0.13"
 p384 = "^0.13"
 p521 = "^0.13"

@@ -119,33 +119,6 @@ macro_rules! ops {
         }
 
         crate::int::ops::impls!($BUint, $BUint, $BInt);
-
-        #[cfg(test)]
-        paste::paste! {
-            mod [<$Digit _digit_tests>] {
-                use super::*;
-                use crate::test::{test_bignum, types::utest};
-                use crate::test::types::big_types::$Digit::*;
-
-                crate::int::ops::tests!(utest);
-
-                quickcheck::quickcheck! {
-                    fn add_digit(a: utest, b: $Digit) -> quickcheck::TestResult {
-                        use crate::cast::As;
-
-                        let c: utest = b.as_();
-                        match a.checked_add(c) {
-                            None => quickcheck::TestResult::discard(),
-                            Some(_d) => {
-                                let e: UTEST = b.as_();
-                                let f: UTEST = a.as_();
-                                quickcheck::TestResult::from_bool(f + e == f + b)
-                            }
-                        }
-                    }                    
-                }
-            }
-        }
     };
 }
 

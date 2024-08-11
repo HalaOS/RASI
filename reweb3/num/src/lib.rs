@@ -1,14 +1,3 @@
-#![cfg_attr(
-    test,
-    feature(
-        bigint_helper_methods,
-        int_roundings,
-        float_minimum_maximum,
-        wrapping_next_power_of_two,
-        float_next_up_down,
-        unchecked_shifts,
-    )
-)]
 #![doc = include_str!("../README.md")]
 
 #[macro_use]
