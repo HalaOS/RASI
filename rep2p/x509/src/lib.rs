@@ -148,7 +148,7 @@ impl Libp2pExtension {
 
     /// Verify the libp2p self-signed certificate.
     ///
-    /// On success, returns [`PeerId`](rp2p_core::PeerId) derived from host public key.
+    /// On success, returns [`PeerId`](rep2p::identity::PeerId) derived from host public key.
     pub fn verify<PubKey: AsRef<[u8]>>(&self, cert_pub_key: PubKey) -> Result<PublicKey> {
         let mut msg = vec![];
         msg.extend(P2P_SIGNING_PREFIX);
@@ -209,7 +209,7 @@ pub async fn generate(keypair: &KeyStore) -> Result<(Vec<u8>, Zeroizing<Vec<u8>>
 
 /// Parse and verify the libp2p certificate from ASN.1 DER format.
 ///
-/// On success, returns the [`PeerId`](rp2p_core::PeerId) extract from [`libp2p public key extension`](https://github.com/libp2p/specs/blob/master/tls/tls.md)
+/// On success, returns the [`PeerId`](rep2p::identity::PeerId) extract from [`libp2p public key extension`](https://github.com/libp2p/specs/blob/master/tls/tls.md)
 pub fn verify<D: AsRef<[u8]>>(der: D) -> Result<PublicKey> {
     let cert = Certificate::from_der(der.as_ref())?;
 

@@ -1,4 +1,4 @@
-//! Represents the libp2p transport driver.
+//! A plugin system for libp2p's transport layer protocol.
 
 use std::{io::Result, pin::Pin};
 

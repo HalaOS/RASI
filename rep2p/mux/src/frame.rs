@@ -81,8 +81,6 @@ impl<'a> TryFrom<&'a [u8]> for FrameHeader<'a> {
 }
 
 impl<'a> FrameHeader<'a> {
-    /// use [`FrameBuilder`] to create new `Frame` instance step by step.
-
     /// Get yamux verson field, should always returns 0.
     pub fn version(&self) -> u8 {
         match self {
@@ -225,8 +223,6 @@ impl<'a> FrameHeaderBuilder<'a> {
 }
 
 /// Yamux frame type.
-///
-/// You can frame instance using the [`build`](Self::build) function or the [`parse`](Self::parse) function.
 #[derive(Debug)]
 pub struct Frame<'a> {
     /// frame header fileds.

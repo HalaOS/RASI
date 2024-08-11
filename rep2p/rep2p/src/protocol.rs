@@ -1,4 +1,4 @@
-//! Represents the libp2p protocol driver.
+//! A plugin system for libp2p's application layer protocol.
 //!
 
 use std::{collections::HashMap, ops::Deref, sync::Arc, time::Duration};
@@ -74,7 +74,7 @@ impl ServeMuxBuilder {
 
         self
     }
-    /// Replace default [`MemoryKeyStore`].
+    /// Replace default [`MemoryKeyStore`](crate::keystore::MemoryKeyStore).
     pub fn keystore<K>(mut self, value: K) -> Self
     where
         K: DriverKeyStore + 'static,
@@ -84,7 +84,7 @@ impl ServeMuxBuilder {
         self
     }
 
-    /// Replace default [`MemoryRouteTable`].
+    /// Replace default [`MemoryRouteTable`](crate::routetable::MemoryRouteTable).
     pub fn route_table<R>(mut self, value: R) -> Self
     where
         R: DriverRouteTable + 'static,
