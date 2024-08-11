@@ -369,10 +369,14 @@ impl Switch {
         loop {
             let mut stream = conn.accept().await?;
 
+            log::info!(target:"switch","accept new stream, peer={}, local={}, id={}",conn.peer_addr(),conn.local_addr(),stream.id());
+
             let (protoco_id, _) = listener_select_proto(&mut stream, &self.immutable.protos)
                 .timeout(self.immutable.timeout)
                 .await
                 .ok_or(Error::Timeout)??;
+
+            log::info!(target:"switch","protocol handshake, id={}, protocol={}",stream.id(),protoco_id);
 
             let this = self.clone();
             let protoco_id = protoco_id.clone();
@@ -508,9 +512,11 @@ impl Switch {
 
     /// Start a "/ipfs/id/1.0.0" handshake.
     async fn identity_request(&self, conn: &mut Connection) -> Result<()> {
-        let stream = conn.connect().await?;
+        let mut stream = conn.connect().await?;
 
         let conn_peer_id = conn.public_key().to_peer_id();
+
+        dialer_select_proto(&mut stream, ["/ipfs/id/1.0.0"], Version::V1).await?;
 
         self.identity_push(&conn_peer_id, stream).await
     }

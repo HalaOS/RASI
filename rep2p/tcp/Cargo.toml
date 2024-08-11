@@ -24,3 +24,4 @@ rasi = { workspace = true, features = ["task-futures"] }
 rasi-mio = { workspace = true }
 futures-test = { workspace = true }
 pretty_env_logger = { workspace = true }
+rep2p-spec = { workspace = true }

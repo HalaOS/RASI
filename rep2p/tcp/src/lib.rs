@@ -414,85 +414,29 @@ impl DriverStream for P2pTcpStream {
 
 #[cfg(test)]
 mod tests {
-
-    use std::sync::Once;
-
-    use futures::AsyncWriteExt;
-    use rasi::task::spawn_ok;
-    use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
+    use async_trait::async_trait;
+    use rep2p::{Result, Switch};
+    use rep2p_spec::transport::{transport_specs, TransportSpecContext};
 
     use super::*;
 
-    fn init() {
-        static INIT: Once = Once::new();
+    struct TcpMock;
 
-        INIT.call_once(|| {
-            register_mio_network();
-            register_mio_timer();
-
-            // pretty_env_logger::init_timed();
-        });
+    #[async_trait]
+    impl TransportSpecContext for TcpMock {
+        async fn create_switch(&self, protos: &[&str]) -> Result<Switch> {
+            Switch::new("test")
+                .protos(protos)
+                .bind("/ip4/127.0.0.1/tcp/0".parse()?)
+                .transport(TcpTransport)
+                .create()
+                .await
+        }
     }
 
     #[futures_test::test]
-    async fn test_tls() {
-        init();
-
-        let transport = TcpTransport;
-
-        let server_switch = Switch::new("test").create().await.unwrap();
-
-        let laddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
-
-        let mut listener = transport.bind(&laddr, server_switch.clone()).await.unwrap();
-
-        let laddr = listener.local_addr().unwrap();
-
-        spawn_ok(async move {
-            let mut conn = listener.accept().await.unwrap();
-
-            log::info!("server {:?} => {:?}", conn.local_addr(), conn.peer_addr());
-
-            log::trace!("server accept next");
-
-            loop {
-                let mut stream = conn.accept().await.unwrap();
-
-                log::trace!("server accept one");
-
-                let mut buf = vec![0; 32];
-
-                let read_size = stream.read(&mut buf).await.unwrap();
-
-                log::trace!("server read");
-
-                assert_eq!(&buf[..read_size], b"hello world");
-
-                stream.write_all(&buf[..read_size]).await.unwrap();
-            }
-        });
-
-        let client_switch = Switch::new("test_client").create().await.unwrap();
-
-        let mut conn = transport
-            .connect(&laddr, client_switch.clone())
-            .await
-            .unwrap();
-
-        log::info!("client {:?} => {:?}", conn.local_addr(), conn.peer_addr());
-
-        let mut stream = conn.connect().await.unwrap();
-
-        stream.write_all(b"hello world").await.unwrap();
-
-        log::trace!("client write");
-
-        stream.flush().await.unwrap();
-
-        let mut buf = vec![0; 32];
-
-        let read_size = stream.read(&mut buf).await.unwrap();
-
-        assert_eq!(&buf[..read_size], b"hello world");
+    async fn test_specs() {
+        // pretty_env_logger::init();
+        transport_specs(TcpMock).await.unwrap();
     }
 }
