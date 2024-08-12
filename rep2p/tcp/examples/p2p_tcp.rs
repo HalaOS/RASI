@@ -31,7 +31,7 @@ struct Client {
     bootstrap: Multiaddrs,
 
     /// Use verbose output
-    #[arg(short, long, default_value_t = false)]
+    #[arg(short, long, default_value_t = true)]
     verbose: bool,
 }
 

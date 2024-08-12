@@ -336,6 +336,8 @@ impl Stream {
             }
 
             self.flags |= Flags::RRST;
+
+            log::trace!("stream, id={} recv RST", self.stream_id);
         }
 
         Ok(())
@@ -348,7 +350,9 @@ impl Stream {
 
     /// Test if the stream has data that can be read.
     fn readable(&self) -> bool {
-        self.recv_buf.remaining() > 0 || self.flags.contains(Flags::FIN)
+        self.recv_buf.remaining() > 0
+            || self.flags.contains(Flags::RRST)
+            || self.flags.contains(Flags::RFIN)
     }
 
     /// Writes new data into send buffer.
@@ -358,7 +362,7 @@ impl Stream {
     ///
     /// Returns [`Error::InvalidStreamState`], When the fin flag is set for a second time.
     fn send(&mut self, buf: &[u8], fin: bool) -> Result<usize> {
-        if self.flags.contains(Flags::RST) {
+        if self.flags.contains(Flags::RST) || self.flags.contains(Flags::RRST) {
             log::error!(
                 "Send data after reset by peer, stream_id={}",
                 self.stream_id
@@ -386,6 +390,10 @@ impl Stream {
     ///
     /// On success the amount of bytes read is returned, or [`Error::Done`] if there is no data to read.
     fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
+        if self.flags.contains(Flags::RRST) || self.flags.contains(Flags::RST) {
+            return Err(Error::InvalidState);
+        }
+
         match self.recv_buf.recv(buf) {
             Ok(read_size) => Ok(read_size),
             Err(Error::Done) => {
@@ -409,7 +417,10 @@ impl Stream {
             return false;
         }
 
-        if self.flags.contains(Flags::RFIN) || self.flags.contains(Flags::RRST) {
+        if self.flags.contains(Flags::RFIN)
+            || self.flags.contains(Flags::RRST)
+            || self.flags.contains(Flags::RST)
+        {
             return true;
         }
 

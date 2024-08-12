@@ -95,11 +95,7 @@ impl YamuxConn {
         if !session.is_closed() {
             session.close(reason)?;
 
-            log::trace!(target:"YamuxConn","Closing all..");
-
             self.event_map.cancel_all();
-
-            log::trace!(target:"YamuxConn","Closed all..");
         }
 
         Ok(())

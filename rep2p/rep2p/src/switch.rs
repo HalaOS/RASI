@@ -395,11 +395,11 @@ impl Switch {
         let mut this_conn = conn.clone();
 
         spawn_ok(async move {
-            if let Err(err) = this.handle_incoming_stream(&mut this_conn).await {
-                log::error!(target:"switch","handle incoming stream, peer={}, local={}, error={}",this_conn.peer_addr(),this_conn.local_addr(),err);
+            if let Err(err) = this.incoming_stream_loop(&mut this_conn).await {
+                log::error!(target:"switch","incoming stream loop stopped, peer={}, local={}, error={}",this_conn.peer_addr(),this_conn.local_addr(),err);
                 _ = this_conn.close(&this).await;
             } else {
-                log::info!(target:"switch","handle incoming stream ok, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
+                log::info!(target:"switch","incoming stream loop stopped, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
             }
         });
 
@@ -412,48 +412,51 @@ impl Switch {
         Ok(())
     }
 
-    async fn handle_incoming_stream(&self, conn: &mut Connection) -> Result<()> {
+    async fn incoming_stream_loop(&self, conn: &mut Connection) -> Result<()> {
         loop {
-            let mut stream = conn.accept().await?;
+            let stream = conn.accept().await?;
 
-            log::info!(target:"switch","accept new stream, peer={}, local={}, id={}",conn.peer_addr(),conn.local_addr(),stream.id());
+            let id = stream.id().to_owned();
 
-            let (protoco_id, _) = listener_select_proto(&mut stream, &self.immutable.protos)
-                .timeout(self.immutable.timeout)
-                .await
-                .ok_or(Error::Timeout)??;
-
-            log::info!(target:"switch","protocol handshake, id={}, protocol={}, peer_id={}",stream.id(),protoco_id, stream.public_key().to_peer_id());
-
-            let this = self.clone();
-            let protoco_id = protoco_id.clone();
-
-            let mut this_conn = conn.clone();
-
-            spawn_ok(async move {
-                if let Err(err) = this
-                    .dispatch_stream(protoco_id, stream, &mut this_conn)
-                    .await
-                {
-                    log::error!(target:"switch","dispatch stream, peer={}, local={}, err={}",this_conn.peer_addr(),this_conn.local_addr(),err);
-                    _ = this_conn.close(&this);
-                } else {
-                    log::trace!(target:"switch","dispatch stream ok, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
-                }
-            })
+            if let Err(err) = self.handle_incoming_stream(stream).await {
+                log::error!(target:"switch","dispatch stream, id={}, err={}", id, err);
+            }
         }
     }
 
-    async fn dispatch_stream(
-        &self,
-        protoco_id: String,
-        stream: Stream,
-        conn: &mut Connection,
-    ) -> Result<()> {
-        let conn_peer_id = conn.public_key().to_peer_id();
+    async fn handle_incoming_stream(&self, mut stream: Stream) -> Result<()> {
+        log::info!(target:"switch","accept new stream, peer={}, local={}, id={}",stream.peer_addr(),stream.local_addr(),stream.id());
+
+        let (protoco_id, _) = listener_select_proto(&mut stream, &self.immutable.protos)
+            .timeout(self.immutable.timeout)
+            .await
+            .ok_or(Error::Timeout)??;
+
+        log::info!(target:"switch","protocol handshake, id={}, protocol={}, peer_id={}",stream.id(),protoco_id, stream.public_key().to_peer_id());
+
+        let this = self.clone();
+        let protoco_id = protoco_id.clone();
+
+        spawn_ok(async move {
+            let peer_addr = stream.peer_addr().clone();
+            let local_addr = stream.local_addr().clone();
+            let id = stream.id().to_owned();
+
+            if let Err(err) = this.dispatch_stream(protoco_id, stream).await {
+                log::error!(target:"switch","dispatch stream, id={}, peer={}, local={}, err={}",id, peer_addr,local_addr,err);
+            } else {
+                log::trace!(target:"switch","dispatch stream ok, id={}, peer={}, local={}",id, peer_addr, local_addr);
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn dispatch_stream(&self, protoco_id: String, stream: Stream) -> Result<()> {
+        let conn_peer_id = stream.public_key().to_peer_id();
 
         match protoco_id.as_str() {
-            PROTOCOL_IPFS_ID => self.identity_response(conn.peer_addr(), stream).await?,
+            PROTOCOL_IPFS_ID => self.identity_response(stream).await?,
             PROTOCOL_IPFS_PUSH_ID => self.identity_push(&conn_peer_id, stream).await?,
             PROTOCOL_IPFS_PING => self.ping_echo(stream).await?,
             _ => {
@@ -568,8 +571,10 @@ impl Switch {
         self.identity_push(&conn_peer_id, stream).await
     }
 
-    async fn identity_response(&self, peer_addr: &Multiaddr, mut stream: Stream) -> Result<()> {
+    async fn identity_response(&self, mut stream: Stream) -> Result<()> {
         log::trace!("handle identity request");
+
+        let peer_addr = stream.peer_addr();
 
         let mut identity = Identity::new();
 
