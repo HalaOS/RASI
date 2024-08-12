@@ -1,7 +1,8 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
-use futures::executor::block_on;
+use futures::{executor::block_on, AsyncReadExt, AsyncWriteExt};
+use rand::{thread_rng, RngCore};
 use rasi::timer::sleep;
 use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
 use rep2p::{multiaddr::Multiaddr, Switch, PROTOCOL_IPFS_PING};
@@ -31,7 +32,7 @@ struct Client {
     bootstrap: Multiaddrs,
 
     /// Use verbose output
-    #[arg(short, long, default_value_t = true)]
+    #[arg(short, long, default_value_t = false)]
     verbose: bool,
 }
 
@@ -69,12 +70,38 @@ async fn run_client() -> rep2p::Result<()> {
     for raddr in config.bootstrap {
         log::info!("connect to peer: {}", raddr);
 
-        switch.connect_to(&raddr, [PROTOCOL_IPFS_PING]).await?;
+        let (mut stream, protocol_id) = switch.connect_to(&raddr, [PROTOCOL_IPFS_PING]).await?;
 
-        log::info!("connect to peer: {} -- ok", raddr);
+        log::info!(
+            "open stream, to={}, protocol={}",
+            stream.public_key().to_peer_id(),
+            protocol_id
+        );
+
+        loop {
+            let mut buf = vec![0u8; 32];
+
+            thread_rng().fill_bytes(&mut buf);
+
+            let now = Instant::now();
+
+            stream.write_all(&buf).await?;
+
+            let mut echo = vec![0u8; 32];
+
+            stream.read_exact(&mut echo).await?;
+
+            assert_eq!(echo, buf);
+
+            log::info!(
+                "ping to={}, ttl={:?}",
+                stream.public_key().to_peer_id(),
+                now.elapsed()
+            );
+
+            sleep(Duration::from_secs(5)).await;
+        }
     }
 
-    loop {
-        sleep(Duration::from_secs(1)).await;
-    }
+    Ok(())
 }

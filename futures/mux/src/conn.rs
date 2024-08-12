@@ -1,7 +1,10 @@
 use std::{
     io::{self, Result},
     ops::Deref,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     task::Poll,
 };
 
@@ -19,12 +22,44 @@ enum ConnEvent {
     Accept,
 }
 
+#[derive(Default)]
+struct YamuxStreamDropTable {
+    count: AtomicUsize,
+    stream_ids: std::sync::Mutex<Vec<u32>>,
+}
+
+impl YamuxStreamDropTable {
+    /// Push new stream id into this drop table.
+    fn push(&self, stream_id: u32) {
+        self.stream_ids.lock().unwrap().push(stream_id);
+        self.count.fetch_add(1, Ordering::Release);
+    }
+
+    fn drain(&self) -> Option<Vec<u32>> {
+        if self.count.load(Ordering::Acquire) == 0 {
+            return None;
+        }
+
+        let drain = self
+            .stream_ids
+            .lock()
+            .unwrap()
+            .drain(..)
+            .collect::<Vec<_>>();
+
+        self.count.fetch_sub(drain.len(), Ordering::Release);
+
+        Some(drain)
+    }
+}
+
 /// Yamux connection type with asynchronous api.
 #[derive(Clone)]
 pub struct YamuxConn {
     session: Arc<Mutex<Session>>,
     event_map: Arc<KeyWaitMap<ConnEvent, ()>>,
     is_server: bool,
+    stream_drop_table: Arc<YamuxStreamDropTable>,
 }
 
 impl YamuxConn {
@@ -49,6 +84,27 @@ impl YamuxConn {
         self.event_map.batch_insert(events);
     }
 
+    async fn handle_stream_drop(&self, state: &mut Session) -> bool {
+        if let Some(drain) = self.stream_drop_table.drain() {
+            let drop_streams = drain.len();
+            for stream_id in drain {
+                if let Err(err) = state.stream_send(stream_id, b"", true) {
+                    log::error!("drop stream failed, stream_id={}, error={}", stream_id, err);
+                }
+
+                if !state.stream_finished(stream_id) {
+                    if let Err(err) = state.stream_reset(stream_id) {
+                        log::error!("drop stream failed, stream_id={}, error={}", stream_id, err);
+                    }
+                }
+            }
+
+            return drop_streams != 0;
+        }
+
+        return false;
+    }
+
     /// Write new frame to be sent to peer into provided slice.
     ///
     pub async fn send(&self, buf: &mut [u8]) -> io::Result<usize> {
@@ -64,6 +120,11 @@ impl YamuxConn {
                     return Ok(send_size);
                 }
                 Err(Error::Done) => {
+                    if self.handle_stream_drop(&mut session).await {
+                        drop(session);
+                        continue;
+                    }
+
                     log::trace!("send data. waiting");
 
                     self.event_map.wait(&ConnEvent::Send, session).await;
@@ -210,23 +271,11 @@ impl YamuxConn {
     }
 
     /// Elegantly close stream.
-    pub async fn stream_close(&self, stream_id: u32) -> io::Result<()> {
-        self.stream_send(stream_id, b"", true).await?;
-
-        // stream object dropped, reset the stream immediately
-        if !self.stream_finished(stream_id).await {
-            let mut session = self.session.lock().await;
-
-            session.stream_reset(stream_id)?;
-        }
-
-        log::trace!("stream closed, id={}", stream_id);
+    pub fn stream_close(&self, stream_id: u32) -> io::Result<()> {
+        self.stream_drop_table.push(stream_id);
+        self.event_map.insert(ConnEvent::Send, ());
 
         Ok(())
-    }
-
-    async fn stream_close_owned(self, stream_id: u32) -> io::Result<()> {
-        self.stream_close(stream_id).await
     }
 }
 
@@ -239,6 +288,7 @@ impl YamuxConn {
             session: Arc::new(Mutex::new(session)),
             event_map: Arc::new(KeyWaitMap::new()),
             is_server,
+            stream_drop_table: Default::default(),
         };
 
         conn
@@ -258,13 +308,7 @@ impl YamuxConn {
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
-        let session = Session::new(window_size, is_server);
-
-        let conn = YamuxConn {
-            session: Arc::new(Mutex::new(session)),
-            event_map: Arc::new(KeyWaitMap::new()),
-            is_server,
-        };
+        let conn = Self::new(window_size, is_server);
 
         // spawn the recv loop
         spawn_ok(Self::recv_loop(conn.clone(), reader));
@@ -376,16 +420,13 @@ impl Drop for RawStream {
     fn drop(&mut self) {
         let stream_id = self.0;
         let conn = self.1.clone();
-        spawn_ok(async move {
-            if let Err(err) = conn.stream_close(stream_id).await {
-                log::error!("Close stream with error: {}", err);
-            }
-        })
+
+        _ = conn.stream_close(stream_id);
     }
 }
 
 enum StreamPoll {
-    PollClose(BoxFuture<'static, Result<()>>),
+    PollClose(BoxFuture<'static, Result<usize>>),
     PollSend(BoxFuture<'static, Result<usize>>),
     PollRead(BoxFuture<'static, Result<(Vec<u8>, bool)>>),
 }
@@ -455,7 +496,12 @@ impl AsyncWrite for YamuxStream {
         let mut fut = if let Some(StreamPoll::PollClose(fut)) = self.poll.take() {
             fut
         } else {
-            Box::pin(self.raw.1.clone().stream_close_owned(self.stream_id()))
+            Box::pin(
+                self.raw
+                    .1
+                    .clone()
+                    .stream_send_owned(self.stream_id(), vec![], true),
+            )
         };
 
         match fut.poll_unpin(cx) {

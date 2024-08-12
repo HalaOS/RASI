@@ -390,7 +390,7 @@ impl Stream {
     ///
     /// On success the amount of bytes read is returned, or [`Error::Done`] if there is no data to read.
     fn recv(&mut self, buf: &mut [u8]) -> Result<usize> {
-        if self.flags.contains(Flags::RRST) || self.flags.contains(Flags::RST) {
+        if self.flags.contains(Flags::RST) {
             return Err(Error::InvalidState);
         }
 
