@@ -1,4 +1,5 @@
 pub mod keystore;
+pub mod multiaddr;
 pub mod routetable;
 pub mod serve;
 pub mod transport;
@@ -10,7 +11,6 @@ mod errors;
 pub use errors::*;
 
 pub use identity;
-pub use multiaddr;
 
 #[allow(renamed_and_removed_lints)]
 mod proto;

@@ -1,6 +1,6 @@
 use std::{
     io::{self, Result},
-    net::{IpAddr, SocketAddr},
+    net::SocketAddr,
     pin::Pin,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -24,34 +24,13 @@ use futures_quic::{
 use rep2p::{
     identity::PublicKey,
     keystore::KeyStore,
-    multiaddr::{Multiaddr, Protocol},
+    multiaddr::{Multiaddr, Protocol, ToSockAddr},
     transport::{
         syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport},
         Connection, Listener, Stream,
     },
     Switch,
 };
-
-fn to_sockaddr(addr: &Multiaddr) -> Option<SocketAddr> {
-    let mut iter = addr.iter();
-
-    let ip = match iter.next()? {
-        Protocol::Ip4(ip) => IpAddr::from(ip),
-        Protocol::Ip6(ip) => IpAddr::from(ip),
-        _ => return None,
-    };
-
-    let next = iter.next()?;
-
-    match next {
-        Protocol::Tcp(port) | Protocol::Udp(port) => {
-            return Some(SocketAddr::new(ip, port));
-        }
-        _ => {}
-    }
-
-    None
-}
 
 async fn create_quic_config(host_key: &KeyStore) -> io::Result<Config> {
     let (cert, pk) = rep2p_x509::generate(host_key).await?;
@@ -122,8 +101,7 @@ impl DriverTransport for QuicTransport {
     async fn bind(&self, laddr: &Multiaddr, switch: Switch) -> Result<Listener> {
         let quic_config = create_quic_config(switch.keystore()).await?;
 
-        let laddrs =
-            to_sockaddr(laddr).ok_or(io::Error::new(io::ErrorKind::Other, "Invalid laddr"))?;
+        let laddrs = laddr.to_sockaddr()?;
 
         let listener = QuicListener::bind(laddrs, quic_config).await?;
 
@@ -136,8 +114,7 @@ impl DriverTransport for QuicTransport {
     async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection> {
         let mut quic_config = create_quic_config(switch.keystore()).await?;
 
-        let raddr =
-            to_sockaddr(raddr).ok_or(io::Error::new(io::ErrorKind::Other, "Invalid laddr"))?;
+        let raddr = raddr.to_sockaddr()?;
 
         let laddr = if raddr.is_ipv4() {
             "0.0.0.0:0"

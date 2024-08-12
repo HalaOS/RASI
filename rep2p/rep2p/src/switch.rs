@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    net::SocketAddr,
     ops::Deref,
     sync::Arc,
     time::Duration,
@@ -11,11 +12,12 @@ use identity::{PeerId, PublicKey};
 use multiaddr::Multiaddr;
 use multistream_select::{dialer_select_proto, listener_select_proto, Version};
 use protobuf::Message;
-use rand::thread_rng;
+use rand::{seq::IteratorRandom, thread_rng};
 use rasi::{task::spawn_ok, timer::TimeoutExt};
 
 use crate::{
     keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
+    multiaddr::ToSockAddr,
     proto::identity::Identity,
     routetable::{syscall::DriverRouteTable, MemoryRouteTable, RouteTable},
     transport::{syscall::DriverTransport, Connection, Listener, Stream, Transport},
@@ -201,82 +203,120 @@ impl SwitchBuilder {
     }
 }
 
+/// An in-memory connection pool.
+#[derive(Default)]
+struct ConnPool {
+    /// mapping id => connection.
+    conns: HashMap<String, Connection>,
+    /// mapping peer_addr to conn id.
+    raddrs: HashMap<SocketAddr, String>,
+    /// mapping peer_id to conn id.
+    peers: HashMap<PeerId, Vec<String>>,
+}
+
+impl ConnPool {
+    /// Put a new connecton instance into the pool, and update indexers.
+    fn put(&mut self, conn: Connection) {
+        let peer_id = conn.public_key().to_peer_id();
+
+        let raddr = conn
+            .peer_addr()
+            .to_sockaddr()
+            .expect("Invalid transport peer_addr.");
+
+        let id = conn.id().to_owned();
+
+        // consistency test.
+        if let Some(conn) = self.conns.get(&id) {
+            let o_peer_id = conn.public_key().to_peer_id();
+
+            let o_raddr = conn
+                .peer_addr()
+                .to_sockaddr()
+                .expect("Invalid transport peer_addr.");
+
+            assert_eq!(peer_id, o_peer_id, "consistency guarantee");
+            assert_eq!(o_raddr, raddr, "consistency guarantee");
+
+            return;
+        }
+
+        self.conns.insert(id.to_owned(), conn);
+        self.raddrs.insert(raddr, id.to_owned());
+
+        if let Some(conn_ids) = self.peers.get_mut(&peer_id) {
+            conn_ids.push(id);
+        } else {
+            self.peers.insert(peer_id, vec![id]);
+        }
+    }
+
+    /// Get a connection by peer_addr.
+    fn get_by_peer_addr(&self, raddr: &Multiaddr) -> Result<Option<Connection>> {
+        let raddr = raddr.to_sockaddr()?;
+
+        if let Some(id) = self.raddrs.get(&raddr) {
+            Ok(self.conns.get(id).map(|conn| conn.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn get_by_peer_id(&self, peer_id: &PeerId) -> Option<Vec<Connection>> {
+        if let Some(conn_ids) = self.peers.get(&peer_id) {
+            Some(
+                conn_ids
+                    .iter()
+                    .map(|id| self.conns.get(id).expect("consistency guarantee").clone())
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+
+    fn remove(&mut self, conn: &Connection) {
+        let peer_id = conn.public_key().to_peer_id();
+
+        let raddr = conn
+            .peer_addr()
+            .to_sockaddr()
+            .expect("Invalid transport peer_addr.");
+
+        let id = conn.id().to_owned();
+
+        if let Some(conn) = self.conns.remove(&id) {
+            let o_peer_id = conn.public_key().to_peer_id();
+
+            let o_raddr = conn
+                .peer_addr()
+                .to_sockaddr()
+                .expect("Invalid transport peer_addr.");
+
+            assert_eq!(peer_id, o_peer_id, "consistency guarantee");
+            assert_eq!(o_raddr, raddr, "consistency guarantee");
+        }
+
+        self.raddrs.remove(&raddr);
+
+        if let Some(conn_ids) = self.peers.get_mut(&peer_id) {
+            if let Some((index, _)) = conn_ids.iter().enumerate().find(|(_, v)| **v == id) {
+                conn_ids.remove(index);
+            }
+        }
+    }
+}
+
+#[derive(Default)]
 struct MutableSwitch {
-    peer_conns: HashMap<PeerId, Vec<String>>,
-    uuid_conns: HashMap<String, Connection>,
+    conn_pool: ConnPool,
     incoming_streams: VecDeque<(Stream, String)>,
     laddrs: Vec<Multiaddr>,
 }
 
 impl MutableSwitch {
     fn new() -> Self {
-        Self {
-            peer_conns: HashMap::new(),
-            uuid_conns: HashMap::new(),
-            incoming_streams: Default::default(),
-            laddrs: Default::default(),
-        }
-    }
-
-    fn add_conn_by_ref(&mut self, conn: &Connection) -> Result<()> {
-        let conn = conn.clone();
-
-        self.add_conn(conn)
-    }
-
-    fn add_conn(&mut self, conn: Connection) -> Result<()> {
-        let peer_id = conn.public_key().to_peer_id();
-
-        let uuid = conn.id().to_string();
-
-        if let Some(ids) = self.peer_conns.get_mut(&peer_id) {
-            if ids.iter().find(|v| **v == uuid).is_some() {
-                return Ok(());
-            }
-
-            ids.push(uuid.clone());
-        } else {
-            self.peer_conns.insert(peer_id, vec![uuid.clone()]);
-        }
-
-        self.uuid_conns.insert(uuid, conn);
-
-        Ok(())
-    }
-
-    fn get_conn(&mut self, id: &PeerId) -> Option<Connection> {
-        if let Some(ids) = self.peer_conns.get(id) {
-            use rand::seq::SliceRandom;
-
-            let mut ids = ids.iter().collect::<Vec<_>>();
-
-            ids.shuffle(&mut thread_rng());
-
-            for id in ids {
-                return Some(
-                    self.uuid_conns
-                        .get(id)
-                        .expect("connection pool consistency guarantee")
-                        .clone(),
-                );
-            }
-        }
-
-        None
-    }
-
-    fn remove_conn(&mut self, conn: &Connection) -> Result<()> {
-        let peer_id = conn.public_key().to_peer_id();
-
-        if let Some(ids) = self.peer_conns.get_mut(&peer_id) {
-            if let Some((index, _)) = ids.iter().enumerate().find(|(_, v)| **v == *conn.id()) {
-                ids.remove(index);
-            }
-        }
-
-        self.uuid_conns.remove(conn.id());
-
-        Ok(())
+        Self::default()
     }
 }
 
@@ -335,14 +375,7 @@ impl Switch {
                 } else {
                     log::trace!(target:"switch","setup connection, peer={}, local={}", conn.peer_addr(),conn.local_addr());
 
-                    let peer_addr = conn.peer_addr().clone();
-                    let local_addr = conn.local_addr().clone();
-
-                    if let Err(err) = this.mutable.lock().await.add_conn(conn) {
-                        log::error!(target:"switch","add connection to cache, peer={}, local={}, err={}", peer_addr,local_addr,err);
-                    } else {
-                        log::info!(target:"switch","add connection to cache, peer={}, local={}", peer_addr,local_addr);
-                    }
+                    this.mutable.lock().await.conn_pool.put(conn);
                 }
             })
         }
@@ -541,8 +574,8 @@ impl Switch {
         identity.set_agentVersion(self.immutable.agent_version.to_owned());
 
         identity.listenAddrs = self
-            .immutable
-            .laddrs
+            .local_addrs()
+            .await
             .iter()
             .map(|addr| addr.to_vec())
             .collect::<Vec<_>>();
@@ -599,10 +632,14 @@ impl Switch {
     /// if exists then check for a local connection cache.
     ///
     async fn connect_peer_to(&self, raddr: &Multiaddr) -> Result<Connection> {
-        if let Some(id) = self.immutable.route_table.peer_id_of(raddr).await? {
-            if let Some(conn) = self.mutable.lock().await.get_conn(&id) {
-                return Ok(conn);
-            }
+        if let Some(conn) = self
+            .mutable
+            .lock()
+            .await
+            .conn_pool
+            .get_by_peer_addr(raddr)?
+        {
+            return Ok(conn);
         }
 
         self.connect_peer_to_prv(raddr).await
@@ -626,7 +663,7 @@ impl Switch {
                 .put(peer_id, &[raddr.clone()])
                 .await?;
 
-            self.mutable.lock().await.add_conn_by_ref(&conn)?;
+            self.mutable.lock().await.conn_pool.put(conn.clone());
 
             log::info!(target:"switch","add connection to cache, peer={}, local={}", conn.peer_addr(),conn.local_addr());
         }
@@ -639,8 +676,8 @@ impl Switch {
     /// This function will first check for a local connection cache,
     /// and if there is one, it will directly return the cached connection
     async fn connect_peer(&self, id: &PeerId) -> Result<Connection> {
-        if let Some(conn) = self.mutable.lock().await.get_conn(id) {
-            return Ok(conn);
+        if let Some(conns) = self.mutable.lock().await.conn_pool.get_by_peer_id(id) {
+            return Ok(conns.into_iter().choose(&mut thread_rng()).unwrap());
         }
 
         let mut raddrs = self.immutable.route_table.get(id).await?;
@@ -764,6 +801,6 @@ impl Switch {
     }
 
     pub(crate) async fn remove_conn(&self, conn: &Connection) {
-        _ = self.mutable.lock().await.remove_conn(conn);
+        _ = self.mutable.lock().await.conn_pool.remove(conn);
     }
 }

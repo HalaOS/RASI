@@ -1,5 +1,5 @@
 use std::io::{self, Result};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,33 +15,12 @@ use futures_boring::{accept, connect, ec, pkey};
 use multistream_select::{dialer_select_proto, listener_select_proto, Version};
 use rasi::net::{TcpListener, TcpStream};
 use rep2p::identity::PublicKey;
-use rep2p::multiaddr::{Multiaddr, Protocol};
+use rep2p::multiaddr::{Multiaddr, Protocol, ToSockAddr};
 use rep2p::transport::syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport};
 use rep2p::transport::{Connection, Listener, Stream};
 use rep2p::Switch;
 use rep2p_mux::{Reason, YamuxConn, YamuxStream, INIT_WINDOW_SIZE};
 use uuid::Uuid;
-
-fn to_sockaddr(addr: &Multiaddr) -> Option<SocketAddr> {
-    let mut iter = addr.iter();
-
-    let ip = match iter.next()? {
-        Protocol::Ip4(ip) => IpAddr::from(ip),
-        Protocol::Ip6(ip) => IpAddr::from(ip),
-        _ => return None,
-    };
-
-    let next = iter.next()?;
-
-    match next {
-        Protocol::Tcp(port) | Protocol::Udp(port) => {
-            return Some(SocketAddr::new(ip, port));
-        }
-        _ => {}
-    }
-
-    None
-}
 
 /// The libp2p tcp transport implementation.
 pub struct TcpTransport;
@@ -89,10 +68,7 @@ impl DriverTransport for TcpTransport {
 
         let ssl_acceptor = ssl_acceptor_builder.build();
 
-        let addr = to_sockaddr(laddr).ok_or(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Invalid laddr",
-        ))?;
+        let addr = laddr.to_sockaddr()?;
 
         let listener = TcpListener::bind(addr).await?;
 
@@ -138,8 +114,7 @@ impl DriverTransport for TcpTransport {
 
         let config = config.build().configure()?;
 
-        let addr =
-            to_sockaddr(raddr).ok_or(io::Error::new(io::ErrorKind::Other, "Invalid laddr"))?;
+        let addr = raddr.to_sockaddr()?;
 
         let mut stream = TcpStream::connect(addr).await?;
 

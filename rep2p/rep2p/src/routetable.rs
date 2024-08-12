@@ -67,6 +67,8 @@ pub struct MemoryRouteTable(Mutex<RawMemoryRouteTable>);
 impl syscall::DriverRouteTable for MemoryRouteTable {
     /// Add addresses to route table by `peer_id`.
     async fn put(&self, peer_id: PeerId, addrs: &[Multiaddr]) -> Result<()> {
+        log::trace!("peer={}, update route, addrs={:?}", peer_id, addrs);
+
         let addrs = addrs.to_vec();
         let mut raw = self.0.lock().unwrap();
 
