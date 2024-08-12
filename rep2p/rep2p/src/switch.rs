@@ -423,7 +423,7 @@ impl Switch {
                 .await
                 .ok_or(Error::Timeout)??;
 
-            log::info!(target:"switch","protocol handshake, id={}, protocol={}",stream.id(),protoco_id);
+            log::info!(target:"switch","protocol handshake, id={}, protocol={}, peer_id={}",stream.id(),protoco_id, stream.public_key().to_peer_id());
 
             let this = self.clone();
             let protoco_id = protoco_id.clone();

@@ -89,17 +89,6 @@ where
     where
         K: Clone,
     {
-        {
-            let mut raw = self.inner.lock().unwrap();
-
-            if let Some(v) = raw.kv.remove(&k) {
-                match v {
-                    Event::Value(value) => return Some(value),
-                    Event::Cancel => return None,
-                }
-            }
-        }
-
         Wait { event_map: self, k }.await
     }
 
