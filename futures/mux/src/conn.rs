@@ -247,7 +247,10 @@ impl YamuxConn {
 
         conn
     }
+}
 
+#[cfg(feature = "rasi")]
+impl YamuxConn {
     /// Create a new yamux `Conn` instance with reliable stream underneath.
     ///
     /// This function will start two event loops:

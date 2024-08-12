@@ -1,15 +1,15 @@
 [package]
 description = "The yamux protocol implementation, rewritten from the ground up"
-documentation = "https://docs.rs/rep2p-mux"
+documentation = "https://docs.rs/futures-yamux"
 edition.workspace = true
 license = "MIT"
-name = "rep2p-mux"
+name = "futures-yamux"
 repository.workspace = true
 version.workspace = true
 
 [dependencies]
 futures = { workspace = true }
-rasi = { workspace = true }
+rasi = { workspace = true, optional = true }
 bitmask-enum = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
@@ -21,3 +21,7 @@ futures-test = { workspace = true }
 rasi = { workspace = true, features = ["task-futures"] }
 rasi-mio = { workspace = true }
 pretty_env_logger = { workspace = true }
+
+[features]
+default = ["rasi"]
+rasi = ["dep:rasi"]

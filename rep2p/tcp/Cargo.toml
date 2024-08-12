@@ -8,7 +8,7 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-rep2p-mux = { workspace = true }
+futures-yamux = { workspace = true }
 rep2p-x509 = { workspace = true }
 rep2p = { workspace = true }
 log = { workspace = true }

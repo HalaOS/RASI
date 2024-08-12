@@ -12,6 +12,7 @@ use futures_boring::ssl::{
 };
 use futures_boring::x509::X509;
 use futures_boring::{accept, connect, ec, pkey};
+use futures_yamux::{Reason, YamuxConn, YamuxStream, INIT_WINDOW_SIZE};
 use multistream_select::{dialer_select_proto, listener_select_proto, Version};
 use rasi::net::{TcpListener, TcpStream};
 use rep2p::identity::PublicKey;
@@ -19,7 +20,6 @@ use rep2p::multiaddr::{Multiaddr, Protocol, ToSockAddr};
 use rep2p::transport::syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport};
 use rep2p::transport::{Connection, Listener, Stream};
 use rep2p::Switch;
-use rep2p_mux::{Reason, YamuxConn, YamuxStream, INIT_WINDOW_SIZE};
 use uuid::Uuid;
 
 /// The libp2p tcp transport implementation.
@@ -236,7 +236,7 @@ impl P2pTcpConn {
         m_raddr.push(Protocol::Tls);
 
         let (read, write) = stream.split();
-        let conn = rep2p_mux::YamuxConn::new_with(INIT_WINDOW_SIZE, is_server, read, write);
+        let conn = futures_yamux::YamuxConn::new_with(INIT_WINDOW_SIZE, is_server, read, write);
 
         Ok(Self {
             laddr: m_laddr,

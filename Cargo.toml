@@ -86,13 +86,13 @@ futures-map = { path = "futures/map", version = "^0.2" }
 futures-http = { path = "futures/http", version = "^0.2" }
 futures-jsonrpcv2 = { path = "futures/jsonrpc", version = "^0.2" }
 futures-quic = { path = "futures/quic", version = "^0.2" }
+futures-yamux = { path = "futures/mux", version = "^0.2" }
 reweb3 = { path = "reweb3/reweb3", version = "^0.2" }
 reweb3-num = { path = "reweb3/num", version = "^0.2" }
 reweb3-macros = { path = "reweb3/macros", version = "^0.2" }
 ethbind = { path = "reweb3/bind", version = "^0.2" }
 ringbuf-rs = { path = "crates/ringbuf", version = "^0.2" }
 rep2p = { path = "rep2p/rep2p", version = "^0.2" }
-rep2p-mux = { path = "rep2p/mux", version = "^0.2" }
 rep2p-x509 = { path = "rep2p/x509", version = "^0.2" }
 rep2p-spec = { path = "rep2p/spec", version = "^0.2" }
 #libp2p
