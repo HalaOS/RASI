@@ -885,8 +885,10 @@ impl Session {
     }
 
     pub fn close(&mut self, reason: Reason) -> Result<()> {
-        self.send_frames.push_back(SendFrame::GoAway(reason));
-        self.is_closed = true;
+        if !self.is_closed {
+            self.send_frames.push_back(SendFrame::GoAway(reason));
+            self.is_closed = true;
+        }
 
         Ok(())
     }

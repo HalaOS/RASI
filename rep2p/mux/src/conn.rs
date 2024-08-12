@@ -92,13 +92,15 @@ impl YamuxConn {
     pub async fn close(&self, reason: Reason) -> io::Result<()> {
         let mut session = self.session.lock().await;
 
-        session.close(reason)?;
+        if !session.is_closed() {
+            session.close(reason)?;
 
-        log::info!(target:"YamuxConn","Closing all..");
+            log::trace!(target:"YamuxConn","Closing all..");
 
-        self.event_map.cancel_all();
+            self.event_map.cancel_all();
 
-        log::info!(target:"YamuxConn","Closed all..");
+            log::trace!(target:"YamuxConn","Closed all..");
+        }
 
         Ok(())
     }
@@ -177,14 +179,15 @@ impl YamuxConn {
         loop {
             let mut session = self.session.lock().await;
             if let Some(stream_id) = session.accept()? {
+                log::trace!("stream accept, id={}", stream_id);
                 return Ok(YamuxStream::new(stream_id, self.clone()));
             }
 
-            log::info!(target:"YamuxConn","Accept waiting..");
+            log::trace!(target:"YamuxConn","Accept waiting..");
 
             self.event_map.wait(&ConnEvent::Accept, session).await;
 
-            log::info!(target:"YamuxConn","Accept wakeup");
+            log::trace!(target:"YamuxConn","Accept wakeup");
         }
     }
 
@@ -220,6 +223,8 @@ impl YamuxConn {
 
             session.stream_reset(stream_id)?;
         }
+
+        log::trace!("stream closed, id={}", stream_id);
 
         Ok(())
     }
@@ -276,7 +281,7 @@ impl YamuxConn {
     {
         match Self::recv_loop_inner(&mut conn, &mut reader).await {
             Ok(_) => {
-                log::info!("stop recv loop");
+                log::trace!("stop recv loop");
             }
             Err(err) => {
                 log::error!("stop recv loop with error: {}", err);
@@ -296,11 +301,11 @@ impl YamuxConn {
         let mut buf = vec![0; 1024 * 4 + 12];
 
         loop {
-            log::info!("recv frame header, is_server={}", conn.is_server);
+            log::trace!("recv frame header, is_server={}", conn.is_server);
 
             reader.read_exact(&mut buf[0..12]).await?;
 
-            log::info!("recv frame header, is_server={}, Ok", conn.is_server);
+            log::trace!("recv frame header, is_server={}, Ok", conn.is_server);
 
             match conn.recv(&buf[..12]).await {
                 Ok(_) => {
@@ -311,11 +316,11 @@ impl YamuxConn {
                         return Err(Error::Overflow.into());
                     }
 
-                    log::info!("recv data frame body, len={}", len - 12);
+                    log::trace!("recv data frame body, len={}", len - 12);
 
                     reader.read_exact(&mut buf[12..len as usize]).await?;
 
-                    log::info!("recv data frame body, len={}, Ok", len - 12);
+                    log::trace!("recv data frame body, len={}, Ok", len - 12);
 
                     conn.recv(&buf[..len as usize]).await?;
                 }
@@ -330,7 +335,7 @@ impl YamuxConn {
     {
         match Self::send_loop_inner(&mut conn, &mut writer).await {
             Ok(_) => {
-                log::info!("Yamux conn stop send loop");
+                log::trace!("Yamux conn stop send loop");
             }
             Err(err) => {
                 log::error!("Yamux conn stop send loop, {}", err);
@@ -356,7 +361,7 @@ impl YamuxConn {
 
             buf[..12].fill(0x0);
 
-            log::info!(
+            log::trace!(
                 "yamux send loop, transfer data to peer, is_server={}, len={}",
                 conn.is_server,
                 send_size
