@@ -611,7 +611,7 @@ impl Session {
     }
 
     fn verify_session_status(&self) -> Result<()> {
-        if self.terminated.is_some() {
+        if self.terminated.is_some() || self.is_closed {
             Err(Error::InvalidState)
         } else {
             Ok(())

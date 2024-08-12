@@ -242,6 +242,8 @@ impl ConnPool {
             return;
         }
 
+        log::info!(target: "Switch","add new conn, id={}, raddr={}, peer={}",id , raddr, peer_id);
+
         self.conns.insert(id.to_owned(), conn);
         self.raddrs.insert(raddr, id.to_owned());
 
@@ -297,6 +299,8 @@ impl ConnPool {
             assert_eq!(peer_id, o_peer_id, "consistency guarantee");
             assert_eq!(o_raddr, raddr, "consistency guarantee");
         }
+
+        log::info!(target: "Switch","remove conn, id={}, raddr={}, peer={}",id , raddr, peer_id);
 
         self.raddrs.remove(&raddr);
 
@@ -658,16 +662,7 @@ impl Switch {
         if let Err(err) = self.setup_conn(&mut conn).await {
             log::error!(target:"switch","setup connection, peer={}, local={}, err={}",conn.peer_addr(),conn.local_addr(),err);
         } else {
-            let peer_id = conn.public_key().to_peer_id();
-
-            self.immutable
-                .route_table
-                .put(peer_id, &[raddr.clone()])
-                .await?;
-
             self.mutable.lock().await.conn_pool.put(conn.clone());
-
-            log::info!(target:"switch","add connection to cache, peer={}, local={}", conn.peer_addr(),conn.local_addr());
         }
 
         Ok(conn)
