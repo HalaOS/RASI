@@ -32,7 +32,7 @@ impl HttpJsonRpcClient {
     {
         HttpJsonRpcClient {
             max_body_size: 1024 * 1024,
-            send_cached_len: 0,
+            send_cached_len: 10,
             timeout: Duration::from_secs(5),
             builder: RequestBuilder::new().method("POST").uri(uri),
             send_ops: HttpClientOptions::new(),
@@ -96,6 +96,22 @@ impl HttpJsonRpcClient {
 
     /// Consume builder and create a new `JsonRpcClient` instance.
     pub fn create(self) -> io::Result<JsonRpcClient> {
+        let client = JsonRpcClient::new(self.send_cached_len);
+
+        let background = client.clone();
+
+        spawn_ok(async move {
+            if let Err(err) = self.run_loop(background).await {
+                log::error!(target: "HttpJsonRpcClient", "stop background task, {}",err);
+            } else {
+                log::info!(target: "HttpJsonRpcClient", "stop background task");
+            }
+        });
+
+        Ok(client)
+    }
+
+    async fn run_loop(self, background: JsonRpcClient) -> std::io::Result<()> {
         let request = self
             .builder
             .body(())
@@ -103,61 +119,55 @@ impl HttpJsonRpcClient {
 
         let (parts, _) = request.into_parts();
 
-        let client = JsonRpcClient::new(self.send_cached_len);
-
-        let background = client.clone();
-
         let ops: HttpClientOptions = self.send_ops.try_into()?;
 
-        spawn_ok(async move {
-            while let Some((id, packet)) = background.send().await {
-                log::trace!("send jsonrpc: {}", from_utf8(&packet).unwrap());
+        loop {
+            let (id, packet) = background.send().await?;
 
-                let call = Self::send_request(&ops, self.max_body_size, parts.clone(), packet)
-                    .timeout(self.timeout)
-                    .await;
+            log::trace!("send jsonrpc: {}", from_utf8(&packet).unwrap());
 
-                let buf = match call {
-                    Some(Ok(buf)) => buf,
-                    Some(Err(err)) => {
-                        _ = background
-                            .recv(
-                                json!({
-                                "id":id,"jsonrpc":"2.0","error": Error {
-                                             code: ErrorCode::InternalError,
-                                             message: err.to_string(),
-                                             data: None::<()>
-                                          }
-                                 })
-                                .to_string(),
-                            )
-                            .await;
+            let call = Self::send_request(&ops, self.max_body_size, parts.clone(), packet)
+                .timeout(self.timeout)
+                .await;
 
-                        continue;
-                    }
-                    None => {
-                        _ = background
-                            .recv(
-                                json!({
-                                "id":id,"jsonrpc":"2.0","error": Error {
-                                             code: ErrorCode::InternalError,
-                                             message: "Timeout",
-                                             data: None::<()>
-                                          }
-                                 })
-                                .to_string(),
-                            )
-                            .await;
+            let buf = match call {
+                Some(Ok(buf)) => buf,
+                Some(Err(err)) => {
+                    _ = background
+                        .recv(
+                            json!({
+                            "id":id,"jsonrpc":"2.0","error": Error {
+                                         code: ErrorCode::InternalError,
+                                         message: err.to_string(),
+                                         data: None::<()>
+                                      }
+                             })
+                            .to_string(),
+                        )
+                        .await;
 
-                        continue;
-                    }
-                };
+                    continue;
+                }
+                None => {
+                    _ = background
+                        .recv(
+                            json!({
+                            "id":id,"jsonrpc":"2.0","error": Error {
+                                         code: ErrorCode::InternalError,
+                                         message: "Timeout",
+                                         data: None::<()>
+                                      }
+                             })
+                            .to_string(),
+                        )
+                        .await;
 
-                Self::handle_recv(&background, buf).await;
-            }
-        });
+                    continue;
+                }
+            };
 
-        Ok(client)
+            Self::handle_recv(&background, buf).await;
+        }
     }
 
     async fn handle_recv<P: AsRef<[u8]>>(client: &JsonRpcClient, packet: P) {

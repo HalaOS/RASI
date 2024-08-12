@@ -66,9 +66,7 @@ impl YamuxConn {
                 Err(Error::Done) => {
                     log::trace!("send data. waiting");
 
-                    drop(session);
-
-                    self.event_map.wait(&ConnEvent::Send).await;
+                    self.event_map.wait(&ConnEvent::Send, session).await;
 
                     continue;
                 }
@@ -125,8 +123,9 @@ impl YamuxConn {
                     return Ok(send_size);
                 }
                 Err(Error::Done) => {
-                    drop(session);
-                    self.event_map.wait(&ConnEvent::StreamSend(stream_id)).await;
+                    self.event_map
+                        .wait(&ConnEvent::StreamSend(stream_id), session)
+                        .await;
 
                     continue;
                 }
@@ -162,9 +161,10 @@ impl YamuxConn {
                 }
                 Err(Error::Done) => {
                     log::trace!("stream, id={}, recv pending.", stream_id,);
-                    drop(session);
 
-                    self.event_map.wait(&ConnEvent::StreamRecv(stream_id)).await;
+                    self.event_map
+                        .wait(&ConnEvent::StreamRecv(stream_id), session)
+                        .await;
 
                     continue;
                 }
@@ -180,11 +180,9 @@ impl YamuxConn {
                 return Ok(YamuxStream::new(stream_id, self.clone()));
             }
 
-            drop(session);
-
             log::info!(target:"YamuxConn","Accept waiting..");
 
-            self.event_map.wait(&ConnEvent::Accept).await;
+            self.event_map.wait(&ConnEvent::Accept, session).await;
 
             log::info!(target:"YamuxConn","Accept wakeup");
         }

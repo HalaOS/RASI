@@ -490,18 +490,18 @@ mod tests {
             // pretty_env_logger::init_timed();
             register_mio_network();
             register_mio_timer();
+            pretty_env_logger::init();
         });
 
         static CLIENT: OnceLock<JsonRpcClient> = OnceLock::new();
 
         CLIENT
             .get_or_init(|| {
-                HttpJsonRpcClient::new(
-                    "https://mainnet.infura.io/v3/efdbc2d092c34ec4a161eeb7991ea6cc",
-                )
-                .set_use_server_name_indication(false)
-                .create()
-                .unwrap()
+                HttpJsonRpcClient::new("https://eth-mainnet.token.im")
+                    // only for some old servers.
+                    // .set_use_server_name_indication(false)
+                    .create()
+                    .unwrap()
             })
             .clone()
             .into()
@@ -560,10 +560,7 @@ mod tests {
 
         let hash = block.hash.unwrap();
 
-        let _ = provider
-            .eth_get_block_transaction_count_by_hash(hash)
-            .await
-            .unwrap();
+        let _ = provider.eth_getblockbyhash(hash, false).await.unwrap();
     }
 
     #[futures_test::test]

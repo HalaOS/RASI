@@ -773,9 +773,7 @@ impl Switch {
                 return Ok(r);
             }
 
-            drop(mutable);
-
-            self.event_map.wait(&SwitchEvent::Accept).await;
+            self.event_map.wait(&SwitchEvent::Accept, mutable).await;
         }
     }
 

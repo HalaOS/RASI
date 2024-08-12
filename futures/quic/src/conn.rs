@@ -400,10 +400,9 @@ impl QuicConn {
                     use rasi::timer::TimeoutExt;
 
                     if let Some(timeout_at) = state.conn.timeout_instant() {
-                        drop(state);
                         if self
                             .event_map
-                            .wait(&event)
+                            .wait(&event, state)
                             .timeout_at(timeout_at)
                             .await
                             .is_none()
@@ -411,9 +410,7 @@ impl QuicConn {
                             on_timout = true;
                         }
                     } else {
-                        drop(state);
-
-                        self.event_map.wait(&event).await;
+                        self.event_map.wait(&event, state).await;
                     }
 
                     log::trace!("QuicConn scid={:?}, send wakeup", self.id);
@@ -467,11 +464,9 @@ impl QuicConn {
 
             let event = QuicConnStateEvent::StreamAccept(state.conn.source_id().into_owned());
 
-            drop(state);
-
             log::trace!("accept new incoming stream -- waiting");
 
-            self.event_map.wait(&event).await;
+            self.event_map.wait(&event, state).await;
 
             log::trace!("accept new incoming stream -- wakeup");
         }
@@ -513,9 +508,7 @@ impl QuicConn {
 
                 let event = QuicConnStateEvent::OutboundStream(state.conn.source_id().into_owned());
 
-                drop(state);
-
-                self.event_map.wait(&event).await;
+                self.event_map.wait(&event, state).await;
 
                 continue;
             }
@@ -637,9 +630,7 @@ impl RawQuicStream {
                         self.stream_id,
                     );
 
-                    drop(state);
-
-                    self.conn.event_map.wait(&event).await;
+                    self.conn.event_map.wait(&event, state).await;
 
                     continue;
                 }
@@ -669,9 +660,7 @@ impl RawQuicStream {
                         self.stream_id,
                     );
 
-                    drop(state);
-
-                    self.conn.event_map.wait(&event).await;
+                    self.conn.event_map.wait(&event, state).await;
                     log::trace!("stream wakeup: {:?}", event);
                     continue;
                 }
@@ -683,9 +672,7 @@ impl RawQuicStream {
                             self.stream_id,
                         );
 
-                        drop(state);
-
-                        self.conn.event_map.wait(&event).await;
+                        self.conn.event_map.wait(&event, state).await;
                     } else {
                         return Err(map_quic_error(quiche::Error::InvalidStreamState(
                             self.stream_id,

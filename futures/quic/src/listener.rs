@@ -424,9 +424,7 @@ impl QuicListener {
                 return Ok(conn);
             }
 
-            drop(state);
-
-            self.event_map.wait(&QuicListenerAccept).await;
+            self.event_map.wait(&QuicListenerAccept, state).await;
         }
     }
 

@@ -85,11 +85,17 @@ where
     ///
     /// Returns the value at the key if the key was inserted into the map,
     /// or returns `None` if the waiting task is canceled.
-    pub async fn wait(&self, k: &K) -> Option<V>
+    pub async fn wait<L>(&self, k: &K, locker: L) -> Option<V>
     where
         K: Clone,
+        L: Unpin,
     {
-        Wait { event_map: self, k }.await
+        Wait {
+            event_map: self,
+            k,
+            locker: Some(locker),
+        }
+        .await
     }
 
     /// Cancel other key waiting tasks.
@@ -123,22 +129,26 @@ where
     }
 }
 
-struct Wait<'a, K, V> {
+struct Wait<'a, K, V, L> {
     event_map: &'a KeyWaitMap<K, V>,
     k: &'a K,
+    locker: Option<L>,
 }
 
-impl<'a, K, V> Future for Wait<'a, K, V>
+impl<'a, K, V, L> Future for Wait<'a, K, V, L>
 where
     K: Eq + Hash + Unpin + Clone,
+    L: Unpin,
 {
     type Output = Option<V>;
 
     fn poll(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         let mut inner = self.event_map.inner.lock().unwrap();
+
+        drop(self.locker.take());
 
         if let Some(event) = inner.kv.remove(&self.k) {
             match event {
@@ -164,9 +174,9 @@ mod tests {
 
         event_map.insert(1, 1);
 
-        assert_eq!(event_map.wait(&1).await, Some(1));
+        assert_eq!(event_map.wait(&1, ()).await, Some(1));
 
-        let mut wait = Box::pin(event_map.wait(&2));
+        let mut wait = Box::pin(event_map.wait(&2, ()));
 
         assert_eq!(poll!(&mut wait), Poll::Pending);
 
@@ -174,7 +184,7 @@ mod tests {
 
         assert_eq!(poll!(&mut wait), Poll::Ready(None));
 
-        let mut wait = Box::pin(event_map.wait(&2));
+        let mut wait = Box::pin(event_map.wait(&2, ()));
 
         assert_eq!(poll!(&mut wait), Poll::Pending);
 

@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, VecDeque},
     io,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -6,11 +7,7 @@ use std::{
     },
 };
 
-use futures::{
-    channel::mpsc::{channel, Receiver, Sender},
-    lock::Mutex,
-    Future, Sink, SinkExt, Stream, StreamExt,
-};
+use futures::{lock::Mutex, Future, Sink, SinkExt, Stream, StreamExt};
 
 use futures_map::KeyWaitMap;
 
@@ -66,13 +63,52 @@ pub trait JsonRpcClientReceiver: Stream<Item = Vec<u8>> + Unpin {
 
 impl<T> JsonRpcClientReceiver for T where T: Stream<Item = Vec<u8>> + Unpin {}
 
+type InnerResponse = Response<String, serde_json::Value, serde_json::Value>;
+
+#[derive(Default)]
+struct RawJsonRpcClient {
+    is_closed: bool,
+    max_send_queue_size: usize,
+    send_queue: VecDeque<(usize, Vec<u8>)>,
+    received_resps: HashMap<usize, InnerResponse>,
+}
+
+impl RawJsonRpcClient {
+    fn new(max_send_queue_size: usize) -> Self {
+        Self {
+            max_send_queue_size,
+            ..Default::default()
+        }
+    }
+
+    fn cache_send(&mut self, id: usize, data: Vec<u8>) -> Option<(usize, Vec<u8>)> {
+        if self.send_queue.len() == self.max_send_queue_size {
+            return Some((id, data));
+        }
+
+        self.send_queue.push_back((id, data));
+
+        None
+    }
+
+    fn send_one(&mut self) -> Option<(usize, Vec<u8>)> {
+        self.send_queue.pop_front()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+enum JsonRpcClientEvent {
+    Send,
+    Forward,
+    Response(usize),
+}
+
 /// Jsonrpc v2.0 client state machine.
 #[derive(Clone)]
 pub struct JsonRpcClient {
     next_id: Arc<AtomicUsize>,
-    send_sender: Sender<(usize, Vec<u8>)>,
-    send_receiver: Arc<Mutex<Receiver<(usize, Vec<u8>)>>>,
-    wait_map: Arc<KeyWaitMap<usize, Response<String, serde_json::Value, serde_json::Value>>>,
+    raw: Arc<Mutex<RawJsonRpcClient>>,
+    wait_map: Arc<KeyWaitMap<JsonRpcClientEvent, ()>>,
 }
 
 impl Default for JsonRpcClient {
@@ -83,13 +119,10 @@ impl Default for JsonRpcClient {
 
 impl JsonRpcClient {
     /// Create a new `JsonRpcClient` with provided send cache channel length.
-    pub fn new(send_cached_len: usize) -> Self {
-        let (send_sender, send_receiver) = channel(send_cached_len);
-
+    pub fn new(max_send_queue_size: usize) -> Self {
         Self {
             next_id: Default::default(),
-            send_receiver: Arc::new(Mutex::new(send_receiver)),
-            send_sender,
+            raw: Arc::new(Mutex::new(RawJsonRpcClient::new(max_send_queue_size))),
             wait_map: Arc::new(KeyWaitMap::new()),
         }
     }
@@ -112,13 +145,36 @@ impl JsonRpcClient {
 
         let packet = serde_json::to_vec(&request)?;
 
-        // cache request jsonrpc packet
-        self.send_sender
-            .send((id, packet))
-            .await
-            .map_err(|err| io::Error::new(io::ErrorKind::BrokenPipe, err))?;
+        let mut send_data = Some((id, packet));
 
-        if let Some(resp) = self.wait_map.wait(&id).await {
+        while let Some((id, data)) = send_data {
+            let mut raw = self.raw.lock().await;
+
+            Self::verify_client_status(&raw)?;
+
+            send_data = raw.cache_send(id, data);
+
+            if send_data.is_some() {
+                self.wait_map.wait(&JsonRpcClientEvent::Send, raw).await;
+            } else {
+                self.wait_map.insert(JsonRpcClientEvent::Forward, ());
+            }
+        }
+
+        if let Some(_) = self
+            .wait_map
+            .wait(&JsonRpcClientEvent::Response(id), ())
+            .await
+        {
+            let mut raw = self.raw.lock().await;
+
+            Self::verify_client_status(&raw)?;
+
+            let resp = raw
+                .received_resps
+                .remove(&id)
+                .expect("consistency guarantee");
+
             if let Some(err) = resp.error {
                 return Err(io::Error::new(io::ErrorKind::Other, err));
             }
@@ -129,9 +185,32 @@ impl JsonRpcClient {
         }
     }
 
+    fn verify_client_status(raw: &RawJsonRpcClient) -> std::io::Result<()> {
+        if raw.is_closed {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "jsonrpc client is already closed",
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Writes a single jsonrpc packet to be sent to the peer.
-    pub async fn send(&self) -> Option<(usize, Vec<u8>)> {
-        self.send_receiver.lock().await.next().await
+    pub async fn send(&self) -> std::io::Result<(usize, Vec<u8>)> {
+        loop {
+            let mut raw = self.raw.lock().await;
+
+            Self::verify_client_status(&raw)?;
+
+            if let Some(packet) = raw.send_one() {
+                return Ok(packet);
+            }
+
+            self.wait_map.insert(JsonRpcClientEvent::Send, ());
+
+            self.wait_map.wait(&JsonRpcClientEvent::Forward, raw).await;
+        }
     }
 
     /// Processes jsonrpc packet received from the peer.
@@ -139,7 +218,13 @@ impl JsonRpcClient {
         let resp: Response<String, serde_json::Value, serde_json::Value> =
             serde_json::from_slice(packet.as_ref())?;
 
-        self.wait_map.insert(resp.id, resp);
+        let mut raw = self.raw.lock().await;
+
+        let id = resp.id;
+
+        raw.received_resps.insert(resp.id, resp);
+
+        self.wait_map.insert(JsonRpcClientEvent::Response(id), ());
 
         Ok(())
     }
