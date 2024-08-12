@@ -6,7 +6,6 @@ members = [
     "crates/sqlite3",
     "futures/*",
     "reweb3/*",
-    "examples/*",
     "rep2p/*",
 ]
 resolver = "2"

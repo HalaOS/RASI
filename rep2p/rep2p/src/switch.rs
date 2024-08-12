@@ -24,9 +24,9 @@ use crate::{
     Error, Result,
 };
 
-const PROTOCOL_IPFS_ID: &str = "/ipfs/id/1.0.0";
-const PROTOCOL_IPFS_PUSH_ID: &str = "/ipfs/id/push/1.0.0";
-const PROTOCOL_IPFS_PING: &str = "/ipfs/ping/1.0.0";
+pub const PROTOCOL_IPFS_ID: &str = "/ipfs/id/1.0.0";
+pub const PROTOCOL_IPFS_PUSH_ID: &str = "/ipfs/id/push/1.0.0";
+pub const PROTOCOL_IPFS_PING: &str = "/ipfs/ping/1.0.0";
 
 /// immutable context data for one switch.
 struct ImmutableSwitch {
@@ -179,6 +179,7 @@ impl SwitchBuilder {
 
         let switch = Switch {
             inner: Arc::new(InnerSwitch {
+                local_peer_id: public_key.to_peer_id(),
                 public_key,
                 immutable: ops,
                 mutable: Mutex::new(MutableSwitch::new()),
@@ -328,6 +329,7 @@ enum SwitchEvent {
 #[doc(hidden)]
 pub struct InnerSwitch {
     public_key: PublicKey,
+    local_peer_id: PeerId,
     immutable: ImmutableSwitch,
     mutable: Mutex<MutableSwitch>,
     event_map: KeyWaitMap<SwitchEvent, ()>,
@@ -793,6 +795,16 @@ impl Switch {
     /// Get associated keystore instance.
     pub fn keystore(&self) -> &KeyStore {
         &self.immutable.keystore
+    }
+
+    /// Get this switch's public key.
+    pub fn local_public_key(&self) -> &PublicKey {
+        &self.inner.public_key
+    }
+
+    /// Get this switch's node id.
+    pub fn local_id(&self) -> &PeerId {
+        &self.inner.local_peer_id
     }
 
     /// Returns the addresses list of this switch is bound to.

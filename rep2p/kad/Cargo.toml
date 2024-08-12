@@ -1,0 +1,10 @@
+[package]
+description = "The official kad protocol implementation for rep2p."
+documentation = "https://docs.rs/rep2p-kad"
+edition.workspace = true
+license = "MIT"
+name = "rep2p-kad"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
