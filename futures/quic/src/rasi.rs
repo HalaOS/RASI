@@ -317,15 +317,22 @@ pub trait QuicConnect {
                 udp_socket.send_to(&buf[..send_size], send_info.to).await?;
 
                 let (read_size, from) = if let Some(timeout_at) = conn.timeout_instant().await {
+                    log::trace!(
+                        "connect recv packet: scid={:?}, timeout={:?}",
+                        conn.scid(),
+                        timeout_at,
+                    );
                     match udp_socket.recv_from(&mut buf).timeout_at(timeout_at).await {
                         Some(Ok((read_size, from))) => (read_size, from),
                         Some(Err(err)) => return Err(err),
                         None => {
+                            log::warn!("connect recv packet, timeout: scid={:?}", conn.scid());
                             conn.on_timeout().await;
                             continue;
                         }
                     }
                 } else {
+                    log::trace!("connect recv packet: scid={:?}", conn.scid());
                     udp_socket.recv_from(&mut buf).await?
                 };
 
@@ -351,12 +358,14 @@ pub trait QuicConnect {
 impl QuicConnect for QuicConn {}
 
 async fn client_send_loop(udp_socket: UdpSocket, conn: QuicConn) {
-    if let Err(err) = client_send_loop_priv(udp_socket, conn).await {
+    if let Err(err) = client_send_loop_priv(udp_socket, &conn).await {
         log::error!(target: "QuicConn","stop recv loop by error: {}",err);
     }
+
+    _ = conn.close().await;
 }
 
-async fn client_send_loop_priv(udp_socket: UdpSocket, conn: QuicConn) -> Result<()> {
+async fn client_send_loop_priv(udp_socket: UdpSocket, conn: &QuicConn) -> Result<()> {
     let mut buf = vec![0; MAX_MTU_SIZE];
     loop {
         let (send_size, send_info) = conn.send(&mut buf).await?;
@@ -372,12 +381,14 @@ async fn client_send_loop_priv(udp_socket: UdpSocket, conn: QuicConn) -> Result<
     }
 }
 async fn client_recv_loop(udp_socket: UdpSocket, conn: QuicConn) {
-    if let Err(err) = client_recv_loop_prev(udp_socket, conn).await {
+    if let Err(err) = client_recv_loop_prev(udp_socket, &conn).await {
         log::error!(target: "QuicConn","stop recv loop by error: {}",err);
     }
+
+    _ = conn.close().await;
 }
 
-async fn client_recv_loop_prev(udp_socket: UdpSocket, conn: QuicConn) -> Result<()> {
+async fn client_recv_loop_prev(udp_socket: UdpSocket, conn: &QuicConn) -> Result<()> {
     let laddr = udp_socket.local_addr()?;
     let mut buf = vec![0; MAX_MTU_SIZE];
     loop {

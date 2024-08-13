@@ -232,7 +232,7 @@ impl QuicConn {
     }
 
     fn check_conn_status(&self, state: &mut QuicConnState) -> Result<()> {
-        if state.conn.is_closed() {
+        if state.conn.is_closed() || state.conn.is_draining() {
             Err(Error::new(
                 ErrorKind::BrokenPipe,
                 "Underly quiche connection is closed.",
@@ -384,6 +384,30 @@ impl QuicConn {
                     return Ok((send_size, send_info));
                 }
                 Err(quiche::Error::Done) => {
+                    if state.conn.is_draining() {
+                        self.event_map.cancel_all();
+                        return Err(Error::new(
+                            ErrorKind::BrokenPipe,
+                            format!("connection is draining: {:?}", *state),
+                        ));
+                    }
+                    // No more data to send and conn is not established,
+                    // indicate that the connection idle timeout expired.
+                    if !state.conn.is_established() && state.conn.is_timed_out() {
+                        self.event_map.cancel_all();
+
+                        log::trace!(
+                            "{:?} idle timeout expired, timeout={:?}",
+                            *state,
+                            state.conn.timeout_instant()
+                        );
+
+                        return Err(Error::new(
+                            ErrorKind::TimedOut,
+                            format!("connect timeout: {:?}", *state),
+                        ));
+                    }
+
                     if self.handle_stream_drop(&mut state).await {
                         drop(state);
                         continue;
@@ -544,8 +568,7 @@ impl QuicConn {
 
         state.conn.close(false, 1, b"").map_err(map_quic_error)?;
 
-        self.event_map
-            .insert(QuicConnStateEvent::Send(self.id.clone()), ());
+        self.event_map.cancel_all();
 
         Ok(())
     }
@@ -588,6 +611,13 @@ impl RawQuicStream {
 
         loop {
             let mut state = self.conn.state.lock().await;
+
+            if state.conn.is_closed() || state.conn.is_draining() {
+                return Err(Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("connection is closed/draining: {:?}", *state),
+                ));
+            }
 
             let result = state.conn.stream_send(self.stream_id, buf, fin);
 
@@ -644,6 +674,13 @@ impl RawQuicStream {
 
         loop {
             let mut state = self.conn.state.lock().await;
+
+            if state.conn.is_closed() || state.conn.is_draining() {
+                return Err(Error::new(
+                    ErrorKind::BrokenPipe,
+                    format!("connection is closed/draining: {:?}", *state),
+                ));
+            }
 
             match state.conn.stream_recv(self.stream_id, buf) {
                 Ok((read_size, fin)) => {
