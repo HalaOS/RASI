@@ -77,6 +77,8 @@ pkcs1 = "0.7.5"
 sec1 = "0.7.3"
 rsa = "^0.9"
 x509-cert = "0.2.5"
+generic-array = "^1.1"
+uint = "^0.9"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }
