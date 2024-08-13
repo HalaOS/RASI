@@ -12,6 +12,13 @@ sha2 = { workspace = true }
 uint = { workspace = true }
 identity = { workspace = true, features = ["peerid", "rand"] }
 generic-array = { workspace = true }
+rep2p = { workspace = true }
+protobuf = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
 quickcheck = { workspace = true }
+
+[build-dependencies]
+protobuf-codegen = { workspace = true }
+protoc-bin-vendored = { workspace = true }

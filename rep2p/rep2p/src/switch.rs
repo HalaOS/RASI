@@ -24,8 +24,13 @@ use crate::{
     Error, Result,
 };
 
+/// protocol name of libp2p identity
 pub const PROTOCOL_IPFS_ID: &str = "/ipfs/id/1.0.0";
+
+/// protocol name of libp2p identity push
 pub const PROTOCOL_IPFS_PUSH_ID: &str = "/ipfs/id/push/1.0.0";
+
+/// protocol name of libp2p ping
 pub const PROTOCOL_IPFS_PING: &str = "/ipfs/ping/1.0.0";
 
 /// immutable context data for one switch.

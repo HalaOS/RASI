@@ -1,3 +1,5 @@
+//! A generic k-bucket table implementation.
+
 use std::collections::VecDeque;
 
 use generic_array::{ArrayLength, GenericArray};
@@ -24,7 +26,7 @@ pub trait KBucketKey {
     /// Returns the longest common prefix length with `rhs`.
     fn for_distance(&self, distance: Self::Distance) -> Self;
 }
-
+/// k-bucket key distance associated type must implement this trait.
 pub trait KBucketDistance {
     /// Returns the integer part of the base 2 logarithm of the [`Distance`].
     ///
@@ -32,7 +34,8 @@ pub trait KBucketDistance {
     fn k_index(&self) -> Option<u32>;
 }
 
-struct KBucket<Key, Value>(VecDeque<(Key, Value)>);
+/// Represents a k-bucket instance.
+pub struct KBucket<Key, Value>(VecDeque<(Key, Value)>);
 
 impl<Key, Value> Default for KBucket<Key, Value> {
     fn default() -> Self {
@@ -141,7 +144,7 @@ where
     /// This function has no side effects if called with `local_key`.
     pub fn insert(&mut self, key: Key, value: Value) -> Option<(Key, Value)>
     where
-        Key: Clone + PartialEq,
+        Key: PartialEq,
     {
         let k_index = self.k_index_of(&key);
 
@@ -167,11 +170,29 @@ where
 
             return Some(removed);
         } else {
-            k_bucket.0.push_back((key.clone(), value));
+            k_bucket.0.push_back((key, value));
 
             self.count += 1;
 
             return None;
+        }
+    }
+
+    /// Remove the keypair from the table.
+    ///
+    /// Returns None, if the key is not exists.
+    pub fn remove(&mut self, key: &Key) -> Option<Value>
+    where
+        Key: PartialEq,
+    {
+        let k_index = self.k_index_of(&key);
+
+        if let Some(index) = self.k_index[k_index] {
+            let bucket = self.buckets.get_mut(index).expect("Consistency Guarantee");
+
+            bucket.remove(key).map(|(_, value)| value)
+        } else {
+            None
         }
     }
 
@@ -260,6 +281,11 @@ where
             k_inner_offset: 0,
             k_end_inner_offset,
         };
+    }
+
+    /// Get bucket of one key.
+    pub fn bucket_of_key(&self, key: &Key) -> Option<&KBucket<Key, Value>> {
+        self.bucket(self.k_index_of(key))
     }
 
     fn k_index_of(&self, key: &Key) -> usize {

@@ -1,3 +1,5 @@
+//! This module provides some useful primitive types for kad system.
+
 use std::net::SocketAddr;
 
 use uint::construct_uint;
