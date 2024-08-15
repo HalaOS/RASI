@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use futures::lock::Mutex;
-use identity::PeerId;
 use rep2p::{multiaddr::Multiaddr, Switch};
 
 use crate::primitives::{KBucketTable, Key};
