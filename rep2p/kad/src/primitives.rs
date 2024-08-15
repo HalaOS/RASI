@@ -1,7 +1,6 @@
 //! This module provides some useful primitive types for kad system.
 
-use std::net::SocketAddr;
-
+use rep2p::multiaddr::Multiaddr;
 use uint::construct_uint;
 
 use crate::kbucket::{KBucketDistance, KBucketKey};
@@ -44,6 +43,11 @@ impl From<&[u8]> for Key {
 
 impl From<identity::PeerId> for Key {
     fn from(value: identity::PeerId) -> Self {
+        Key::from(&value)
+    }
+}
+impl From<&identity::PeerId> for Key {
+    fn from(value: &identity::PeerId) -> Self {
         use sha2::Digest;
 
         let mut hasher = sha2::Sha256::new();
@@ -96,7 +100,7 @@ impl KBucketDistance for Distance {
 }
 
 /// Kad default `KBucketTable` type.
-pub type KBucketTable = crate::kbucket::KBucketTable<Key, SocketAddr, 20>;
+pub type KBucketTable = crate::kbucket::KBucketTable<Key, Multiaddr, 20>;
 
 #[cfg(test)]
 mod tests {

@@ -1,34 +1,77 @@
 //! This module provide a rep2p compatibable kad implementation.
 
-use rep2p::{multiaddr::Multiaddr, Result, Switch};
+use std::sync::Arc;
 
-use crate::primitives::KBucketTable;
+use futures::lock::Mutex;
+use identity::PeerId;
+use rep2p::{multiaddr::Multiaddr, Switch};
+
+use crate::primitives::{KBucketTable, Key};
 
 /// protocol name of libp2p kad.
 pub const PROTOCOL_IPFS_KAD: &str = "/ipfs/kad/1.0.0";
 
-/// This is a Kademlia node, and state machine.
-pub struct KademliaState {
-    // the route table.
-    k_bucket_table: KBucketTable,
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Multiaddr without p2p node, {0}")]
+    InvalidSeedMultAddr(Multiaddr),
 }
 
-impl KademliaState {
-    /// Start kademlia node bootstrap process,
-    /// add self into the kademlia network by sending `FIND_NODE` requests to the seed nodes.
+/// Result type returns by this module functionss.
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[allow(unused)]
+/// A variant for kademlia network operations.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum KadOps {
+    FindNode(Key),
+    GetValue(Key),
+    PutValue(Key),
+    AddProvider(Key),
+    GetProviders(Key),
+}
+
+/// This is a Kademlia node, and state machine.
+#[allow(unused)]
+pub struct KadState {
+    switch: Switch,
+    // the route table.
+    k_bucket_table: Arc<Mutex<KBucketTable>>,
+}
+
+impl KadState {
+    /// Create a new kademlia state machine with [`Switch`] and bootstrap `seeds`.
     ///
-    /// On succeed, returns the node instance.
-    pub async fn bootstrap<S>(switch: &Switch, seeds: S) -> Result<Self>
+    /// On success, this function start the bootstrap process internal.
+    pub async fn new<S>(switch: &Switch, seeds: S) -> Result<Self>
     where
         S: IntoIterator,
         S::Item: AsRef<Multiaddr>,
     {
+        let mut k_bucket_table = KBucketTable::new(Key::from(switch.local_id()));
+
         log::info!("start kademlia node bootstrap process..");
 
         for raddr in seeds.into_iter() {
             let raddr = raddr.as_ref();
+
+            match raddr
+                .clone()
+                .pop()
+                .ok_or_else(|| Error::InvalidSeedMultAddr(raddr.clone()))?
+            {
+                rep2p::multiaddr::Protocol::P2p(id) => {
+                    k_bucket_table.insert(id, raddr.clone());
+                }
+                _ => {
+                    return Err(Error::InvalidSeedMultAddr(raddr.clone()));
+                }
+            }
         }
 
-        todo!()
+        Ok(Self {
+            switch: switch.clone(),
+            k_bucket_table: Arc::new(Mutex::new(k_bucket_table)),
+        })
     }
 }

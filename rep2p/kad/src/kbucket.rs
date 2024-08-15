@@ -142,10 +142,13 @@ where
     /// Push value into k-bucket's bottom. and pop the LRU value from the k-bucket's top if the k-bucket is full.
     ///
     /// This function has no side effects if called with `local_key`.
-    pub fn insert(&mut self, key: Key, value: Value) -> Option<(Key, Value)>
+    pub fn insert<Q>(&mut self, key: Q, value: Value) -> Option<(Key, Value)>
     where
+        Key: From<Q>,
         Key: PartialEq,
     {
+        let key = Key::from(key);
+
         let k_index = self.k_index_of(&key);
 
         let k_bucket = if let Some(index) = self.k_index[k_index] {
