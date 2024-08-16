@@ -1,9 +1,15 @@
 //! This module provides some useful primitive types for kad system.
 
+use std::fmt::Display;
+
+use identity::PeerId;
 use rep2p::multiaddr::Multiaddr;
 use uint::construct_uint;
 
-use crate::kbucket::{KBucketDistance, KBucketKey};
+use crate::{
+    kbucket::{KBucketDistance, KBucketKey},
+    proto,
+};
 
 construct_uint! {
     pub(crate) struct U256(4);
@@ -99,8 +105,25 @@ impl KBucketDistance for Distance {
     }
 }
 
+impl Display for Distance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#x}", self.0)
+    }
+}
+
 /// Kad default `KBucketTable` type.
-pub type KBucketTable = crate::kbucket::KBucketTable<Key, Multiaddr, 20>;
+pub type KBucketTable = crate::kbucket::KBucketTable<Key, PeerInfo, 20>;
+
+/// Used to signal the sender's connection capabilities to the peer
+pub type ConnectionType = proto::rpc::message::ConnectionType;
+
+/// A type that hold the peer's basic information used by kad protocol.
+#[derive(Debug, Clone)]
+pub struct PeerInfo {
+    pub id: PeerId,
+    pub addrs: Vec<Multiaddr>,
+    pub conn_type: ConnectionType,
+}
 
 #[cfg(test)]
 mod tests {
@@ -145,9 +168,18 @@ mod tests {
     }
 
     #[test]
+    fn distance_self() {
+        let key = Key::from(PeerId::random());
+
+        let distance = key.distance(&key);
+
+        assert_eq!(distance.0, U256::from(0));
+    }
+
+    #[test]
     fn k_bucket_update() {
         let local_key = Key::from(PeerId::random());
-        let mut k_bucket_table = KBucketTable::new(local_key);
+        let mut k_bucket_table = crate::kbucket::KBucketTable::<Key, Multiaddr, 20>::new(local_key);
 
         assert_eq!(k_bucket_table.len(), 0);
 

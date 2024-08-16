@@ -28,7 +28,7 @@ type Multiaddrs = Vec<Multiaddr>;
 )]
 struct Client {
     /// The boostrap route table.
-    #[arg(short, long, value_parser = clap_parse_multiaddr, default_value="/ip4/127.0.0.1/tcp/4001")]
+    #[arg(short, long, value_parser = clap_parse_multiaddr, default_value="/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ")]
     bootstrap: Multiaddrs,
 
     /// Use verbose output

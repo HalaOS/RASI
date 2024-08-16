@@ -79,6 +79,7 @@ rsa = "^0.9"
 x509-cert = "0.2.5"
 generic-array = "^1.1"
 uint = "^0.9"
+protobuf-json-mapping = "3.5.0"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }
@@ -97,6 +98,8 @@ ringbuf-rs = { path = "crates/ringbuf", version = "^0.2" }
 rep2p = { path = "rep2p/rep2p", version = "^0.2" }
 rep2p-x509 = { path = "rep2p/x509", version = "^0.2" }
 rep2p-spec = { path = "rep2p/spec", version = "^0.2" }
+rep2p-tcp = { path = "rep2p/tcp", version = "^0.2" }
+rep2p-quic = { path = "rep2p/quic", version = "^0.2" }
 #libp2p
 multiaddr = "^0.18"
 identity = { version = "^0.2", package = "libp2p-identity" }

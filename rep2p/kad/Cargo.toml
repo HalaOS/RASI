@@ -17,9 +17,16 @@ protobuf = { workspace = true }
 log = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
+unsigned-varint = { workspace = true }
 
 [dev-dependencies]
 quickcheck = { workspace = true }
+futures-test = { workspace = true }
+rasi = { workspace = true, features = ["task-futures"] }
+rasi-mio = { workspace = true }
+pretty_env_logger = { workspace = true }
+rep2p-tcp = { workspace = true }
+rep2p-quic = { workspace = true }
 
 [build-dependencies]
 protobuf-codegen = { workspace = true }

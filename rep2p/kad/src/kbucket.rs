@@ -207,10 +207,10 @@ where
             if bucket.len() == K {
                 return KBucketTableIter {
                     table: self,
-                    k_offset: k_index,
-                    k_end_offset: k_index,
-                    k_inner_offset: 0,
-                    k_end_inner_offset: K,
+                    k_count: 0,
+                    k_row_from: k_index,
+                    k_col_offset: 0,
+                    k_max_count: K,
                 };
             }
 
@@ -223,7 +223,6 @@ where
         let mut k_end_offset = k_index;
 
         let mut k_inner_offset = 0;
-        let mut k_end_inner_offset: usize = bucket_len;
 
         let mut nodes = bucket_len;
 
@@ -240,49 +239,49 @@ where
                     } else {
                         k_inner_offset = 0;
                     }
+                } else {
+                    k_inner_offset = 0;
                 }
+            } else if k_end_offset == self.k_index.len() {
+                break;
             }
 
-            if k_end_offset < self.k_index.len() {
+            if k_end_offset + 1 < self.k_index.len() {
                 k_end_offset += 1;
 
-                if let Some(bucket) = self.bucket(k_offset) {
+                if let Some(bucket) = self.bucket(k_end_offset) {
                     nodes += bucket.len();
-                    k_end_inner_offset = bucket.len();
 
                     if nodes >= K {
-                        k_end_inner_offset -= nodes - K;
-                        // nodes = self.const_k;
                         break;
                     }
                 }
-            } else {
+            } else if k_offset == 0 {
                 break;
             }
         }
 
+        if nodes > K {
+            nodes = K;
+        }
+
         return KBucketTableIter {
             table: self,
-            k_offset,
-            k_end_offset,
-            k_inner_offset,
-            k_end_inner_offset,
+            k_count: 0,
+            k_row_from: k_offset,
+            k_col_offset: k_inner_offset,
+            k_max_count: nodes,
         };
     }
 
     /// Returns an iterator over all inserted keys.
     pub fn iter(&self) -> KBucketTableIter<'_, Key, Value, K> {
-        let k_end_inner_offset = self
-            .bucket(self.k_index.len())
-            .map(|bucket| bucket.len())
-            .unwrap_or(0);
-
         return KBucketTableIter {
             table: self,
-            k_offset: 0,
-            k_end_offset: self.k_index.len(),
-            k_inner_offset: 0,
-            k_end_inner_offset,
+            k_count: 0,
+            k_row_from: 0,
+            k_col_offset: 0,
+            k_max_count: self.count,
         };
     }
 
@@ -313,10 +312,10 @@ where
     Key: KBucketKey,
 {
     table: &'a KBucketTable<Key, Value, K>,
-    k_offset: usize,
-    k_inner_offset: usize,
-    k_end_offset: usize,
-    k_end_inner_offset: usize,
+    k_count: usize,
+    k_row_from: usize,
+    k_max_count: usize,
+    k_col_offset: usize,
 }
 
 impl<'a, Key, Value, const K: usize> Iterator for KBucketTableIter<'a, Key, Value, K>
@@ -326,24 +325,34 @@ where
     type Item = &'a (Key, Value);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.k_offset == self.k_end_offset && self.k_inner_offset == self.k_end_inner_offset {
-            return None;
+        loop {
+            if self.k_count == self.k_max_count {
+                return None;
+            }
+
+            let k_bucket_offset = match self.table.k_index[self.k_row_from] {
+                Some(k_bucket_offset) => k_bucket_offset,
+                None => {
+                    self.k_row_from += 1;
+                    self.k_col_offset = 0;
+                    continue;
+                }
+            };
+
+            let k_bucket = &self.table.buckets[k_bucket_offset];
+
+            //  In the bucket, iterate in MRU order
+            let item = &k_bucket.0[k_bucket.0.len() - self.k_col_offset - 1];
+
+            self.k_col_offset += 1;
+            self.k_count += 1;
+
+            if self.k_col_offset == k_bucket.0.len() {
+                self.k_col_offset = 0;
+                self.k_row_from += 1;
+            }
+
+            return Some(item);
         }
-
-        let k_bucket_offset = self.table.k_index[self.k_offset].expect("k-bucket not exists");
-
-        let k_bucket = &self.table.buckets[k_bucket_offset];
-
-        //  In the bucket, iterate in MRU order
-        let item = &k_bucket.0[k_bucket.0.len() - self.k_inner_offset - 1];
-
-        self.k_inner_offset += 1;
-
-        if self.k_inner_offset == k_bucket.0.len() {
-            self.k_inner_offset = 0;
-            self.k_offset += 1;
-        }
-
-        Some(item)
     }
 }

@@ -37,7 +37,7 @@ impl DriverTransport for TcpTransport {
         let mut ssl_acceptor_builder = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls())?;
 
         ssl_acceptor_builder.set_max_proto_version(Some(SslVersion::TLS1_3))?;
-        ssl_acceptor_builder.set_min_proto_version(Some(SslVersion::TLS1_3))?;
+        ssl_acceptor_builder.set_min_proto_version(Some(SslVersion::TLS1_1))?;
 
         ssl_acceptor_builder.set_certificate(&cert)?;
 
@@ -92,19 +92,23 @@ impl DriverTransport for TcpTransport {
         config.set_private_key(&pk)?;
 
         config.set_max_proto_version(Some(SslVersion::TLS1_3))?;
-        config.set_min_proto_version(Some(SslVersion::TLS1_3))?;
+        config.set_min_proto_version(Some(SslVersion::TLS1_1))?;
 
         config.set_custom_verify_callback(SslVerifyMode::PEER, |ssl| {
             let cert = ssl
                 .peer_certificate()
                 .ok_or(SslVerifyError::Invalid(SslAlert::CERTIFICATE_REQUIRED))?;
 
-            let cert = cert
-                .to_der()
-                .map_err(|_| SslVerifyError::Invalid(SslAlert::BAD_CERTIFICATE))?;
+            let cert = cert.to_der().map_err(|err| {
+                log::error!("{}", err);
+                SslVerifyError::Invalid(SslAlert::BAD_CERTIFICATE)
+            })?;
 
             let peer_id = rep2p_x509::verify(cert)
-                .map_err(|_| SslVerifyError::Invalid(SslAlert::BAD_CERTIFICATE))?
+                .map_err(|err| {
+                    log::error!("{}", err);
+                    SslVerifyError::Invalid(SslAlert::BAD_CERTIFICATE)
+                })?
                 .to_peer_id();
 
             log::trace!("ssl_client: verified peer={}", peer_id);
