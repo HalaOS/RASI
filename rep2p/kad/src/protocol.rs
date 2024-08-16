@@ -245,7 +245,7 @@ impl<'a> FindNode<'a> {
         let (stream, _) = self
             .state
             .switch
-            .connect_to(&raddr, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+            .connect(raddr, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
             .await?;
 
         stream.find_node(self.peer_id, 4096 * 1024).await

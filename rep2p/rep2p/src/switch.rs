@@ -81,6 +81,38 @@ impl ImmutableSwitch {
     }
 }
 
+/// Variant type used by [`connect`](Switch::connect) function.
+pub enum ConnectTo<'a> {
+    PeerIdRef(&'a PeerId),
+    MultiaddrRef(&'a Multiaddr),
+    PeerId(PeerId),
+    Multiaddr(Multiaddr),
+}
+
+impl<'a> From<&'a PeerId> for ConnectTo<'a> {
+    fn from(value: &'a PeerId) -> Self {
+        Self::PeerIdRef(value)
+    }
+}
+
+impl<'a> From<&'a Multiaddr> for ConnectTo<'a> {
+    fn from(value: &'a Multiaddr) -> Self {
+        Self::MultiaddrRef(value)
+    }
+}
+
+impl From<PeerId> for ConnectTo<'static> {
+    fn from(value: PeerId) -> Self {
+        Self::PeerId(value)
+    }
+}
+
+impl From<Multiaddr> for ConnectTo<'static> {
+    fn from(value: Multiaddr) -> Self {
+        Self::Multiaddr(value)
+    }
+}
+
 /// A builder to create the `Switch` instance.
 pub struct SwitchBuilder {
     ops: Result<ImmutableSwitch>,
@@ -732,31 +764,19 @@ impl Switch {
         &self.public_key
     }
 
-    /// Create a new stream to `peer_id` with provided `protos`.
-    pub async fn connect<I>(&self, peer_id: &PeerId, protos: I) -> Result<(Stream, String)>
+    /// Create a new stream to `target` with provided `protos`.
+    pub async fn connect<'a, C, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
     where
+        C: Into<ConnectTo<'a>>,
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        let mut conn = self.connect_peer(peer_id).await?;
-
-        let mut stream = conn.connect().await?;
-
-        let (protocol_id, _) = dialer_select_proto(&mut stream, protos, Version::V1)
-            .timeout(self.immutable.timeout)
-            .await
-            .ok_or(Error::Timeout)??;
-
-        Ok((stream, protocol_id.as_ref().to_owned()))
-    }
-
-    /// Create a new stream to `peer_id` with provided `protos`.
-    pub async fn connect_to<I>(&self, raddr: &Multiaddr, protos: I) -> Result<(Stream, String)>
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-    {
-        let mut conn = self.connect_peer_to(raddr).await?;
+        let mut conn = match target.into() {
+            ConnectTo::PeerIdRef(peer_id) => self.connect_peer(peer_id).await?,
+            ConnectTo::MultiaddrRef(raddr) => self.connect_peer_to(raddr).await?,
+            ConnectTo::PeerId(peer_id) => self.connect_peer(&peer_id).await?,
+            ConnectTo::Multiaddr(raddr) => self.connect_peer_to(&raddr).await?,
+        };
 
         let mut stream = conn.connect().await?;
 
