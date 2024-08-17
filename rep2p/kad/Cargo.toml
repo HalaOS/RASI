@@ -18,6 +18,7 @@ log = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
 unsigned-varint = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 quickcheck = { workspace = true }

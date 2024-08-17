@@ -15,6 +15,7 @@ pub use identity;
 #[allow(renamed_and_removed_lints)]
 mod proto;
 
+#[macro_export]
 macro_rules! driver_wrapper {
     ([$doc:expr]$ident:ident[$driver: path]) => {
         #[doc = $doc]
@@ -48,5 +49,3 @@ macro_rules! driver_wrapper {
         }
     };
 }
-
-pub(crate) use driver_wrapper;
