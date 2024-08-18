@@ -1,6 +1,6 @@
 //! This module provide a rep2p compatibable kad implementation.
 
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, num::NonZeroUsize, sync::Arc};
 
 use identity::PeerId;
 use rep2p::{multiaddr::Multiaddr, Switch};
@@ -9,7 +9,7 @@ use crate::{
     errors::{Error, Result},
     primitives::PeerInfo,
     route_table::{syscall::DriverKadRouteTable, KadRouteTable},
-    rpc::find_node::FindNode,
+    routing::{FindNode, Query, Router},
 };
 
 /// protocol name of libp2p kad.
@@ -19,6 +19,7 @@ pub const PROTOCOL_IPFS_LAN_KAD: &str = "/ipfs/lan/kad/1.0.0";
 /// A protocol stack than support libp2p kad network.
 #[derive(Clone)]
 pub struct KadSwitch {
+    concurrency: NonZeroUsize,
     /// underlying libp2p switch.
     pub(crate) switch: Switch,
     /// the kad route table implementation.
@@ -34,6 +35,7 @@ impl KadSwitch {
         R: DriverKadRouteTable + 'static,
     {
         Self {
+            concurrency: NonZeroUsize::new(3).unwrap(),
             switch: switch.clone(),
             route_table: Arc::new(KadRouteTable::from(route_table)),
         }
@@ -82,11 +84,21 @@ impl KadSwitch {
         Ok(self)
     }
 
+    /// Run the recursive query process.
+    pub async fn route<Q>(&self, query: Q) -> Result<(Q, Vec<PeerId>)>
+    where
+        Q: Query,
+    {
+        Router::new(self, query).route(self.concurrency).await
+    }
+
     /// Invoke a kad `FIND_NODE` process.
     pub async fn find_node(&self, peer_id: &PeerId) -> Result<Option<PeerInfo>> {
-        let find_node = FindNode::new(self, peer_id).await;
+        let (find_node, _) = self.route(FindNode::new(&self.switch, peer_id)).await?;
 
-        find_node.invoke().await
+        let peer_info = find_node.target.lock().await.take();
+
+        Ok(peer_info)
     }
 }
 
@@ -116,7 +128,7 @@ mod tests {
         let switch = Switch::new("kad-test")
             .transport(QuicTransport)
             .transport(TcpTransport)
-            .protos([PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+            // .protos([PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
             .create()
             .await
             .unwrap();
@@ -132,13 +144,16 @@ mod tests {
 
         let kad = KadSwitch::new(&switch, KBucketRouteTable::new(switch.local_id()))
             .with_seeds([
-                "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                // "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
             ])
             .await
             .unwrap();
 
         let peer_id = PeerId::random();
 
-        kad.find_node(&peer_id).await.unwrap();
+        let peer_info = kad.find_node(&peer_id).await.unwrap();
+
+        log::info!("find_node: {}, {:?}", peer_id, peer_info);
     }
 }

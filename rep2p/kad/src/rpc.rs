@@ -11,8 +11,9 @@ use crate::{
     proto::rpc,
 };
 
-/// An extension to add kad rpc functions to [`AsyncWrite`]
-pub trait KadRpc: AsyncWrite + AsyncRead + Unpin {
+#[allow(unused)]
+/// An extension to add kad rpc functions to [`AsyncWrite`] + [`AsyncRead`]
+pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
     fn find_node(
         mut self,
         peer_id: &PeerId,
@@ -77,5 +78,3 @@ pub trait KadRpc: AsyncWrite + AsyncRead + Unpin {
 }
 
 impl<T> KadRpc for T where T: AsyncWrite + AsyncRead + Unpin {}
-
-pub(crate) mod find_node;

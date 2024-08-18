@@ -10,7 +10,7 @@ pub mod syscall {
     use async_trait::async_trait;
     use identity::PeerId;
 
-    use crate::primitives::PeerInfo;
+    use crate::primitives::{Key, PeerInfo};
 
     /// A trait that provides functions to access peer informations.
     #[async_trait]
@@ -24,7 +24,7 @@ pub mod syscall {
         async fn remove(&self, id: &PeerId) -> std::io::Result<()>;
 
         /// Get the about up to [`K`](DriverKadRouteTable::k) closest nodes's [`PeerInfo`]
-        async fn closest(&self, id: &PeerId) -> std::io::Result<Vec<PeerInfo>>;
+        async fn closest(&self, id: &Key) -> std::io::Result<Vec<PeerInfo>>;
     }
 }
 
@@ -62,12 +62,12 @@ impl syscall::DriverKadRouteTable for KBucketRouteTable {
     }
 
     /// Get the about up to [`K`](DriverKadRouteTable::k) closest nodes's [`PeerInfo`]
-    async fn closest(&self, id: &PeerId) -> std::io::Result<Vec<PeerInfo>> {
+    async fn closest(&self, id: &Key) -> std::io::Result<Vec<PeerInfo>> {
         Ok(self
             .0
             .lock()
             .await
-            .closest_k(&Key::from(id))
+            .closest_k(id)
             .map(|(_, info)| info.clone())
             .collect())
     }

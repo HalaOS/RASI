@@ -19,11 +19,11 @@ futures = { workspace = true }
 thiserror = { workspace = true }
 unsigned-varint = { workspace = true }
 async-trait = { workspace = true }
+rasi = { workspace = true, features = ["task-futures"] }
 
 [dev-dependencies]
 quickcheck = { workspace = true }
 futures-test = { workspace = true }
-rasi = { workspace = true, features = ["task-futures"] }
 rasi-mio = { workspace = true }
 pretty_env_logger = { workspace = true }
 rep2p-tcp = { workspace = true }
