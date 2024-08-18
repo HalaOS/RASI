@@ -3,6 +3,7 @@ use std::future::Future;
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use identity::PeerId;
 use protobuf::Message;
+
 use rep2p::multiaddr::Multiaddr;
 
 use crate::{

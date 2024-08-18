@@ -2,6 +2,7 @@ use std::{
     io::{Read, Write},
     ops::Deref,
     task::Poll,
+    time::Duration,
 };
 
 use mio::{event::Source, Interest, Token};
@@ -336,20 +337,31 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         &self,
         raddrs: &[std::net::SocketAddr],
     ) -> std::io::Result<rasi::net::TcpStream> {
-        let std_socket = std::net::TcpStream::connect(raddrs)?;
+        let mut last_error = None;
 
-        std_socket.set_nonblocking(true)?;
+        for raddr in raddrs {
+            match std::net::TcpStream::connect_timeout(raddr, Duration::from_secs(5)) {
+                Ok(std_socket) => {
+                    std_socket.set_nonblocking(true)?;
 
-        let mut socket = mio::net::TcpStream::from_std(std_socket);
-        let token = Token::next();
+                    let mut socket = mio::net::TcpStream::from_std(std_socket);
+                    let token = Token::next();
 
-        global_reactor().register(
-            &mut socket,
-            token,
-            Interest::READABLE.add(Interest::WRITABLE),
-        )?;
+                    global_reactor().register(
+                        &mut socket,
+                        token,
+                        Interest::READABLE.add(Interest::WRITABLE),
+                    )?;
 
-        Ok(MioTcpStream { token, socket }.into())
+                    return Ok(MioTcpStream { token, socket }.into());
+                }
+                Err(err) => {
+                    last_error = Some(err);
+                }
+            }
+        }
+
+        Err(last_error.unwrap())
     }
 
     fn udp_bind(&self, laddrs: &[std::net::SocketAddr]) -> std::io::Result<rasi::net::UdpSocket> {

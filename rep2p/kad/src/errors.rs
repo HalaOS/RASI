@@ -28,6 +28,9 @@ pub enum Error {
 
     #[error(transparent)]
     MultiaddrError(#[from] multiaddr::Error),
+
+    #[error("Rpc timeout.")]
+    Timeout,
 }
 
 /// Result type returns by this module functionss.

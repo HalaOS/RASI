@@ -4,7 +4,7 @@ use std::{
     future::Future,
     num::NonZeroUsize,
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use futures::{
@@ -13,7 +13,7 @@ use futures::{
     SinkExt, StreamExt,
 };
 use identity::PeerId;
-use rasi::task::spawn_ok;
+use rasi::{task::spawn_ok, timer::TimeoutExt};
 use rep2p::{transport::Stream, Switch};
 
 use crate::{
@@ -280,21 +280,35 @@ where
     }
 }
 
-async fn connect(switch: Switch, peer_info: &PeerInfo) -> Option<Stream> {
+async fn connect(switch: Switch, peer_info: &PeerInfo, timeout: Duration) -> Option<Stream> {
     for raddr in &peer_info.addrs {
-        log::trace!("quering, id={}, raddr={}", peer_info.id, raddr);
+        log::trace!(
+            "quering, id={}, raddr={}, timeout={:?}",
+            peer_info.id,
+            raddr,
+            timeout
+        );
 
         match switch
             .connect(raddr, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+            .timeout(timeout)
             .await
         {
-            Ok((stream, _)) => return Some(stream),
-            Err(err) => {
+            Some(Ok((stream, _))) => return Some(stream),
+            Some(Err(err)) => {
                 log::error!(
                     "connect to peer, id={}, raddr={}, err={}",
                     peer_info.id,
                     raddr,
                     err
+                );
+            }
+            _ => {
+                log::error!(
+                    "connect to peer, id={}, raddr={}, err='timeout({:?})'",
+                    peer_info.id,
+                    raddr,
+                    timeout
                 );
             }
         }
@@ -308,17 +322,30 @@ pub(crate) struct FindNode<'a> {
     switch: &'a Switch,
     peer_id: &'a PeerId,
     key: Key,
-    pub(crate) target: Arc<Mutex<Option<PeerInfo>>>,
+    target: Arc<Mutex<Option<PeerInfo>>>,
+    timeout: Duration,
+    max_packet_len: usize,
 }
 
 impl<'a> FindNode<'a> {
-    pub(crate) fn new(switch: &'a Switch, peer_id: &'a PeerId) -> Self {
+    pub(crate) fn new(
+        switch: &'a Switch,
+        max_packet_len: usize,
+        peer_id: &'a PeerId,
+        timeout: Duration,
+    ) -> Self {
         Self {
+            max_packet_len,
             key: Key::from(peer_id),
             switch,
             peer_id,
             target: Default::default(),
+            timeout,
         }
+    }
+
+    pub(crate) async fn into_peer_info(self) -> Option<PeerInfo> {
+        self.target.lock().await.take()
     }
 }
 
@@ -337,11 +364,17 @@ impl<'a> Query for FindNode<'a> {
         let switch = self.switch.clone();
         let peer_id = self.peer_id.clone();
         let target = self.target.clone();
+        let timeout = self.timeout;
+        let max_packet_len = self.max_packet_len;
 
         async move {
-            if let Some(stream) = connect(switch, &peer_info).await {
-                match stream.find_node(&peer_id, 1024 * 1024).await {
-                    Ok(candidates) => {
+            if let Some(stream) = connect(switch, &peer_info, timeout).await {
+                match stream
+                    .find_node(&peer_id, max_packet_len)
+                    .timeout(timeout)
+                    .await
+                {
+                    Some(Ok(candidates)) => {
                         log::trace!(
                             "query={}, target={}, resp={}",
                             peer_info.id,
@@ -357,8 +390,17 @@ impl<'a> Query for FindNode<'a> {
 
                         return Recursive::Next(peer_info.id, candidates);
                     }
-                    Err(err) => {
+                    Some(Err(err)) => {
                         log::error!("query={}, target={}, err={}", peer_info.id, peer_id, err);
+                        return Recursive::Removed(peer_info.id);
+                    }
+                    _ => {
+                        log::error!(
+                            "query={}, target={}, err='timeout({:?})'",
+                            peer_info.id,
+                            peer_id,
+                            timeout
+                        );
                         return Recursive::Removed(peer_info.id);
                     }
                 }

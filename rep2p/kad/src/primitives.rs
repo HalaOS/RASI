@@ -107,7 +107,7 @@ impl KBucketDistance for Distance {
 
 impl Display for Distance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#x}", self.0)
+        write!(f, "{:#066x}", self.0)
     }
 }
 

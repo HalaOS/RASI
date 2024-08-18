@@ -12,4 +12,4 @@ mod rpc;
 
 pub mod errors;
 
-pub mod routing;
+mod routing;

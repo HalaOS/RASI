@@ -1,13 +1,14 @@
 //! This module provide a rep2p compatibable kad implementation.
 
-use std::{collections::HashMap, fmt::Debug, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use identity::PeerId;
 use rep2p::{multiaddr::Multiaddr, Switch};
 
 use crate::{
     errors::{Error, Result},
-    primitives::PeerInfo,
+    kbucket::KBucketKey,
+    primitives::{Key, PeerInfo},
     route_table::{syscall::DriverKadRouteTable, KadRouteTable},
     routing::{FindNode, Query, Router},
 };
@@ -19,6 +20,11 @@ pub const PROTOCOL_IPFS_LAN_KAD: &str = "/ipfs/lan/kad/1.0.0";
 /// A protocol stack than support libp2p kad network.
 #[derive(Clone)]
 pub struct KadSwitch {
+    /// The maximum length of kad rpc packet.
+    pub(crate) max_packet_len: usize,
+    /// timeout intervals of kad RPCs.
+    pub(crate) timeout: Duration,
+    /// The limits of concurrency of node and value lookups.
     concurrency: NonZeroUsize,
     /// underlying libp2p switch.
     pub(crate) switch: Switch,
@@ -35,7 +41,9 @@ impl KadSwitch {
         R: DriverKadRouteTable + 'static,
     {
         Self {
-            concurrency: NonZeroUsize::new(3).unwrap(),
+            max_packet_len: 1024 * 1024,
+            timeout: Duration::from_secs(5),
+            concurrency: NonZeroUsize::new(10).unwrap(),
             switch: switch.clone(),
             route_table: Arc::new(KadRouteTable::from(route_table)),
         }
@@ -94,17 +102,31 @@ impl KadSwitch {
 
     /// Invoke a kad `FIND_NODE` process.
     pub async fn find_node(&self, peer_id: &PeerId) -> Result<Option<PeerInfo>> {
-        let (find_node, _) = self.route(FindNode::new(&self.switch, peer_id)).await?;
+        let (find_node, closest) = self
+            .route(FindNode::new(
+                &self.switch,
+                self.max_packet_len,
+                peer_id,
+                self.timeout,
+            ))
+            .await?;
 
-        let peer_info = find_node.target.lock().await.take();
+        let target_key = Key::from(peer_id);
 
-        Ok(peer_info)
+        let closest = closest
+            .iter()
+            .map(|id| Key::from(id).distance(&target_key).to_string())
+            .collect::<Vec<_>>();
+
+        log::trace!("find_node id={}, closest={:?}", peer_id, closest);
+
+        Ok(find_node.into_peer_info().await)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
+    use std::{str::FromStr, sync::Once};
 
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
     use rep2p::Switch;
@@ -119,7 +141,7 @@ mod tests {
         static INIT: Once = Once::new();
 
         INIT.call_once(|| {
-            pretty_env_logger::init();
+            _ = pretty_env_logger::try_init_timed();
 
             register_mio_network();
             register_mio_timer();
@@ -151,6 +173,25 @@ mod tests {
             .unwrap();
 
         let peer_id = PeerId::random();
+
+        let peer_info = kad.find_node(&peer_id).await.unwrap();
+
+        log::info!("find_node: {}, {:?}", peer_id, peer_info);
+    }
+
+    #[futures_test::test]
+    async fn find_node_1() {
+        let switch = init().await;
+
+        let kad = KadSwitch::new(&switch, KBucketRouteTable::new(switch.local_id()))
+            .with_seeds([
+                // "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
+            ])
+            .await
+            .unwrap();
+
+        let peer_id = PeerId::from_str("QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ").unwrap();
 
         let peer_info = kad.find_node(&peer_id).await.unwrap();
 
