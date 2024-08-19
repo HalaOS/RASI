@@ -23,9 +23,6 @@ use crate::{
     Error, Result,
 };
 
-#[cfg(feature = "pprof")]
-use crate::pprof::{syscall::DriverProfiler, DefaultProfiler, Profiler};
-
 /// protocol name of libp2p identity
 pub const PROTOCOL_IPFS_ID: &str = "/ipfs/id/1.0.0";
 
@@ -37,8 +34,10 @@ pub const PROTOCOL_IPFS_PING: &str = "/ipfs/ping/1.0.0";
 
 /// immutable context data for one switch.
 struct ImmutableSwitch {
-    /// The maximun length of queue for incoming streams.
-    max_incoming_queue_size: usize,
+    /// The maximun size of active connections pool size.
+    max_conn_pool_size: usize,
+    /// The maximun length of inbound streams queue.
+    max_inbound_length: usize,
     /// addresses that this switch is bound to.
     laddrs: Vec<Multiaddr>,
     /// The value of rpc timeout.
@@ -56,15 +55,13 @@ struct ImmutableSwitch {
     keystore: KeyStore,
     /// Peer book for this switch.
     peer_book: PeerBook,
-    #[cfg(feature = "pprof")]
-    /// The profiler server
-    profiler: Profiler,
 }
 
 impl ImmutableSwitch {
     fn new(agent_version: String) -> Self {
         Self {
-            max_incoming_queue_size: 200,
+            max_conn_pool_size: 20,
+            max_inbound_length: 200,
             agent_version,
             timeout: Duration::from_secs(10),
             protos: [PROTOCOL_IPFS_ID, PROTOCOL_IPFS_PUSH_ID, PROTOCOL_IPFS_PING]
@@ -75,7 +72,6 @@ impl ImmutableSwitch {
             transports: vec![],
             keystore: MemoryKeyStore::random().into(),
             peer_book: MemoryPeerBook::default().into(),
-            profiler: DefaultProfiler::default().into(),
             laddrs: vec![],
         }
     }
@@ -125,10 +121,19 @@ pub struct SwitchBuilder {
 }
 
 impl SwitchBuilder {
-    /// Set the `max_incoming_queue_size`, the default value is `200`
-    pub fn max_incoming_queue_size(self, value: usize) -> Self {
+    /// Set the `max_conn_pool_size`, the default value is `20`
+    pub fn max_conn_pool_size(self, value: usize) -> Self {
         self.and_then(|mut cfg| {
-            cfg.max_incoming_queue_size = value;
+            cfg.max_conn_pool_size = value;
+
+            Ok(cfg)
+        })
+    }
+
+    /// Set the `max_inbound_length`, the default value is `200`
+    pub fn max_inbound_length(self, value: usize) -> Self {
+        self.and_then(|mut cfg| {
+            cfg.max_inbound_length = value;
 
             Ok(cfg)
         })
@@ -152,17 +157,6 @@ impl SwitchBuilder {
     {
         self.and_then(|mut cfg| {
             cfg.peer_book = value.into();
-
-            Ok(cfg)
-        })
-    }
-    /// Replace default [`DefaultProfiler`].
-    pub fn profiler<R>(self, value: R) -> Self
-    where
-        R: DriverProfiler + 'static,
-    {
-        self.and_then(|mut cfg| {
-            cfg.profiler = value.into();
 
             Ok(cfg)
         })
@@ -235,8 +229,8 @@ impl SwitchBuilder {
             inner: Arc::new(InnerSwitch {
                 local_peer_id: public_key.to_peer_id(),
                 public_key,
+                mutable: Mutex::new(MutableSwitch::new(ops.max_conn_pool_size)),
                 immutable: ops,
-                mutable: Mutex::new(MutableSwitch::new()),
                 event_map: KeyWaitMap::new(),
             }),
         };
@@ -261,6 +255,7 @@ impl SwitchBuilder {
 /// An in-memory connection pool.
 #[derive(Default)]
 struct ConnPool {
+    max_pool_size: usize,
     /// mapping id => connection.
     conns: HashMap<String, Connection>,
     /// mapping peer_id to conn id.
@@ -268,8 +263,36 @@ struct ConnPool {
 }
 
 impl ConnPool {
+    fn conn_pool_gc(&mut self) {
+        log::trace!("conn_pool_gc, size={}", self.conns.len());
+
+        if self.conns.len() < self.max_pool_size {
+            return;
+        }
+
+        let mut removed = vec![];
+
+        for (_, conn) in &self.conns {
+            if conn.actives() == 0 {
+                removed.push(conn.clone());
+            }
+        }
+
+        log::trace!(
+            "conn_pool_gc, size={}, removed={}",
+            self.conns.len(),
+            removed.len()
+        );
+
+        for conn in removed {
+            self.remove(&conn);
+        }
+    }
+
     /// Put a new connecton instance into the pool, and update indexers.
     fn put(&mut self, conn: Connection) {
+        self.conn_pool_gc();
+
         let peer_id = conn.public_key().to_peer_id();
 
         let raddr = conn
@@ -358,8 +381,14 @@ struct MutableSwitch {
 }
 
 impl MutableSwitch {
-    fn new() -> Self {
-        Self::default()
+    fn new(max_pool_size: usize) -> Self {
+        Self {
+            conn_pool: ConnPool {
+                max_pool_size,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
     }
 }
 
@@ -506,10 +535,10 @@ impl Switch {
             _ => {
                 let mut mutable = self.mutable.lock().await;
 
-                if mutable.incoming_streams.len() > self.immutable.max_incoming_queue_size {
+                if mutable.incoming_streams.len() > self.immutable.max_inbound_length {
                     log::warn!(
                         "The maximun incoming queue size is reached({})",
-                        self.immutable.max_incoming_queue_size
+                        self.immutable.max_inbound_length
                     );
 
                     return Ok(());
@@ -862,13 +891,6 @@ impl Switch {
     /// Get associated keystore instance.
     pub fn keystore(&self) -> &KeyStore {
         &self.immutable.keystore
-    }
-
-    /// Returns the associated [`Profiler`] instance.
-    #[cfg(feature = "pprof")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "pprof")))]
-    pub fn profiler(&self) -> &Profiler {
-        &self.immutable.profiler
     }
 
     /// Get this switch's public key.

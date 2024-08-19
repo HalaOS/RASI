@@ -1,7 +1,7 @@
 use std::io::{self, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
@@ -218,6 +218,7 @@ struct P2pTcpConn {
     conn: YamuxConn,
     is_closed: Arc<AtomicBool>,
     id: String,
+    counter: Arc<AtomicUsize>,
 }
 
 impl P2pTcpConn {
@@ -249,6 +250,7 @@ impl P2pTcpConn {
             public_key,
             is_closed: Default::default(),
             id: Uuid::new_v4().to_string(),
+            counter: Default::default(),
         })
     }
 }
@@ -282,6 +284,7 @@ impl DriverConnection for P2pTcpConn {
             self.public_key.clone(),
             self.laddr.clone(),
             self.raddr.clone(),
+            self.counter.clone(),
         )
         .into())
     }
@@ -294,6 +297,7 @@ impl DriverConnection for P2pTcpConn {
             self.public_key.clone(),
             self.laddr.clone(),
             self.raddr.clone(),
+            self.counter.clone(),
         )
         .into())
     }
@@ -320,6 +324,10 @@ impl DriverConnection for P2pTcpConn {
     fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
+
+    fn actives(&self) -> usize {
+        self.counter.load(Ordering::Relaxed)
+    }
 }
 
 struct P2pTcpStream {
@@ -328,11 +336,27 @@ struct P2pTcpStream {
     public_key: PublicKey,
     laddr: Multiaddr,
     raddr: Multiaddr,
+    counter: Arc<AtomicUsize>,
+}
+
+impl Drop for P2pTcpStream {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl P2pTcpStream {
-    fn new(stream: YamuxStream, public_key: PublicKey, laddr: Multiaddr, raddr: Multiaddr) -> Self {
+    fn new(
+        stream: YamuxStream,
+        public_key: PublicKey,
+        laddr: Multiaddr,
+        raddr: Multiaddr,
+        counter: Arc<AtomicUsize>,
+    ) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+
         Self {
+            counter,
             id: Uuid::new_v4().to_string(),
             stream,
             public_key,

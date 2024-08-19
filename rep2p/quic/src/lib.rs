@@ -3,7 +3,7 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     task::{Context, Poll},
@@ -205,6 +205,7 @@ struct QuicP2pConn {
     public_key: PublicKey,
     is_closed: Arc<AtomicBool>,
     id: String,
+    counter: Arc<AtomicUsize>,
 }
 
 impl QuicP2pConn {
@@ -224,6 +225,7 @@ impl QuicP2pConn {
             conn,
             public_key,
             is_closed: Default::default(),
+            counter: Default::default(),
         }
     }
 }
@@ -258,6 +260,7 @@ impl DriverConnection for QuicP2pConn {
             self.public_key.clone(),
             self.laddr.clone(),
             self.raddr.clone(),
+            self.counter.clone(),
         )
         .into())
     }
@@ -270,6 +273,7 @@ impl DriverConnection for QuicP2pConn {
             self.public_key.clone(),
             self.laddr.clone(),
             self.raddr.clone(),
+            self.counter.clone(),
         )
         .into())
     }
@@ -296,6 +300,10 @@ impl DriverConnection for QuicP2pConn {
     fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
+
+    fn actives(&self) -> usize {
+        self.counter.load(Ordering::Relaxed)
+    }
 }
 
 struct QuicP2pStream {
@@ -304,11 +312,27 @@ struct QuicP2pStream {
     public_key: PublicKey,
     laddr: Multiaddr,
     raddr: Multiaddr,
+    counter: Arc<AtomicUsize>,
+}
+
+impl Drop for QuicP2pStream {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl QuicP2pStream {
-    fn new(stream: QuicStream, public_key: PublicKey, laddr: Multiaddr, raddr: Multiaddr) -> Self {
+    fn new(
+        stream: QuicStream,
+        public_key: PublicKey,
+        laddr: Multiaddr,
+        raddr: Multiaddr,
+        counter: Arc<AtomicUsize>,
+    ) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+
         Self {
+            counter,
             id: format!("quic({:?},{})", stream.scid(), stream.id()),
             stream,
             public_key,

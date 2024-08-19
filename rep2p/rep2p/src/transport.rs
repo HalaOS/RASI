@@ -72,6 +72,9 @@ pub mod syscall {
 
         /// Creates a new independently owned handle to the underlying socket.
         fn clone(&self) -> Connection;
+
+        /// Returns the count of active stream.
+        fn actives(&self) -> usize;
     }
 
     pub trait DriverStream: Sync + Send + Unpin {
