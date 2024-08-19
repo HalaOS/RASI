@@ -213,7 +213,7 @@ mod tests {
         });
 
         let switch = Switch::new("kad-test")
-            .transport(QuicTransport)
+            .transport(QuicTransport::default())
             .transport(TcpTransport)
             // .protos([PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
             .create()
@@ -231,7 +231,7 @@ mod tests {
 
         let kad = KadSwitch::new(&switch, KBucketRouteTable::new(switch.local_id()))
             .with_seeds([
-                // "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
             ])
             .await
@@ -257,7 +257,7 @@ mod tests {
             .unwrap();
 
         let peer_id =
-            PeerId::from_str("12D3KooWEAaYF2dNt64E1KGypHhDjTUzKv7W1Pn71GdCKpLN6ZQb").unwrap();
+            PeerId::from_str("12D3KooWBm8hvR8xP8bFZeuPyipNRzEexVxhxBmvMunDx2PJwERh").unwrap();
 
         let peer_info = kad.find_node(&peer_id).await.unwrap();
 

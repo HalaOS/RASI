@@ -14,6 +14,7 @@ rasi = { workspace = true }
 dashmap = { workspace = true }
 boxcar = { workspace = true }
 mio = { workspace = true }
+libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 workspace = true

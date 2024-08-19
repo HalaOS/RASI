@@ -75,7 +75,7 @@ pub mod syscall {
         /// tcp connection may not be actually established, and the user
         /// needs to manually call the poll_ready method to wait for the
         /// connection to be established.
-        fn tcp_connect(&self, raddrs: &[SocketAddr]) -> Result<TcpStream>;
+        fn tcp_connect(&self, raddrs: &SocketAddr) -> Result<TcpStream>;
 
         /// Create new `UdpSocket` which will be bound to the specified `laddrs`
         fn udp_bind(&self, laddrs: &[SocketAddr]) -> Result<UdpSocket>;
@@ -364,14 +364,26 @@ impl TcpStream {
         raddrs: R,
         driver: &dyn syscall::Driver,
     ) -> Result<Self> {
-        let raddrs = raddrs.to_socket_addrs()?.collect::<Vec<_>>();
+        let mut last_error = None;
 
-        let stream = driver.tcp_connect(&raddrs)?;
+        for raddr in raddrs.to_socket_addrs()?.collect::<Vec<_>>() {
+            match driver.tcp_connect(&raddr) {
+                Ok(stream) => {
+                    // Wait for the asynchronously connecting to complete
+                    match poll_fn(|cx| stream.poll_ready(cx)).await {
+                        Ok(()) => {
+                            return Ok(stream);
+                        }
+                        Err(err) => {
+                            last_error = Some(err);
+                        }
+                    }
+                }
+                Err(err) => last_error = Some(err),
+            }
+        }
 
-        // Wait for the asynchronously connecting to complete
-        poll_fn(|cx| stream.poll_ready(cx)).await?;
-
-        Ok(stream)
+        Err(last_error.unwrap())
     }
 }
 

@@ -1,8 +1,7 @@
 use std::{
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
     ops::Deref,
     task::Poll,
-    time::Duration,
 };
 
 use mio::{event::Source, Interest, Token};
@@ -140,8 +139,27 @@ impl rasi::net::syscall::DriverTcpStream for MioTcpStream {
         })
     }
 
-    fn poll_ready(&self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_ready(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+        would_block(self.token, cx.waker().clone(), Interest::WRITABLE, || {
+            if let Err(err) = self.deref().take_error() {
+                return Err(err);
+            }
+
+            match self.deref().peer_addr() {
+                Ok(_) => {
+                    return Ok(());
+                }
+                Err(err)
+                    if err.kind() == ErrorKind::NotConnected
+                        || err.raw_os_error() == Some(libc::EINPROGRESS) =>
+                {
+                    return Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, ""));
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            }
+        })
     }
 }
 
@@ -333,35 +351,18 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         Ok(MioTcpListener { token, socket }.into())
     }
 
-    fn tcp_connect(
-        &self,
-        raddrs: &[std::net::SocketAddr],
-    ) -> std::io::Result<rasi::net::TcpStream> {
-        let mut last_error = None;
+    fn tcp_connect(&self, raddr: &std::net::SocketAddr) -> std::io::Result<rasi::net::TcpStream> {
+        let mut socket = mio::net::TcpStream::connect(raddr.clone())?;
 
-        for raddr in raddrs {
-            match std::net::TcpStream::connect_timeout(raddr, Duration::from_secs(2)) {
-                Ok(std_socket) => {
-                    std_socket.set_nonblocking(true)?;
+        let token = Token::next();
 
-                    let mut socket = mio::net::TcpStream::from_std(std_socket);
-                    let token = Token::next();
+        global_reactor().register(
+            &mut socket,
+            token,
+            Interest::READABLE.add(Interest::WRITABLE),
+        )?;
 
-                    global_reactor().register(
-                        &mut socket,
-                        token,
-                        Interest::READABLE.add(Interest::WRITABLE),
-                    )?;
-
-                    return Ok(MioTcpStream { token, socket }.into());
-                }
-                Err(err) => {
-                    last_error = Some(err);
-                }
-            }
-        }
-
-        Err(last_error.unwrap())
+        return Ok(MioTcpStream { token, socket }.into());
     }
 
     fn udp_bind(&self, laddrs: &[std::net::SocketAddr]) -> std::io::Result<rasi::net::UdpSocket> {

@@ -7,6 +7,7 @@ use std::{
         Arc,
     },
     task::{Context, Poll},
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -32,7 +33,7 @@ use rep2p::{
     Switch,
 };
 
-async fn create_quic_config(host_key: &KeyStore) -> io::Result<Config> {
+async fn create_quic_config(host_key: &KeyStore, timeout: Duration) -> io::Result<Config> {
     let (cert, pk) = rep2p_x509::generate(host_key).await?;
 
     let cert = X509::from_der(&cert)?;
@@ -80,7 +81,7 @@ async fn create_quic_config(host_key: &KeyStore) -> io::Result<Config> {
     config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
-    config.set_max_idle_timeout(2000);
+    config.set_max_idle_timeout(timeout.as_millis() as u64);
 
     config.verify_peer(true);
 
@@ -94,12 +95,18 @@ async fn create_quic_config(host_key: &KeyStore) -> io::Result<Config> {
 }
 
 /// A libp2p transport backed quic protocol.
-pub struct QuicTransport;
+pub struct QuicTransport(pub Duration);
+
+impl Default for QuicTransport {
+    fn default() -> Self {
+        Self(Duration::from_secs(2))
+    }
+}
 
 #[async_trait]
 impl DriverTransport for QuicTransport {
     async fn bind(&self, laddr: &Multiaddr, switch: Switch) -> Result<Listener> {
-        let quic_config = create_quic_config(switch.keystore()).await?;
+        let quic_config = create_quic_config(switch.keystore(), self.0).await?;
 
         let laddrs = laddr.to_sockaddr()?;
 
@@ -112,7 +119,7 @@ impl DriverTransport for QuicTransport {
 
     /// Connect to peer with remote peer [`raddr`](Multiaddr).
     async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection> {
-        let mut quic_config = create_quic_config(switch.keystore()).await?;
+        let mut quic_config = create_quic_config(switch.keystore(), self.0).await?;
 
         let raddr = raddr.to_sockaddr()?;
 
@@ -406,7 +413,7 @@ mod tests {
         async fn create_switch(&self) -> Result<SwitchBuilder> {
             Ok(Switch::new("test")
                 .bind("/ip4/127.0.0.1/udp/0/quic-v1".parse()?)
-                .transport(QuicTransport))
+                .transport(QuicTransport::default()))
         }
     }
 
