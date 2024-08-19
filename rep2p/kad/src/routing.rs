@@ -375,7 +375,7 @@ impl<'a> Query for FindNode<'a> {
         async move {
             if let Some(stream) = connect(switch, &peer_info, timeout).await {
                 match stream
-                    .find_node(&peer_id, max_packet_len)
+                    .kad_find_node(&peer_id, max_packet_len)
                     .timeout(timeout)
                     .await
                 {

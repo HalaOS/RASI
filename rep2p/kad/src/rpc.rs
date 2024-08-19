@@ -14,19 +14,15 @@ use crate::{
 #[allow(unused)]
 /// An extension to add kad rpc functions to [`AsyncWrite`] + [`AsyncRead`]
 pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
-    fn find_node(
+    /// Invoke a libp2p kad rpc call.
+    fn kad_rpc_call(
         mut self,
-        peer_id: &PeerId,
+        message: rpc::Message,
         max_recv_len: usize,
-    ) -> impl Future<Output = Result<Vec<PeerInfo>>>
+    ) -> impl Future<Output = Result<rpc::Message>>
     where
         Self: Sized,
     {
-        let mut message = rpc::Message::new();
-
-        message.type_ = rpc::message::MessageType::FIND_NODE.into();
-        message.key = peer_id.to_bytes();
-
         async move {
             let buf = message.write_to_bytes()?;
 
@@ -49,12 +45,26 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
 
             let message = rpc::Message::parse_from_bytes(&buf)?;
 
-            if message.type_ != rpc::message::MessageType::FIND_NODE.into() {
-                return Err(Error::InvalidFindNodeResponse(format!(
-                    "{:?}",
-                    message.type_
-                )));
-            }
+            Ok(message)
+        }
+    }
+
+    /// invoke find_node call.
+    fn kad_find_node(
+        mut self,
+        peer_id: &PeerId,
+        max_recv_len: usize,
+    ) -> impl Future<Output = Result<Vec<PeerInfo>>>
+    where
+        Self: Sized,
+    {
+        let mut message = rpc::Message::new();
+
+        message.type_ = rpc::message::MessageType::FIND_NODE.into();
+        message.key = peer_id.to_bytes();
+
+        async move {
+            let message = self.kad_rpc_call(message, max_recv_len).await?;
 
             let mut peers = vec![];
 
