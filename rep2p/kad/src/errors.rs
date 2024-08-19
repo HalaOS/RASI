@@ -31,7 +31,19 @@ pub enum Error {
 
     #[error("Rpc timeout.")]
     Timeout,
+
+    #[error("{0}")]
+    Other(String),
 }
 
 /// Result type returns by this module functionss.
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for std::io::Error {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::IoErr(err) => err,
+            err => std::io::Error::new(std::io::ErrorKind::Other, err),
+        }
+    }
+}

@@ -14,7 +14,7 @@ pub mod syscall {
 
     /// A trait that provides functions to access peer informations.
     #[async_trait]
-    pub trait DriverKadRouteTable {
+    pub trait DriverKadRouteTable: Sync + Send {
         /// Returns the replication parameter(`k`).
         fn const_k(&self) -> usize;
         /// insert new peer informations.

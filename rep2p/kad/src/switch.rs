@@ -2,14 +2,28 @@
 
 use std::{collections::HashMap, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
+use futures::{
+    channel::mpsc::{channel, Receiver, Sender},
+    SinkExt,
+};
 use identity::PeerId;
-use rep2p::{book::PeerInfo, multiaddr::Multiaddr, Switch};
+use rep2p::{
+    book::PeerInfo,
+    multiaddr::Multiaddr,
+    serve::{
+        syscall::{DriverProtocol, DriverProtocolHandler},
+        ProtocolHandler,
+    },
+    transport::Stream,
+    Switch,
+};
 
 use crate::{
     errors::{Error, Result},
     kbucket::KBucketKey,
     primitives::Key,
-    route_table::{syscall::DriverKadRouteTable, KadRouteTable},
+    route_table::{syscall::DriverKadRouteTable, KBucketRouteTable, KadRouteTable},
     routing::{FindNode, Query, Router},
 };
 
@@ -123,6 +137,54 @@ impl KadSwitch {
         log::trace!("find_node id={}, closest={:?}", peer_id, closest);
 
         Ok(find_node.into_peer_info().await)
+    }
+}
+
+pub struct KBucketRouteTableProtocol(Vec<Multiaddr>, Sender<KadSwitch>);
+
+impl KBucketRouteTableProtocol {
+    pub fn new<S, E>(seeds: S) -> Result<(Self, Receiver<KadSwitch>)>
+    where
+        S: IntoIterator,
+        S::Item: TryInto<Multiaddr, Error = E>,
+        E: Debug,
+    {
+        let seeds = seeds
+            .into_iter()
+            .map(|item| item.try_into())
+            .collect::<std::result::Result<Vec<Multiaddr>, E>>()
+            .map_err(|err| Error::Other(format!("{:?}", err)))?;
+
+        let (sender, receiver) = channel(0);
+
+        Ok((Self(seeds, sender), receiver))
+    }
+}
+
+#[async_trait]
+impl DriverProtocol for KBucketRouteTableProtocol {
+    /// Returns protocol display name.
+    fn protos(&self) -> &'static [&'static str] {
+        &[PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD]
+    }
+
+    async fn create(&self, switch: &Switch) -> std::io::Result<ProtocolHandler> {
+        let switch = KadSwitch::new(&switch, KBucketRouteTable::new(switch.local_id()))
+            .with_seeds(self.0.clone())
+            .await?;
+
+        // ignore the send result.
+        _ = self.1.clone().send(switch.clone()).await;
+
+        Ok(switch.into())
+    }
+}
+
+#[async_trait]
+impl DriverProtocolHandler for KadSwitch {
+    /// Handle a new incoming stream.
+    async fn dispatch(&self, _negotiated: &str, _stream: Stream) -> std::io::Result<()> {
+        todo!()
     }
 }
 

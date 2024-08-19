@@ -77,7 +77,7 @@ impl ServeMux {
         Ok(())
     }
 
-    async fn create_switch(&self, mut switch: SwitchBuilder) -> Result<(ServeMuxRunner, Switch)> {
+    async fn create_switch(self, mut switch: SwitchBuilder) -> Result<(ServeMuxRunner, Switch)> {
         for proto in &self.protocols {
             switch = switch.protos(proto.protos());
         }
@@ -86,7 +86,7 @@ impl ServeMux {
 
         let mut handlers = HashMap::new();
 
-        for proto in &self.protocols {
+        for proto in self.protocols {
             let handler = Arc::new(proto.create(&switch).await?);
 
             for id in proto.protos() {
