@@ -257,7 +257,7 @@ mod tests {
             .unwrap();
 
         let peer_id =
-            PeerId::from_str("12D3KooWBm8hvR8xP8bFZeuPyipNRzEexVxhxBmvMunDx2PJwERh").unwrap();
+            PeerId::from_str("12D3KooWKp6C6U2FRBghfjpbpYzU2XgBu9KpTKjHj8fRtsNtXjdZ").unwrap();
 
         let peer_info = kad.find_node(&peer_id).await.unwrap();
 
