@@ -340,7 +340,7 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         let mut last_error = None;
 
         for raddr in raddrs {
-            match std::net::TcpStream::connect_timeout(raddr, Duration::from_secs(5)) {
+            match std::net::TcpStream::connect_timeout(raddr, Duration::from_secs(2)) {
                 Ok(std_socket) => {
                     std_socket.set_nonblocking(true)?;
 

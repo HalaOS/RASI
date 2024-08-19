@@ -80,7 +80,7 @@ async fn create_quic_config(host_key: &KeyStore) -> io::Result<Config> {
     config.set_initial_max_stream_data_bidi_remote(1024 * 1024);
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
-    config.set_max_idle_timeout(5000);
+    config.set_max_idle_timeout(2000);
 
     config.verify_peer(true);
 

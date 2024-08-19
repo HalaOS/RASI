@@ -56,7 +56,7 @@ impl KadSwitch {
     {
         Self {
             max_packet_len: 1024 * 1024,
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(2),
             concurrency: NonZeroUsize::new(10).unwrap(),
             switch: switch.clone(),
             route_table: Arc::new(KadRouteTable::from(route_table)),
@@ -257,7 +257,7 @@ mod tests {
             .unwrap();
 
         let peer_id =
-            PeerId::from_str("12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB").unwrap();
+            PeerId::from_str("12D3KooWEAaYF2dNt64E1KGypHhDjTUzKv7W1Pn71GdCKpLN6ZQb").unwrap();
 
         let peer_info = kad.find_node(&peer_id).await.unwrap();
 
