@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, VecDeque},
-    net::SocketAddr,
     ops::Deref,
     sync::Arc,
     time::Duration,
@@ -246,8 +245,6 @@ impl SwitchBuilder {
 struct ConnPool {
     /// mapping id => connection.
     conns: HashMap<String, Connection>,
-    /// mapping peer_addr to conn id.
-    raddrs: HashMap<SocketAddr, String>,
     /// mapping peer_id to conn id.
     peers: HashMap<PeerId, Vec<String>>,
 }
@@ -282,7 +279,6 @@ impl ConnPool {
         log::info!(target: "Switch","add new conn, id={}, raddr={}, peer={}",id , raddr, peer_id);
 
         self.conns.insert(id.to_owned(), conn);
-        self.raddrs.insert(raddr, id.to_owned());
 
         if let Some(conn_ids) = self.peers.get_mut(&peer_id) {
             conn_ids.push(id);
@@ -291,18 +287,7 @@ impl ConnPool {
         }
     }
 
-    /// Get a connection by peer_addr.
-    fn get_by_peer_addr(&self, raddr: &Multiaddr) -> Result<Option<Connection>> {
-        let raddr = raddr.to_sockaddr()?;
-
-        if let Some(id) = self.raddrs.get(&raddr) {
-            Ok(self.conns.get(id).map(|conn| conn.clone()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn get_by_peer_id(&self, peer_id: &PeerId) -> Option<Vec<Connection>> {
+    fn get(&self, peer_id: &PeerId) -> Option<Vec<Connection>> {
         if let Some(conn_ids) = self.peers.get(&peer_id) {
             Some(
                 conn_ids
@@ -338,8 +323,6 @@ impl ConnPool {
         }
 
         log::info!(target: "Switch","remove conn, id={}, raddr={}, peer={}",id , raddr, peer_id);
-
-        self.raddrs.remove(&raddr);
 
         if let Some(conn_ids) = self.peers.get_mut(&peer_id) {
             if let Some((index, _)) = conn_ids.iter().enumerate().find(|(_, v)| **v == id) {
@@ -431,6 +414,8 @@ impl Switch {
 
         let mut this_conn = conn.clone();
 
+        let peer_id = conn.public_key().to_peer_id();
+
         spawn_ok(async move {
             if let Err(err) = this.incoming_stream_loop(&mut this_conn).await {
                 log::error!(target:"switch","incoming stream loop stopped, peer={}, local={}, error={}",this_conn.peer_addr(),this_conn.local_addr(),err);
@@ -438,6 +423,10 @@ impl Switch {
             } else {
                 log::info!(target:"switch","incoming stream loop stopped, peer={}, local={}",this_conn.peer_addr(),this_conn.local_addr());
             }
+
+            _ = this
+                .update_conn_type(&peer_id, ConnectionType::CanConnect)
+                .await;
         });
 
         // start "/ipfs/id/1.0.0" handshake.
@@ -688,14 +677,8 @@ impl Switch {
     /// if exists then check for a local connection cache.
     ///
     async fn connect_peer_to(&self, raddr: &Multiaddr) -> Result<Connection> {
-        if let Some(conn) = self
-            .mutable
-            .lock()
-            .await
-            .conn_pool
-            .get_by_peer_addr(raddr)?
-        {
-            return Ok(conn);
+        if let Some(peer_id) = self.peer_id_of(raddr).await? {
+            return self.connect_peer(&peer_id).await;
         }
 
         self.connect_peer_to_prv(raddr).await
@@ -723,7 +706,7 @@ impl Switch {
     /// This function will first check for a local connection cache,
     /// and if there is one, it will directly return the cached connection
     async fn connect_peer(&self, id: &PeerId) -> Result<Connection> {
-        if let Some(conns) = self.mutable.lock().await.conn_pool.get_by_peer_id(id) {
+        if let Some(conns) = self.mutable.lock().await.conn_pool.get(id) {
             return Ok(conns.into_iter().choose(&mut thread_rng()).unwrap());
         }
 
@@ -742,6 +725,9 @@ impl Switch {
                 Err(err) => last_error = Some(err),
             }
         }
+
+        self.update_conn_type(id, ConnectionType::CannotConnect)
+            .await?;
 
         Err(last_error.unwrap_or(Error::ConnectPeer(id.to_owned())))
     }
@@ -841,6 +827,11 @@ impl Switch {
     /// Returns the [`PeerInfo`] of the [`peer_id`](PeerId).
     pub async fn peer_info(&self, peer_id: &PeerId) -> Result<Option<PeerInfo>> {
         Ok(self.immutable.peer_book.get(peer_id).await?)
+    }
+
+    /// Returns the [`PeerId`] of the [`raddr`](Multiaddr).
+    pub async fn peer_id_of(&self, raddr: &Multiaddr) -> Result<Option<PeerId>> {
+        Ok(self.immutable.peer_book.peer_id_of(raddr).await?)
     }
 
     /// Returns the public key of this switch.

@@ -100,6 +100,7 @@ rep2p-x509 = { path = "rep2p/x509", version = "^0.2" }
 rep2p-spec = { path = "rep2p/spec", version = "^0.2" }
 rep2p-tcp = { path = "rep2p/tcp", version = "^0.2" }
 rep2p-quic = { path = "rep2p/quic", version = "^0.2" }
+rep2p-kad = { path = "rep2p/kad", version = "^0.2" }
 #libp2p
 multiaddr = "^0.18"
 identity = { version = "^0.2", package = "libp2p-identity" }
