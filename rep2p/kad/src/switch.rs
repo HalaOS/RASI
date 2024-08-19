@@ -3,12 +3,12 @@
 use std::{collections::HashMap, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use identity::PeerId;
-use rep2p::{multiaddr::Multiaddr, Switch};
+use rep2p::{book::PeerInfo, multiaddr::Multiaddr, Switch};
 
 use crate::{
     errors::{Error, Result},
     kbucket::KBucketKey,
-    primitives::{Key, PeerInfo},
+    primitives::Key,
     route_table::{syscall::DriverKadRouteTable, KadRouteTable},
     routing::{FindNode, Query, Router},
 };
@@ -80,13 +80,15 @@ impl KadSwitch {
         }
 
         for (id, addrs) in peer_addrs {
+            self.route_table.insert(id.clone()).await?;
+
             let peer_info = PeerInfo {
                 id: id.clone(),
                 addrs,
-                conn_type: Default::default(),
+                ..Default::default()
             };
 
-            self.route_table.insert(peer_info).await?;
+            self.switch.update_peer_info(peer_info).await?;
         }
 
         Ok(self)

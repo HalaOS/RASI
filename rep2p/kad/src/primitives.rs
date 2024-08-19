@@ -3,13 +3,9 @@
 use std::fmt::Display;
 
 use identity::PeerId;
-use rep2p::multiaddr::Multiaddr;
 use uint::construct_uint;
 
-use crate::{
-    kbucket::{KBucketDistance, KBucketKey},
-    proto,
-};
+use crate::kbucket::{KBucketDistance, KBucketKey};
 
 construct_uint! {
     pub(crate) struct U256(4);
@@ -112,18 +108,7 @@ impl Display for Distance {
 }
 
 /// Kad default `KBucketTable` type.
-pub type KBucketTable = crate::kbucket::KBucketTable<Key, PeerInfo, 20>;
-
-/// Used to signal the sender's connection capabilities to the peer
-pub type ConnectionType = proto::rpc::message::ConnectionType;
-
-/// A type that hold the peer's basic information used by kad protocol.
-#[derive(Debug, Clone)]
-pub struct PeerInfo {
-    pub id: PeerId,
-    pub addrs: Vec<Multiaddr>,
-    pub conn_type: ConnectionType,
-}
+pub type KBucketTable = crate::kbucket::KBucketTable<Key, PeerId, 20>;
 
 #[cfg(test)]
 mod tests {
@@ -132,6 +117,7 @@ mod tests {
 
     use identity::PeerId;
     use quickcheck::*;
+    use rep2p::multiaddr::Multiaddr;
 
     impl Arbitrary for Key {
         fn arbitrary(_: &mut Gen) -> Key {

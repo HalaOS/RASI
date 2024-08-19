@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fmt::Display,
     future::Future,
     num::NonZeroUsize,
@@ -14,14 +14,11 @@ use futures::{
 };
 use identity::PeerId;
 use rasi::{task::spawn_ok, timer::TimeoutExt};
-use rep2p::{transport::Stream, Switch};
+use rep2p::{book::PeerInfo, transport::Stream, Switch};
 
 use crate::{
-    errors::Result,
-    kbucket::KBucketKey,
-    primitives::{Key, PeerInfo},
-    rpc::KadRpc,
-    KadSwitch, PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD,
+    errors::Result, kbucket::KBucketKey, primitives::Key, rpc::KadRpc, KadSwitch,
+    PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD,
 };
 
 #[derive(Debug)]
@@ -83,8 +80,6 @@ pub struct Router<'a, Q> {
     queried: HashSet<PeerId>,
     /// The set of next query candidates
     candidates: Vec<PeerId>,
-    /// The candiates.
-    candidate_infos: HashMap<PeerId, PeerInfo>,
     /// query context for this router.
     query: Q,
 }
@@ -100,7 +95,6 @@ where
             closest_k: Default::default(),
             queried: Default::default(),
             candidates: Default::default(),
-            candidate_infos: Default::default(),
             query,
         }
     }
@@ -118,40 +112,54 @@ where
     pub async fn route(mut self, alpha: NonZeroUsize) -> Result<(Q, Vec<PeerId>)> {
         let alpha: usize = alpha.into();
 
-        let candidates = self.switch.route_table.closest(self.query.key()).await?;
+        let mut candidates = vec![];
 
-        self.add_candidates(candidates);
+        for peer_id in self.switch.route_table.closest(self.query.key()).await? {
+            if let Some(peer_info) = self.switch.switch.peer_info(&peer_id).await? {
+                candidates.push(peer_info);
+            }
+        }
+
+        self.add_candidates(candidates).await?;
 
         let (sender, mut receiver) = channel::<Recursive>(alpha);
 
         let mut pending = 0usize;
 
         while let Some(peer_id) = self.candidates.pop() {
-            let peer_info = self.candidate_infos.remove(&peer_id).unwrap();
-            log::trace!("quering, id={}", peer_info.id);
+            // check queried set.
+            if self.queried.insert(peer_id.clone()) {
+                // query the peer_info
+                if let Some(peer_info) = self.switch.switch.peer_info(&peer_id).await? {
+                    log::trace!("quering, id={}", peer_info.id);
 
-            assert!(
-                self.queried.insert(peer_info.id),
-                "double query the same peer."
-            );
+                    // check if this peer_id is closer than ids in closest set.
+                    if self.is_closer(&peer_id) {
+                        let cx = self.to_context();
 
-            if self.is_closer(&peer_id) {
-                let cx = self.to_context();
+                        let fut = self.query.query(&cx, peer_info);
 
-                let fut = self.query.query(&cx, peer_info);
+                        let mut sender = sender.clone();
 
-                let mut sender = sender.clone();
+                        spawn_ok(async move {
+                            sender.send(fut.await).await.expect("Close receiver early");
+                        });
 
-                spawn_ok(async move {
-                    sender.send(fut.await).await.expect("Close receiver early");
-                });
-
-                pending += 1;
+                        pending += 1;
+                    } else {
+                        log::trace!(
+                            "skip quering, id={}, reason='is not closer than found peers.'",
+                            peer_id
+                        )
+                    }
+                } else {
+                    log::trace!(
+                        "skip quering, id={}, reason='peer infomation not found.'",
+                        peer_id
+                    )
+                }
             } else {
-                log::trace!(
-                    "skip quering, id={}, reason='is not closer than found peers.'",
-                    peer_id
-                );
+                log::trace!("skip quering, id={}, reason='already queried.'", peer_id)
             }
 
             log::trace!(
@@ -163,7 +171,7 @@ where
 
             // Maximum concurrent lookup limit is reached.
             while (pending > 0 && self.candidates.len() == 0) || pending == alpha {
-                let stop = self.wait_one(&mut receiver).await;
+                let stop = self.wait_one(&mut receiver).await?;
                 if stop {
                     return Ok((self.query, self.closest_k));
                 }
@@ -180,7 +188,7 @@ where
         return Ok((self.query, self.closest_k));
     }
 
-    async fn wait_one(&mut self, receiver: &mut Receiver<Recursive>) -> bool {
+    async fn wait_one(&mut self, receiver: &mut Receiver<Recursive>) -> Result<bool> {
         log::trace!("routing, wait one task...");
 
         let routing = receiver
@@ -193,23 +201,23 @@ where
         match routing {
             Recursive::Next(queried, peers) => {
                 self.add_closest_k(queried);
-                self.add_candidates(peers);
+                self.add_candidates(peers).await?;
             }
             Recursive::Removed(peer_id) => {
                 log::error!("remove candidate peer, id={}", peer_id);
             }
             Recursive::Break(queried, Some(peers)) => {
                 self.add_closest_k(queried);
-                self.add_candidates(peers);
-                return true;
+                self.add_candidates(peers).await?;
+                return Ok(true);
             }
             Recursive::Break(queried, None) => {
                 self.add_closest_k(queried);
-                return true;
+                return Ok(true);
             }
         }
 
-        return false;
+        return Ok(false);
     }
 
     fn add_closest_k(&mut self, peer_id: PeerId) {
@@ -246,7 +254,7 @@ where
         }
     }
 
-    fn add_candidates(&mut self, peers: Vec<PeerInfo>) {
+    async fn add_candidates(&mut self, peers: Vec<PeerInfo>) -> Result<()> {
         let max_distance = if let Some(last) = self.closest_k.last() {
             Some(Key::from(last).distance(self.query.key()))
         } else {
@@ -258,25 +266,22 @@ where
                 continue;
             }
 
-            if self.candidate_infos.contains_key(&peer.id) {
-                self.candidate_infos.insert(peer.id.clone(), peer);
-                continue;
-            }
+            self.switch.switch.update_peer_info(peer.clone()).await?;
 
             let distance = Key::from(peer.id).distance(self.query.key());
 
             if let Some(max_distance) = &max_distance {
                 if distance < *max_distance {
                     self.candidates.push(peer.id.clone());
-                    self.candidate_infos.insert(peer.id.clone(), peer);
                 }
             } else {
                 self.candidates.push(peer.id.clone());
-                self.candidate_infos.insert(peer.id.clone(), peer);
             }
         }
 
         log::trace!("candidates: len={:?}", self.candidates.len());
+
+        Ok(())
     }
 }
 

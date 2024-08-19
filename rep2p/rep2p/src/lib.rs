@@ -1,6 +1,6 @@
+pub mod book;
 pub mod keystore;
 pub mod multiaddr;
-pub mod routetable;
 pub mod serve;
 pub mod transport;
 

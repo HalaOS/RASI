@@ -16,10 +16,10 @@ use rand::{seq::IteratorRandom, thread_rng};
 use rasi::{task::spawn_ok, timer::TimeoutExt};
 
 use crate::{
+    book::{syscall::DriverPeerBook, ConnectionType, MemoryPeerBook, PeerBook, PeerInfo},
     keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
     multiaddr::ToSockAddr,
     proto::identity::Identity,
-    routetable::{syscall::DriverRouteTable, MemoryRouteTable, RouteTable},
     transport::{syscall::DriverTransport, Connection, Listener, Stream, Transport},
     Error, Result,
 };
@@ -52,8 +52,8 @@ struct ImmutableSwitch {
     transports: Vec<Transport>,
     /// Keystore registered to this switch.
     keystore: KeyStore,
-    /// RouteTable registered to this switch.
-    route_table: RouteTable,
+    /// Peer book for this switch.
+    peer_book: PeerBook,
 }
 
 impl ImmutableSwitch {
@@ -69,7 +69,7 @@ impl ImmutableSwitch {
             max_identity_packet_size: 4096,
             transports: vec![],
             keystore: MemoryKeyStore::random().into(),
-            route_table: MemoryRouteTable::default().into(),
+            peer_book: MemoryPeerBook::default().into(),
             laddrs: vec![],
         }
     }
@@ -139,13 +139,13 @@ impl SwitchBuilder {
         })
     }
 
-    /// Replace default [`MemoryRouteTable`].
-    pub fn route_table<R>(self, value: R) -> Self
+    /// Replace default [`MemoryPeerBook`].
+    pub fn peer_book<R>(self, value: R) -> Self
     where
-        R: DriverRouteTable + 'static,
+        R: DriverPeerBook + 'static,
     {
         self.and_then(|mut cfg| {
-            cfg.route_table = value.into();
+            cfg.peer_book = value.into();
 
             Ok(cfg)
         })
@@ -594,7 +594,15 @@ impl Switch {
         //TODO: add nat codes
         log::info!(target:"switch","{} observed addrs: {:?}", peer_id, observed_addrs);
 
-        self.update_routes(peer_id, &raddrs).await
+        let peer_info = PeerInfo {
+            id: peer_id,
+            addrs: raddrs,
+            conn_type: ConnectionType::Connected,
+        };
+
+        self.update_peer_info(peer_info).await?;
+
+        Ok(())
     }
 
     /// Start a "/ipfs/id/1.0.0" handshake.
@@ -719,13 +727,16 @@ impl Switch {
             return Ok(conns.into_iter().choose(&mut thread_rng()).unwrap());
         }
 
-        let mut raddrs = self.immutable.route_table.get(id).await?;
+        let raddrs = self
+            .immutable
+            .peer_book
+            .get(id)
+            .await?
+            .ok_or(Error::ConnectPeer(id.clone()))?;
 
         let mut last_error = None;
 
-        use futures::TryStreamExt;
-
-        while let Some(raddr) = raddrs.try_next().await? {
+        for raddr in raddrs.addrs {
             match self.connect_peer_to_prv(&raddr).await {
                 Ok(conn) => return Ok(conn),
                 Err(err) => last_error = Some(err),
@@ -733,6 +744,10 @@ impl Switch {
         }
 
         Err(last_error.unwrap_or(Error::ConnectPeer(id.to_owned())))
+    }
+
+    pub(crate) async fn remove_conn(&self, conn: &Connection) {
+        _ = self.mutable.lock().await.conn_pool.remove(conn);
     }
 }
 
@@ -745,23 +760,6 @@ impl Switch {
         SwitchBuilder {
             ops: Ok(ImmutableSwitch::new(agent_version.as_ref().to_owned())),
         }
-    }
-
-    /// Update one `peer_id`'s route table.
-    pub async fn update_routes(&self, peer_id: PeerId, addrs: &[Multiaddr]) -> Result<()> {
-        Ok(self.immutable.route_table.put(peer_id, addrs).await?)
-    }
-
-    /// Delete a peer's route table.
-    pub async fn delete_routes(&self, peer_id: &PeerId) -> Result<()> {
-        Ok(self.immutable.route_table.delete(peer_id).await?)
-    }
-
-    /// Returns the public key of this switch.
-    ///
-    /// This returned value is provided by [`KeyStore`] service.
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
     }
 
     /// Create a new stream to `target` with provided `protos`.
@@ -815,6 +813,43 @@ impl Switch {
         }))
     }
 
+    /// Update the [`PeerBook`] of this switch.
+    pub async fn update_peer_info(&self, peer_info: PeerInfo) -> Result<Option<PeerInfo>> {
+        Ok(self.immutable.peer_book.put(peer_info).await?)
+    }
+}
+
+impl Switch {
+    /// Remove [`PeerInfo`] from the [`PeerBook`] of this switch.
+    pub async fn remove_peer_info(&self, peer_id: &PeerId) -> Result<Option<PeerInfo>> {
+        Ok(self.immutable.peer_book.remove(peer_id).await?)
+    }
+
+    /// Update the connection type of the [`peer_id`](PeerId) in the [`PeerBook`] of this switch.
+    pub async fn update_conn_type(
+        &self,
+        peer_id: &PeerId,
+        conn_type: ConnectionType,
+    ) -> Result<Option<ConnectionType>> {
+        Ok(self
+            .immutable
+            .peer_book
+            .update_conn_type(peer_id, conn_type)
+            .await?)
+    }
+
+    /// Returns the [`PeerInfo`] of the [`peer_id`](PeerId).
+    pub async fn peer_info(&self, peer_id: &PeerId) -> Result<Option<PeerInfo>> {
+        Ok(self.immutable.peer_book.get(peer_id).await?)
+    }
+
+    /// Returns the public key of this switch.
+    ///
+    /// This returned value is provided by [`KeyStore`] service.
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
+    }
+
     /// Get associated keystore instance.
     pub fn keystore(&self) -> &KeyStore {
         &self.immutable.keystore
@@ -833,9 +868,5 @@ impl Switch {
     /// Returns the addresses list of this switch is bound to.
     pub async fn local_addrs(&self) -> Vec<Multiaddr> {
         self.mutable.lock().await.laddrs.clone()
-    }
-
-    pub(crate) async fn remove_conn(&self, conn: &Connection) {
-        _ = self.mutable.lock().await.conn_pool.remove(conn);
     }
 }

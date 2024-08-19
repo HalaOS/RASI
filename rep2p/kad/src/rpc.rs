@@ -4,12 +4,11 @@ use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use identity::PeerId;
 use protobuf::Message;
 
-use rep2p::multiaddr::Multiaddr;
+use rep2p::{book::PeerInfo, multiaddr::Multiaddr};
 
 use crate::{
     errors::{Error, Result},
-    primitives::PeerInfo,
-    proto::rpc,
+    proto::{self, rpc},
 };
 
 #[allow(unused)]
@@ -69,7 +68,7 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
                 peers.push(PeerInfo {
                     id: PeerId::from_bytes(&peer.id)?,
                     addrs,
-                    conn_type: peer.connection.enum_value_or_default(),
+                    conn_type: peer.connection.enum_value_or_default().into(),
                 });
             }
 
@@ -79,3 +78,25 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
 }
 
 impl<T> KadRpc for T where T: AsyncWrite + AsyncRead + Unpin {}
+
+impl From<proto::rpc::message::ConnectionType> for rep2p::book::ConnectionType {
+    fn from(value: proto::rpc::message::ConnectionType) -> Self {
+        match value {
+            rpc::message::ConnectionType::NOT_CONNECTED => Self::NotConnected,
+            rpc::message::ConnectionType::CONNECTED => Self::Connected,
+            rpc::message::ConnectionType::CAN_CONNECT => Self::CanConnect,
+            rpc::message::ConnectionType::CANNOT_CONNECT => Self::CannotConnect,
+        }
+    }
+}
+
+impl From<rep2p::book::ConnectionType> for proto::rpc::message::ConnectionType {
+    fn from(value: rep2p::book::ConnectionType) -> Self {
+        match value {
+            rep2p::book::ConnectionType::NotConnected => Self::NOT_CONNECTED,
+            rep2p::book::ConnectionType::Connected => Self::CONNECTED,
+            rep2p::book::ConnectionType::CanConnect => Self::CAN_CONNECT,
+            rep2p::book::ConnectionType::CannotConnect => Self::CANNOT_CONNECT,
+        }
+    }
+}
