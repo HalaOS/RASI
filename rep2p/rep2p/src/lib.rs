@@ -1,6 +1,11 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod book;
 pub mod keystore;
 pub mod multiaddr;
+#[cfg(feature = "pprof")]
+#[cfg_attr(docsrs, doc(cfg(feature = "pprof")))]
+pub mod pprof;
 pub mod serve;
 pub mod transport;
 

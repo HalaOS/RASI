@@ -140,9 +140,10 @@ impl KadSwitch {
     }
 }
 
-pub struct KBucketRouteTableProtocol(Vec<Multiaddr>, Sender<KadSwitch>);
+/// A [`ServeMux`](rep2p::serve::ServeMux) compatibable kad protocol implementation.
+pub struct KadProtocol(Vec<Multiaddr>, Sender<KadSwitch>);
 
-impl KBucketRouteTableProtocol {
+impl KadProtocol {
     pub fn new<S, E>(seeds: S) -> Result<(Self, Receiver<KadSwitch>)>
     where
         S: IntoIterator,
@@ -162,7 +163,7 @@ impl KBucketRouteTableProtocol {
 }
 
 #[async_trait]
-impl DriverProtocol for KBucketRouteTableProtocol {
+impl DriverProtocol for KadProtocol {
     /// Returns protocol display name.
     fn protos(&self) -> &'static [&'static str] {
         &[PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD]

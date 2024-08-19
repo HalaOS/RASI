@@ -23,6 +23,9 @@ use crate::{
     Error, Result,
 };
 
+#[cfg(feature = "pprof")]
+use crate::pprof::{syscall::DriverProfiler, DefaultProfiler, Profiler};
+
 /// protocol name of libp2p identity
 pub const PROTOCOL_IPFS_ID: &str = "/ipfs/id/1.0.0";
 
@@ -53,6 +56,9 @@ struct ImmutableSwitch {
     keystore: KeyStore,
     /// Peer book for this switch.
     peer_book: PeerBook,
+    #[cfg(feature = "pprof")]
+    /// The profiler server
+    profiler: Profiler,
 }
 
 impl ImmutableSwitch {
@@ -69,6 +75,7 @@ impl ImmutableSwitch {
             transports: vec![],
             keystore: MemoryKeyStore::random().into(),
             peer_book: MemoryPeerBook::default().into(),
+            profiler: DefaultProfiler::default().into(),
             laddrs: vec![],
         }
     }
@@ -145,6 +152,17 @@ impl SwitchBuilder {
     {
         self.and_then(|mut cfg| {
             cfg.peer_book = value.into();
+
+            Ok(cfg)
+        })
+    }
+    /// Replace default [`DefaultProfiler`].
+    pub fn profiler<R>(self, value: R) -> Self
+    where
+        R: DriverProfiler + 'static,
+    {
+        self.and_then(|mut cfg| {
+            cfg.profiler = value.into();
 
             Ok(cfg)
         })
@@ -844,6 +862,13 @@ impl Switch {
     /// Get associated keystore instance.
     pub fn keystore(&self) -> &KeyStore {
         &self.immutable.keystore
+    }
+
+    /// Returns the associated [`Profiler`] instance.
+    #[cfg(feature = "pprof")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "pprof")))]
+    pub fn profiler(&self) -> &Profiler {
+        &self.immutable.profiler
     }
 
     /// Get this switch's public key.
