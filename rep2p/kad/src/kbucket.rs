@@ -9,7 +9,7 @@ pub trait KBucketKey {
     type Length: ArrayLength;
     type Distance: KBucketDistance;
 
-    /// Calculate the distance between two [`Key`]s.
+    /// Calculate the distance between two `keys`.
     fn distance(&self, rhs: &Self) -> Self::Distance
     where
         Self: Sized;
@@ -28,7 +28,7 @@ pub trait KBucketKey {
 }
 /// k-bucket key distance associated type must implement this trait.
 pub trait KBucketDistance {
-    /// Returns the integer part of the base 2 logarithm of the [`Distance`].
+    /// Returns the integer part of the base 2 logarithm of the `distance`.
     ///
     /// Returns `None` if the distance is zero.
     fn k_index(&self) -> Option<u32>;
@@ -306,7 +306,7 @@ where
     }
 }
 
-/// An immutable iterator over [`KBucketsTable`]
+/// An immutable iterator over [`KBucketTable`]
 pub struct KBucketTableIter<'a, Key, Value, const K: usize>
 where
     Key: KBucketKey,

@@ -1,3 +1,5 @@
+//! This module provides route table abstraction for [`KadSwitch`](crate::KadSwitch).
+
 use async_trait::async_trait;
 use futures::lock::Mutex;
 use identity::PeerId;
@@ -23,7 +25,7 @@ pub mod syscall {
         /// Remove peer information from route table.
         async fn remove(&self, id: &PeerId) -> std::io::Result<()>;
 
-        /// Get the about up to [`K`](DriverKadRouteTable::k) closest nodes's [`PeerInfo`]
+        /// Get the about up to [`K`](DriverKadRouteTable::const_k) closest nodes's [`PeerId`]
         async fn closest(&self, id: &Key) -> std::io::Result<Vec<PeerId>>;
     }
 }
@@ -43,25 +45,22 @@ impl KBucketRouteTable {
 
 #[async_trait]
 impl syscall::DriverKadRouteTable for KBucketRouteTable {
-    /// Returns the replication parameter(`k`).
     fn const_k(&self) -> usize {
         20
     }
-    /// insert new peer informations.
+
     async fn insert(&self, peer_id: PeerId) -> std::io::Result<()> {
         self.0.lock().await.insert(Key::from(&peer_id), peer_id);
 
         Ok(())
     }
 
-    /// Remove peer information from route table.
     async fn remove(&self, id: &PeerId) -> std::io::Result<()> {
         self.0.lock().await.remove(&Key::from(id));
 
         Ok(())
     }
 
-    /// Get the about up to [`K`](DriverKadRouteTable::k) closest nodes's [`PeerInfo`]
     async fn closest(&self, id: &Key) -> std::io::Result<Vec<PeerId>> {
         Ok(self
             .0
