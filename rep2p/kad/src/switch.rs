@@ -5,9 +5,10 @@ use std::{collections::HashMap, fmt::Debug, num::NonZeroUsize, sync::Arc, time::
 use async_trait::async_trait;
 use futures::{
     channel::mpsc::{channel, Receiver, Sender},
-    SinkExt,
+    SinkExt, StreamExt,
 };
 use identity::PeerId;
+use rasi::{task::spawn_ok, timer::TimeoutExt};
 use rep2p::{
     book::PeerInfo,
     multiaddr::Multiaddr,
@@ -25,6 +26,7 @@ use crate::{
     primitives::Key,
     route_table::{syscall::DriverKadRouteTable, KBucketRouteTable, KadRouteTable},
     routing::{FindNode, Query, Router},
+    rpc::KadRpc,
 };
 
 /// protocol name of libp2p kad.
@@ -56,7 +58,7 @@ impl KadSwitch {
     {
         Self {
             max_packet_len: 1024 * 1024,
-            timeout: Duration::from_secs(2),
+            timeout: Duration::from_secs(10),
             concurrency: NonZeroUsize::new(10).unwrap(),
             switch: switch.clone(),
             route_table: Arc::new(KadRouteTable::from(route_table)),
@@ -138,6 +140,97 @@ impl KadSwitch {
 
         Ok(find_node.into_peer_info().await)
     }
+
+    pub async fn put_value<K, V>(&self, key: K, value: V) -> Result<usize>
+    where
+        K: AsRef<[u8]>,
+        V: AsRef<[u8]>,
+    {
+        let key = key.as_ref();
+        let value = value.as_ref();
+
+        let (_, closest) = self
+            .route(FindNode::new(
+                &self.switch,
+                self.max_packet_len,
+                key,
+                self.timeout,
+            ))
+            .await?;
+
+        let (sender, mut receiver) = channel(closest.len());
+
+        let mut tasks = 0usize;
+
+        for peer_id in closest {
+            let key = key.to_vec();
+            let value = value.to_vec();
+
+            let this = self.clone();
+            let mut sender = sender.clone();
+
+            spawn_ok(async move {
+                log::trace!("PUT_VALUE start: target={}", peer_id);
+                if let Err(err) = this.put_value_prv(&peer_id, key, value).await {
+                    log::error!("PUT_VALUE error: target={}, err={}", peer_id, err);
+                    _ = sender.send(false).await;
+                } else {
+                    log::error!("PUT_VALUE success: target={}, success", peer_id);
+                    _ = sender.send(true).await;
+                }
+            });
+
+            tasks += 1;
+        }
+
+        let mut succ = 0usize;
+
+        for i in 0..tasks {
+            if let Some(true) = receiver.next().await {
+                succ += 1;
+            }
+            log::trace!("PUT_VALUE: total={}, current={}, succ={}", tasks, i, succ);
+        }
+
+        Ok(succ)
+    }
+
+    async fn put_value_prv(&self, peer_id: &PeerId, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        if let Some(stream) = connect(self.switch.clone(), peer_id, self.timeout).await {
+            log::trace!("PUT_VALUE open stream success: target={}.", peer_id);
+            stream
+                .kad_put_value(key, value, self.max_packet_len)
+                .timeout(self.timeout)
+                .await
+                .ok_or(Error::Timeout)??;
+
+            Ok(())
+        } else {
+            Err(Error::PutValue(peer_id.clone()))
+        }
+    }
+}
+
+pub(crate) async fn connect(switch: Switch, peer_id: &PeerId, timeout: Duration) -> Option<Stream> {
+    match switch
+        .connect(peer_id, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+        .timeout(timeout)
+        .await
+    {
+        Some(Ok((stream, _))) => return Some(stream),
+        Some(Err(err)) => {
+            log::error!("connect to peer, id={}, err={}", peer_id, err);
+        }
+        _ => {
+            log::error!(
+                "connect to peer, id={}, err='timeout({:?})'",
+                peer_id,
+                timeout
+            );
+        }
+    }
+
+    None
 }
 
 /// A [`ServeMux`](rep2p::serve::ServeMux) compatibable kad protocol implementation.
@@ -262,5 +355,25 @@ mod tests {
         let peer_info = kad.find_node(&peer_id).await.unwrap();
 
         log::info!("find_node: {}, {:?}", peer_id, peer_info);
+    }
+
+    #[futures_test::test]
+    async fn put_value() {
+        let switch = init().await;
+
+        let kad = KadSwitch::new(&switch, KBucketRouteTable::new(switch.local_id()))
+            .with_seeds([
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                
+            ])
+            .await
+            .unwrap();
+
+        let peer_id = PeerId::random();
+
+        let put_nodes = kad.put_value(peer_id.to_bytes(), "world").await.unwrap();
+
+        log::info!("put value, peer_id={}, nodes={}", peer_id, put_nodes);
     }
 }

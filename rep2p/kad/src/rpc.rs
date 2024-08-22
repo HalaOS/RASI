@@ -2,7 +2,7 @@ use std::future::Future;
 
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use identity::PeerId;
-use protobuf::Message;
+use protobuf::{Message, MessageField};
 
 use rep2p::{book::PeerInfo, multiaddr::Multiaddr};
 
@@ -17,7 +17,7 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
     /// Invoke a libp2p kad rpc call.
     fn kad_rpc_call(
         mut self,
-        message: rpc::Message,
+        message: &rpc::Message,
         max_recv_len: usize,
     ) -> impl Future<Output = Result<rpc::Message>>
     where
@@ -50,21 +50,22 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
     }
 
     /// invoke find_node call.
-    fn kad_find_node(
+    fn kad_find_node<K>(
         mut self,
-        peer_id: &PeerId,
+        key: K,
         max_recv_len: usize,
     ) -> impl Future<Output = Result<Vec<PeerInfo>>>
     where
         Self: Sized,
+        K: AsRef<[u8]>,
     {
         let mut message = rpc::Message::new();
 
         message.type_ = rpc::message::MessageType::FIND_NODE.into();
-        message.key = peer_id.to_bytes();
+        message.key = key.as_ref().to_vec();
 
         async move {
-            let message = self.kad_rpc_call(message, max_recv_len).await?;
+            let message = self.kad_rpc_call(&message, max_recv_len).await?;
 
             let mut peers = vec![];
 
@@ -83,6 +84,43 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
             }
 
             Ok(peers)
+        }
+    }
+
+    fn kad_put_value<K, V>(
+        mut self,
+        key: K,
+        value: V,
+        max_recv_len: usize,
+    ) -> impl Future<Output = Result<()>>
+    where
+        Self: Sized,
+        K: AsRef<[u8]>,
+        V: AsRef<[u8]>,
+    {
+        let mut record = rpc::Record::new();
+
+        record.key = key.as_ref().to_vec();
+        record.value = value.as_ref().to_vec();
+
+        let mut message = rpc::Message::new();
+
+        message.type_ = rpc::message::MessageType::PUT_VALUE.into();
+        message.key = record.key.clone();
+        message.record = MessageField::some(record);
+
+        async move {
+            let resp = self.kad_rpc_call(&message, max_recv_len).await?;
+
+            if message.key != resp.key {
+                return Err(Error::PutValueReturn("The key mismatch".to_string()));
+            }
+
+            if message.type_ != resp.type_ {
+                return Err(Error::PutValueReturn("The type mismatch".to_string()));
+            }
+
+            Ok(())
         }
     }
 }

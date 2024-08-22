@@ -20,6 +20,11 @@ impl From<[u8; 32]> for Key {
         Self(value.into())
     }
 }
+impl From<Vec<u8>> for Key {
+    fn from(value: Vec<u8>) -> Self {
+        value.as_slice().into()
+    }
+}
 
 impl From<&[u8]> for Key {
     fn from(value: &[u8]) -> Self {

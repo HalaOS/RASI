@@ -141,6 +141,8 @@ impl rasi::net::syscall::DriverTcpStream for MioTcpStream {
 
     fn poll_ready(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
         would_block(self.token, cx.waker().clone(), Interest::WRITABLE, || {
+            log::trace!("tcp_connect, poll_ready {:?}", self.token);
+
             if let Err(err) = self.deref().take_error() {
                 return Err(err);
             }
@@ -352,6 +354,8 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
     }
 
     fn tcp_connect(&self, raddr: &std::net::SocketAddr) -> std::io::Result<rasi::net::TcpStream> {
+        log::trace!("tcp_connect, raddr={}", raddr);
+
         let mut socket = mio::net::TcpStream::connect(raddr.clone())?;
 
         let token = Token::next();

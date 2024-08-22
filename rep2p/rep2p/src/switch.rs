@@ -754,7 +754,11 @@ impl Switch {
     /// and if there is one, it will directly return the cached connection
     async fn connect_peer(&self, id: &PeerId) -> Result<Connection> {
         if let Some(conns) = self.mutable.lock().await.conn_pool.get(id) {
-            return Ok(conns.into_iter().choose(&mut thread_rng()).unwrap());
+            if !conns.is_empty() {
+                let conn = conns.into_iter().choose(&mut thread_rng()).unwrap();
+                log::trace!("connection reused, id={}, conn_id={}", id, conn.id());
+                return Ok(conn);
+            }
         }
 
         let raddrs = self
@@ -767,9 +771,18 @@ impl Switch {
         let mut last_error = None;
 
         for raddr in raddrs.addrs {
+            log::trace!("connect, id={}, raddr={}", id, raddr);
             match self.connect_peer_to_prv(&raddr).await {
-                Ok(conn) => return Ok(conn),
-                Err(err) => last_error = Some(err),
+                Ok(conn) => {
+                    log::trace!("connected, id={}, raddr={}", id, raddr);
+                    return Ok(conn);
+                }
+                Err(err) => {
+                    last_error = {
+                        log::trace!("connect failed, id={}, raddr={}, err={}", id, raddr, err);
+                        Some(err)
+                    }
+                }
             }
         }
 

@@ -14,11 +14,10 @@ use futures::{
 };
 use identity::PeerId;
 use rasi::{task::spawn_ok, timer::TimeoutExt};
-use rep2p::{book::PeerInfo, transport::Stream, Switch};
+use rep2p::{book::PeerInfo, Switch};
 
 use crate::{
-    errors::Result, kbucket::KBucketKey, primitives::Key, rpc::KadRpc, KadSwitch,
-    PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD,
+    connect, errors::Result, kbucket::KBucketKey, primitives::Key, rpc::KadRpc, KadSwitch,
 };
 
 #[derive(Debug)]
@@ -64,7 +63,7 @@ pub trait Query {
     fn query(
         &self,
         cx: &RoutingContext,
-        peer_info: PeerInfo,
+        peer_id: PeerId,
     ) -> impl Future<Output = Recursive> + Send + 'static;
 }
 
@@ -129,32 +128,24 @@ where
         while let Some(peer_id) = self.candidates.pop() {
             // check queried set.
             if self.queried.insert(peer_id.clone()) {
-                // query the peer_info
-                if let Some(peer_info) = self.switch.switch.peer_info(&peer_id).await? {
-                    log::trace!("quering, id={}", peer_info.id);
+                log::trace!("quering, id={}", peer_id);
 
-                    // check if this peer_id is closer than ids in closest set.
-                    if self.is_closer(&peer_id) {
-                        let cx = self.to_context();
+                // check if this peer_id is closer than ids in closest set.
+                if self.is_closer(&peer_id) {
+                    let cx = self.to_context();
 
-                        let fut = self.query.query(&cx, peer_info);
+                    let fut = self.query.query(&cx, peer_id);
 
-                        let mut sender = sender.clone();
+                    let mut sender = sender.clone();
 
-                        spawn_ok(async move {
-                            sender.send(fut.await).await.expect("Close receiver early");
-                        });
+                    spawn_ok(async move {
+                        sender.send(fut.await).await.expect("Close receiver early");
+                    });
 
-                        pending += 1;
-                    } else {
-                        log::trace!(
-                            "skip quering, id={}, reason='is not closer than found peers.'",
-                            peer_id
-                        )
-                    }
+                    pending += 1;
                 } else {
                     log::trace!(
-                        "skip quering, id={}, reason='peer infomation not found.'",
+                        "skip quering, id={}, reason='is not closer than found peers.'",
                         peer_id
                     )
                 }
@@ -177,6 +168,13 @@ where
                 }
 
                 pending -= 1;
+
+                log::trace!(
+                    "routing, alpha={}, pending={}, candidates={}",
+                    alpha,
+                    pending,
+                    self.candidates.len()
+                );
             }
         }
 
@@ -285,65 +283,77 @@ where
     }
 }
 
-async fn connect(switch: Switch, peer_info: &PeerInfo, timeout: Duration) -> Option<Stream> {
-    for raddr in &peer_info.addrs {
-        log::trace!(
-            "quering, id={}, raddr={}, timeout={:?}",
-            peer_info.id,
-            raddr,
-            timeout
-        );
+#[derive(Clone)]
+pub(crate) enum FindNodeKey {
+    PeerId(PeerId),
+    Bytes(Vec<u8>),
+}
 
-        match switch
-            .connect(raddr, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
-            .timeout(timeout)
-            .await
-        {
-            Some(Ok((stream, _))) => return Some(stream),
-            Some(Err(err)) => {
-                log::error!(
-                    "connect to peer, id={}, raddr={}, err={}",
-                    peer_info.id,
-                    raddr,
-                    err
-                );
-            }
-            _ => {
-                log::error!(
-                    "connect to peer, id={}, raddr={}, err='timeout({:?})'",
-                    peer_info.id,
-                    raddr,
-                    timeout
-                );
+impl Display for FindNodeKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FindNodeKey::PeerId(peer_id) => write!(f, "{}", peer_id),
+            FindNodeKey::Bytes(buf) => {
+                write!(f, "0x")?;
+
+                for &b in buf {
+                    write!(f, "{:02x}", b)?;
+                }
+
+                Ok(())
             }
         }
     }
+}
 
-    None
+impl FindNodeKey {
+    fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            FindNodeKey::PeerId(peer_id) => peer_id.to_bytes(),
+            FindNodeKey::Bytes(buf) => buf.to_vec(),
+        }
+    }
+}
+
+impl<'a> From<&'a PeerId> for FindNodeKey {
+    fn from(value: &'a PeerId) -> Self {
+        Self::PeerId(value.clone())
+    }
+}
+
+impl<'a> From<&'a [u8]> for FindNodeKey {
+    fn from(value: &'a [u8]) -> Self {
+        Self::Bytes(value.to_vec())
+    }
 }
 
 /// FIND_NODE recursive query.
 pub(crate) struct FindNode<'a> {
     switch: &'a Switch,
-    peer_id: &'a PeerId,
-    key: Key,
+    key: FindNodeKey,
+    k_bucket_key: Key,
     target: Arc<Mutex<Option<PeerInfo>>>,
     timeout: Duration,
     max_packet_len: usize,
 }
 
 impl<'a> FindNode<'a> {
-    pub(crate) fn new(
+    pub(crate) fn new<K>(
         switch: &'a Switch,
         max_packet_len: usize,
-        peer_id: &'a PeerId,
+        key: K,
         timeout: Duration,
-    ) -> Self {
+    ) -> Self
+    where
+        K: Into<FindNodeKey>,
+    {
+        let key: FindNodeKey = key.into();
+
         Self {
             max_packet_len,
-            key: Key::from(peer_id),
+            k_bucket_key: Key::from(key.to_bytes()),
             switch,
-            peer_id,
+            key,
             target: Default::default(),
             timeout,
         }
@@ -356,61 +366,58 @@ impl<'a> FindNode<'a> {
 
 impl<'a> Query for FindNode<'a> {
     fn key(&self) -> &Key {
-        &self.key
+        &self.k_bucket_key
     }
 
     fn query(
         &self,
         cx: &RoutingContext,
-        peer_info: PeerInfo,
+        peer_id: PeerId,
     ) -> impl Future<Output = Recursive> + Send + 'static {
-        log::trace!("query={}, target={}, {}", peer_info.id, self.peer_id, cx);
-
         let switch = self.switch.clone();
-        let peer_id = self.peer_id.clone();
+        let find_node_key = self.key.clone();
         let target = self.target.clone();
         let timeout = self.timeout;
         let max_packet_len = self.max_packet_len;
 
+        log::trace!("query={}, target={}, {}", peer_id, find_node_key, cx);
+
         async move {
-            if let Some(stream) = connect(switch, &peer_info, timeout).await {
+            if let Some(stream) = connect(switch, &peer_id, timeout).await {
                 match stream
-                    .kad_find_node(&peer_id, max_packet_len)
+                    .kad_find_node(find_node_key.to_bytes(), max_packet_len)
                     .timeout(timeout)
                     .await
                 {
                     Some(Ok(candidates)) => {
-                        log::trace!(
-                            "query={}, target={}, resp={}",
-                            peer_info.id,
-                            peer_id,
-                            candidates.len()
-                        );
+                        if let FindNodeKey::PeerId(target_peer_id) = &find_node_key {
+                            if let Some(info) =
+                                candidates.iter().find(|info| info.id == *target_peer_id)
+                            {
+                                *target.lock().await = Some(info.clone());
 
-                        if let Some(info) = candidates.iter().find(|info| info.id == peer_id) {
-                            *target.lock().await = Some(info.clone());
-
-                            return Recursive::Break(peer_info.id, None);
+                                return Recursive::Break(peer_id, None);
+                            }
                         }
 
-                        return Recursive::Next(peer_info.id, candidates);
+                        return Recursive::Next(peer_id, candidates);
                     }
                     Some(Err(err)) => {
-                        log::error!("query={}, target={}, err={}", peer_info.id, peer_id, err);
-                        return Recursive::Removed(peer_info.id);
+                        log::error!("query={}, target={}, err={}", peer_id, find_node_key, err);
+                        return Recursive::Removed(peer_id);
                     }
                     _ => {
                         log::error!(
                             "query={}, target={}, err='timeout({:?})'",
-                            peer_info.id,
                             peer_id,
+                            find_node_key,
                             timeout
                         );
-                        return Recursive::Removed(peer_info.id);
+                        return Recursive::Removed(peer_id);
                     }
                 }
             } else {
-                return Recursive::Removed(peer_info.id);
+                return Recursive::Removed(peer_id);
             }
         }
     }

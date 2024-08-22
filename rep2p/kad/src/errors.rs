@@ -1,3 +1,4 @@
+use identity::PeerId;
 use rep2p::multiaddr::{self, Multiaddr};
 
 #[derive(Debug, thiserror::Error)]
@@ -23,6 +24,9 @@ pub enum Error {
     #[error("Invalid find_node response type: {0}")]
     InvalidFindNodeResponse(String),
 
+    #[error("Invalid PUT_VALUE response: {0}")]
+    PutValueReturn(String),
+
     #[error(transparent)]
     ParseError(#[from] identity::ParseError),
 
@@ -31,6 +35,9 @@ pub enum Error {
 
     #[error("Rpc timeout.")]
     Timeout,
+
+    #[error("route path is not exists: {0}")]
+    PutValue(PeerId),
 
     #[error("{0}")]
     Other(String),
