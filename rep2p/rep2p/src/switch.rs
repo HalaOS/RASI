@@ -723,25 +723,38 @@ impl Switch {
     /// This function first query the route table to get the peer id,
     /// if exists then check for a local connection cache.
     ///
-    async fn connect_peer_to(&self, raddr: &Multiaddr) -> Result<Connection> {
+    async fn transport_connect_to(&self, raddr: &Multiaddr) -> Result<Connection> {
+        log::trace!("{}, try establish transport connection", raddr);
+
         if let Some(peer_id) = self.peer_id_of(raddr).await? {
-            return self.connect_peer(&peer_id).await;
+            log::trace!(
+                "{}, found peer_id in local book, peer_id={}",
+                raddr,
+                peer_id
+            );
+
+            return self.transport_connect(&peer_id).await;
         }
 
-        self.connect_peer_to_prv(raddr).await
+        self.transport_connect_to_prv(raddr).await
     }
 
-    async fn connect_peer_to_prv(&self, raddr: &Multiaddr) -> Result<Connection> {
+    async fn transport_connect_to_prv(&self, raddr: &Multiaddr) -> Result<Connection> {
         let transport = self
             .immutable
             .get_transport_by_address(raddr)
             .ok_or(Error::UnspportMultiAddr(raddr.to_owned()))?;
 
+        log::trace!("{}, call transport driver", raddr);
+
         let mut conn = transport.connect(raddr, self.clone()).await?;
 
+        log::trace!("{}, transport connection established", raddr);
+
         if let Err(err) = self.setup_conn(&mut conn).await {
-            log::error!(target:"switch","setup connection, peer={}, local={}, err={}",conn.peer_addr(),conn.local_addr(),err);
+            log::error!("{}, setup error: {}", raddr, err);
         } else {
+            log::trace!("{}, setup success", raddr);
             self.mutable.lock().await.conn_pool.put(conn.clone());
         }
 
@@ -752,11 +765,13 @@ impl Switch {
     ///
     /// This function will first check for a local connection cache,
     /// and if there is one, it will directly return the cached connection
-    async fn connect_peer(&self, id: &PeerId) -> Result<Connection> {
+    async fn transport_connect(&self, id: &PeerId) -> Result<Connection> {
+        log::trace!("{}, connect", id);
+
         if let Some(conns) = self.mutable.lock().await.conn_pool.get(id) {
             if !conns.is_empty() {
+                log::trace!("{}, reused connection in local pool.", id);
                 let conn = conns.into_iter().choose(&mut thread_rng()).unwrap();
-                log::trace!("connection reused, id={}, conn_id={}", id, conn.id());
                 return Ok(conn);
             }
         }
@@ -771,15 +786,16 @@ impl Switch {
         let mut last_error = None;
 
         for raddr in raddrs.addrs {
-            log::trace!("connect, id={}, raddr={}", id, raddr);
-            match self.connect_peer_to_prv(&raddr).await {
+            log::trace!("{}, connect to {}", id, raddr);
+
+            match self.transport_connect_to_prv(&raddr).await {
                 Ok(conn) => {
-                    log::trace!("connected, id={}, raddr={}", id, raddr);
+                    log::trace!("{}, connect to {}, established", id, raddr);
                     return Ok(conn);
                 }
                 Err(err) => {
                     last_error = {
-                        log::trace!("connect failed, id={}, raddr={}, err={}", id, raddr, err);
+                        log::trace!("{}, connect to {}, error: {}", id, raddr, err);
                         Some(err)
                     }
                 }
@@ -808,18 +824,18 @@ impl Switch {
         }
     }
 
-    /// Create a new stream to `target` with provided `protos`.
-    pub async fn connect<'a, C, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
+    /// Open a new stream with specified `protos` connected to remote peer.
+    pub async fn open<'a, C, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
     where
         C: Into<ConnectTo<'a>>,
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
         let mut conn = match target.into() {
-            ConnectTo::PeerIdRef(peer_id) => self.connect_peer(peer_id).await?,
-            ConnectTo::MultiaddrRef(raddr) => self.connect_peer_to(raddr).await?,
-            ConnectTo::PeerId(peer_id) => self.connect_peer(&peer_id).await?,
-            ConnectTo::Multiaddr(raddr) => self.connect_peer_to(&raddr).await?,
+            ConnectTo::PeerIdRef(peer_id) => self.transport_connect(peer_id).await?,
+            ConnectTo::MultiaddrRef(raddr) => self.transport_connect_to(raddr).await?,
+            ConnectTo::PeerId(peer_id) => self.transport_connect(&peer_id).await?,
+            ConnectTo::Multiaddr(raddr) => self.transport_connect_to(&raddr).await?,
         };
 
         log::trace!("open stream, conn_id={}", conn.id());

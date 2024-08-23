@@ -213,7 +213,7 @@ impl KadSwitch {
 
 pub(crate) async fn connect(switch: Switch, peer_id: &PeerId, timeout: Duration) -> Option<Stream> {
     match switch
-        .connect(peer_id, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+        .open(peer_id, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
         .timeout(timeout)
         .await
     {
@@ -393,7 +393,7 @@ mod tests {
 
         let peer_id: PeerId = "12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB".parse().unwrap();
 
-        let (stream,_) = kad.switch.connect(&peer_id, [PROTOCOL_IPFS_KAD,PROTOCOL_IPFS_LAN_KAD]).await.unwrap();
+        let (stream,_) = kad.switch.open(&peer_id, [PROTOCOL_IPFS_KAD,PROTOCOL_IPFS_LAN_KAD]).await.unwrap();
 
         log::trace!("Begin put value");
 

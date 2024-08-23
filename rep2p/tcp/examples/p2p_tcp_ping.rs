@@ -70,7 +70,7 @@ async fn run_client() -> rep2p::Result<()> {
     for raddr in config.bootstrap {
         log::info!("connect to peer: {}", raddr);
 
-        let (mut stream, protocol_id) = switch.connect(raddr, [PROTOCOL_IPFS_PING]).await?;
+        let (mut stream, protocol_id) = switch.open(raddr, [PROTOCOL_IPFS_PING]).await?;
 
         log::info!(
             "open stream, to={}, protocol={}",
