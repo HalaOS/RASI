@@ -8,6 +8,7 @@ members = [
     "reweb3/*",
     "rep2p/*",
 ]
+excludes = ["rep2p/kad"]
 resolver = "2"
 
 [workspace.package]
