@@ -5,14 +5,14 @@ use futures::lock::Mutex;
 use identity::PeerId;
 use rep2p::driver_wrapper;
 
-use crate::primitives::{KBucketTable, Key};
+use crate::key::Key;
 
 /// A kad peer store driver must implement the `Driver-*` traits in this module.
 pub mod syscall {
     use async_trait::async_trait;
     use identity::PeerId;
 
-    use crate::primitives::Key;
+    use crate::key::Key;
 
     /// A trait that provides functions to access peer informations.
     #[async_trait]
@@ -35,11 +35,13 @@ driver_wrapper!(
     KadRouteTable[syscall::DriverKadRouteTable]
 );
 
-pub struct KBucketRouteTable(Mutex<KBucketTable>);
+type DefaultKBucketTable = crate::kbucket::KBucketTable<Key, PeerId, 20>;
+
+pub struct KBucketRouteTable(Mutex<DefaultKBucketTable>);
 
 impl KBucketRouteTable {
     pub fn new(local_id: &PeerId) -> Self {
-        KBucketRouteTable(Mutex::new(KBucketTable::new(Key::from(local_id))))
+        KBucketRouteTable(Mutex::new(DefaultKBucketTable::new(Key::from(local_id))))
     }
 }
 

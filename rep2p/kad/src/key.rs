@@ -2,7 +2,6 @@
 
 use std::fmt::Display;
 
-use identity::PeerId;
 use uint::construct_uint;
 
 use crate::kbucket::{KBucketDistance, KBucketKey};
@@ -14,6 +13,16 @@ construct_uint! {
 /// A kad key with 256 bits length.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Key(pub(crate) U256);
+
+impl Key {
+    /// Convert self into `Vec<u8>`
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = [0; 32];
+        self.0.to_big_endian(&mut buf);
+
+        buf.to_vec()
+    }
+}
 
 impl From<[u8; 32]> for Key {
     fn from(value: [u8; 32]) -> Self {
@@ -112,17 +121,15 @@ impl Display for Distance {
     }
 }
 
-/// Kad default `KBucketTable` type.
-pub type KBucketTable = crate::kbucket::KBucketTable<Key, PeerId, 20>;
-
 #[cfg(test)]
 mod tests {
+
+    use std::net::SocketAddr;
 
     use super::*;
 
     use identity::PeerId;
     use quickcheck::*;
-    use rep2p::multiaddr::Multiaddr;
 
     impl Arbitrary for Key {
         fn arbitrary(_: &mut Gen) -> Key {
@@ -170,7 +177,8 @@ mod tests {
     #[test]
     fn k_bucket_update() {
         let local_key = Key::from(PeerId::random());
-        let mut k_bucket_table = crate::kbucket::KBucketTable::<Key, Multiaddr, 20>::new(local_key);
+        let mut k_bucket_table =
+            crate::kbucket::KBucketTable::<Key, SocketAddr, 20>::new(local_key);
 
         assert_eq!(k_bucket_table.len(), 0);
 
@@ -185,7 +193,7 @@ mod tests {
                     .k_index()
                     .unwrap()
                     .into(),
-            ) > KBucketTable::const_k().into()
+            ) > k_bucket_table.k().into()
             {
                 break;
             }
@@ -233,7 +241,7 @@ mod tests {
         }
 
         // k-bucket is full
-        for _ in 0..KBucketTable::const_k() {
+        for _ in 0..k_bucket_table.k() {
             key_value = key_value + 1;
 
             let mut buf = [0u8; 32];
@@ -247,7 +255,7 @@ mod tests {
                 .is_none());
         }
 
-        assert_eq!(k_bucket_table.len(), KBucketTable::const_k());
+        assert_eq!(k_bucket_table.len(), k_bucket_table.k());
 
         key_value = key_value + 1;
 

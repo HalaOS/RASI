@@ -16,9 +16,7 @@ use identity::PeerId;
 use rasi::{task::spawn_ok, timer::TimeoutExt};
 use rep2p::{book::PeerInfo, Switch};
 
-use crate::{
-    connect, errors::Result, kbucket::KBucketKey, primitives::Key, rpc::KadRpc, KadSwitch,
-};
+use crate::{connect, errors::Result, kbucket::KBucketKey, key::Key, rpc::KadRpc, KadSwitch};
 
 #[derive(Debug)]
 /// A variant returns by query function.

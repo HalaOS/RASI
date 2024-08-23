@@ -21,12 +21,7 @@ use rep2p::{
 };
 
 use crate::{
-    errors::{Error, Result},
-    kbucket::KBucketKey,
-    primitives::Key,
-    route_table::{syscall::DriverKadRouteTable, KBucketRouteTable, KadRouteTable},
-    routing::{FindNode, Query, Router},
-    rpc::KadRpc,
+    errors::{Error, Result}, kbucket::KBucketKey, route_table::{syscall::DriverKadRouteTable, KBucketRouteTable, KadRouteTable}, routing::{FindNode, Query, Router}, rpc::KadRpc, Key
 };
 
 /// protocol name of libp2p kad.
@@ -287,9 +282,10 @@ mod tests {
     use std::{str::FromStr, sync::Once};
 
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
-    use rep2p::Switch;
+    use rep2p::{multiaddr::multihash::Multihash, Switch};
     use rep2p_quic::QuicTransport;
     use rep2p_tcp::TcpTransport;
+    use sha2::Digest;
 
     use crate::route_table::KBucketRouteTable;
 
@@ -391,12 +387,22 @@ mod tests {
             .await
             .unwrap();
 
+        let keypair = identity::Keypair::generate_ed25519();
+
+
+
         let peer_id: PeerId = "12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB".parse().unwrap();
 
         let (stream,_) = kad.switch.open(&peer_id, [PROTOCOL_IPFS_KAD,PROTOCOL_IPFS_LAN_KAD]).await.unwrap();
 
         log::trace!("Begin put value");
 
-        stream.kad_put_value("/test/hello", "world", 1024*1024).await.unwrap();
+        let mut hasher = sha2::Sha256::new();
+
+        hasher.update(&keypair.public().encode_protobuf());
+
+        let hash: Multihash<64> = Multihash::wrap(0x12, &hasher.finalize()).unwrap();
+
+        stream.kad_put_value(format!("/test/{}",bs58::encode(hash.to_bytes()).into_string()), "world", 1024*1024).await.unwrap();
     }
 }

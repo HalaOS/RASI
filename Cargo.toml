@@ -81,6 +81,7 @@ generic-array = "^1.1"
 uint = "^0.9"
 protobuf-json-mapping = "3.5.0"
 libc = "^0.2"
+bs58 = "0.5.1"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }

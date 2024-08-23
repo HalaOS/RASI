@@ -20,6 +20,7 @@ thiserror = { workspace = true }
 unsigned-varint = { workspace = true }
 async-trait = { workspace = true }
 rasi = { workspace = true, features = ["task-futures"] }
+bs58 = { workspace = true }
 
 [dev-dependencies]
 quickcheck = { workspace = true }
