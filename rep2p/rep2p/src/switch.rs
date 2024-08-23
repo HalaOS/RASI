@@ -822,7 +822,10 @@ impl Switch {
             ConnectTo::Multiaddr(raddr) => self.connect_peer_to(&raddr).await?,
         };
 
+        log::trace!("open stream, conn_id={}", conn.id());
         let mut stream = conn.connect().await?;
+
+        log::trace!("dial select proto, conn_id={}", conn.id());
 
         let (protocol_id, _) = dialer_select_proto(&mut stream, protos, Version::V1)
             .timeout(self.immutable.timeout)

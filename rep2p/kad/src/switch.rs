@@ -376,4 +376,27 @@ mod tests {
 
         log::info!("put value, peer_id={}, nodes={}", peer_id, put_nodes);
     }
+
+
+    #[futures_test::test]
+    async fn put_value_1() {
+        let switch = init().await;
+
+        let kad = KadSwitch::new(&switch, KBucketRouteTable::new(switch.local_id()))
+            .with_seeds([
+                "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                
+            ])
+            .await
+            .unwrap();
+
+        let peer_id: PeerId = "12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB".parse().unwrap();
+
+        let (stream,_) = kad.switch.connect(&peer_id, [PROTOCOL_IPFS_KAD,PROTOCOL_IPFS_LAN_KAD]).await.unwrap();
+
+        log::trace!("Begin put value");
+
+        stream.kad_put_value("/test/hello", "world", 1024*1024).await.unwrap();
+    }
 }
