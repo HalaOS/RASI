@@ -127,10 +127,7 @@ impl<'a> Recursively<'a> {
                 let mut sender = sender.clone();
 
                 spawn_ok(async move {
-                    sender
-                        .send((peer_id, fut.await))
-                        .await
-                        .expect("Early returns");
+                    _ = sender.send((peer_id, fut.await)).await;
                 });
 
                 pending += 1;
@@ -154,7 +151,7 @@ impl<'a> Recursively<'a> {
                 match result {
                     Ok(Routing::Closest(peers)) => {
                         log::trace!(
-                            "{}, query peer_id={}, closest={}",
+                            "{}, query peer_id={}, rx closest={}",
                             self.label.unwrap_or("routing"),
                             peer_id,
                             peers.len()
@@ -186,7 +183,7 @@ impl<'a> Recursively<'a> {
                         return Ok(self.closest_k);
                     }
                     Err(err) => {
-                        log::trace!(
+                        log::error!(
                             "{}, query peer_id={}, err={}",
                             self.label.unwrap_or("routing"),
                             peer_id,
@@ -217,7 +214,7 @@ impl<'a> Recursively<'a> {
         }
 
         log::trace!(
-            "{}, closest_k={}",
+            "{}, update closest_k={}",
             self.label.unwrap_or("routing"),
             self.closest_k.len(),
         );
@@ -255,10 +252,10 @@ pub struct RouterOptions {
 impl Default for RouterOptions {
     fn default() -> Self {
         Self {
-            rpc_timeout: Duration::from_secs(10),
+            rpc_timeout: Duration::from_secs(5),
             max_packet_size: 1024 * 1024 * 4,
             store: Arc::new(KadMemoryStore::new().into()),
-            concurrency: NonZeroUsize::new(10).unwrap(),
+            concurrency: NonZeroUsize::new(20).unwrap(),
         }
     }
 }
@@ -413,6 +410,10 @@ impl<'a> RoutingAlogrithm for FindNode<'a> {
         let timeout = self.ops.rpc_timeout;
 
         async move {
+            if peer_id == target {
+                return Ok(Routing::Finished);
+            }
+
             let (stream, _) = switch
                 .open(peer_id, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
                 .timeout(timeout)
@@ -420,7 +421,7 @@ impl<'a> RoutingAlogrithm for FindNode<'a> {
                 .ok_or(Error::Timeout)??;
 
             let closest_k = stream
-                .kad_find_node(Key::from(&target).to_bytes(), max_packet_size)
+                .kad_find_node(target.to_bytes(), max_packet_size)
                 .timeout(timeout)
                 .await
                 .ok_or(Error::Timeout)??;
@@ -430,7 +431,9 @@ impl<'a> RoutingAlogrithm for FindNode<'a> {
             let mut finished = false;
 
             for peer_info in closest_k {
-                finished = peer_info.id == target;
+                if peer_info.id == target {
+                    finished = true;
+                }
 
                 candidates.push(peer_info.id);
                 switch.update_peer_info(peer_info).await?;
@@ -469,7 +472,6 @@ mod tests {
         let switch = Switch::new("kad-test")
             .transport(QuicTransport::default())
             .transport(TcpTransport)
-            // .protos([PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
             .create()
             .await
             .unwrap();
@@ -512,7 +514,7 @@ mod tests {
             .unwrap();
 
         let peer_id =
-            PeerId::from_str("12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB").unwrap();
+            PeerId::from_str("12D3KooWEdYTHAootKrL5VbHdXRf6JYVe52xycsjCDXn6P3aU4dL").unwrap();
 
         let peer_info = kad.find_node(&peer_id).await.unwrap();
 

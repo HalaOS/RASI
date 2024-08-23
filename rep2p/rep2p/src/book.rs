@@ -108,6 +108,7 @@ pub struct MemoryPeerBook(Mutex<RawMemoryPeerBook>);
 #[async_trait]
 impl syscall::DriverPeerBook for MemoryPeerBook {
     async fn put(&self, info: PeerInfo) -> Result<Option<PeerInfo>> {
+        log::trace!("MemoryPeerBook, put id={}", info.id);
         let mut raw = self.0.lock().await;
         let id = info.id.clone();
 
