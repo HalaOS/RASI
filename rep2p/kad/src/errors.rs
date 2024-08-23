@@ -4,7 +4,7 @@ use rep2p::multiaddr::{self, Multiaddr};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Multiaddr without p2p node, {0}")]
-    InvalidSeedMultAddr(Multiaddr),
+    SeedMultAddr(Multiaddr),
 
     #[error(transparent)]
     SwitchError(#[from] rep2p::Error),
