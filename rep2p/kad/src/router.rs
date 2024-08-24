@@ -252,7 +252,7 @@ pub struct RouterOptions {
 impl Default for RouterOptions {
     fn default() -> Self {
         Self {
-            rpc_timeout: Duration::from_secs(5),
+            rpc_timeout: Duration::from_secs(10),
             max_packet_size: 1024 * 1024 * 4,
             store: Arc::new(KadMemoryStore::new().into()),
             concurrency: NonZeroUsize::new(20).unwrap(),
@@ -488,8 +488,8 @@ mod tests {
         let kad = Router::new()
             .with_seeds(
                 switch,[
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
             ])
             .await
             .unwrap();
@@ -505,19 +505,37 @@ mod tests {
     async fn find_node_1() {
         let switch = init().await;
 
-        let kad =  Router::new()
-            .with_seeds(switch,[
+        let kad = Router::new()
+            .with_seeds(
+                switch,[
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ"
             ])
             .await
             .unwrap();
 
         let peer_id =
-            PeerId::from_str("12D3KooWEdYTHAootKrL5VbHdXRf6JYVe52xycsjCDXn6P3aU4dL").unwrap();
+            PeerId::from_str("12D3KooWEPZizPnaBj1qvg6BoJ92svF5cyvJergppGZRopajgLZA").unwrap();
 
         let peer_info = kad.find_node(&peer_id).await.unwrap();
 
         log::info!("find_node: {}, {:?}", peer_id, peer_info);
+    }
+
+    #[futures_test::test]
+    async fn put_value() {
+        let switch = init().await;
+
+        let raddr: Multiaddr = "/ip4/0.0.0.0/tcp/4001".parse().unwrap();
+
+        let (stream, _) = switch
+            .open(raddr, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+            .await
+            .unwrap();
+
+        stream
+            .kad_put_value("/key/hello", "world", 1024 * 1024)
+            .await
+            .unwrap();
     }
 }

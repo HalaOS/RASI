@@ -26,8 +26,6 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
         async move {
             let buf = message.write_to_bytes()?;
 
-            log::trace!("kad_rpc_call, write length: {}", buf.len());
-
             let mut payload_len = unsigned_varint::encode::usize_buffer();
 
             self.write_all(unsigned_varint::encode::usize(buf.len(), &mut payload_len))
@@ -35,11 +33,7 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
 
             self.write_all(buf.as_slice()).await?;
 
-            log::trace!("kad_rpc_call, write body");
-
             let body_len = unsigned_varint::aio::read_usize(&mut self).await?;
-
-            log::trace!("kad_rpc_call, read length: {}", body_len);
 
             if body_len > max_recv_len {
                 return Err(Error::ResponeLength(max_recv_len));

@@ -776,7 +776,7 @@ impl Switch {
             }
         }
 
-        let raddrs = self
+        let peer_info = self
             .immutable
             .peer_book
             .get(id)
@@ -785,7 +785,7 @@ impl Switch {
 
         let mut last_error = None;
 
-        for raddr in raddrs.addrs {
+        for raddr in peer_info.addrs {
             log::trace!("{}, connect to {}", id, raddr);
 
             match self.transport_connect_to_prv(&raddr).await {
