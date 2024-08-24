@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     ops::Deref,
     sync::Arc,
     time::Duration,
@@ -112,6 +113,18 @@ impl From<PeerId> for ConnectTo<'static> {
 impl From<Multiaddr> for ConnectTo<'static> {
     fn from(value: Multiaddr) -> Self {
         Self::Multiaddr(value)
+    }
+}
+
+impl TryFrom<&str> for ConnectTo<'static> {
+    type Error = Error;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        if let Ok(peer_id) = value.parse::<PeerId>() {
+            return Ok(Self::PeerId(peer_id));
+        }
+
+        return Ok(Self::Multiaddr(value.parse::<Multiaddr>()?));
     }
 }
 
@@ -661,7 +674,7 @@ impl Switch {
 
         identity.set_observedAddr(peer_addr.to_vec());
 
-        identity.set_publicKey(self.public_key().encode_protobuf());
+        identity.set_publicKey(self.local_public_key().encode_protobuf());
 
         identity.set_agentVersion(self.immutable.agent_version.to_owned());
 
@@ -825,13 +838,17 @@ impl Switch {
     }
 
     /// Open a new stream with specified `protos` connected to remote peer.
-    pub async fn open<'a, C, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
+    pub async fn open<'a, C, E, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
     where
-        C: Into<ConnectTo<'a>>,
+        C: TryInto<ConnectTo<'a>, Error = E>,
         I: IntoIterator,
         I::Item: AsRef<str>,
+        E: Debug,
     {
-        let mut conn = match target.into() {
+        let mut conn = match target
+            .try_into()
+            .map_err(|err| Error::Other(format!("{:?}", err)))?
+        {
             ConnectTo::PeerIdRef(peer_id) => self.transport_connect(peer_id).await?,
             ConnectTo::MultiaddrRef(raddr) => self.transport_connect_to(raddr).await?,
             ConnectTo::PeerId(peer_id) => self.transport_connect(&peer_id).await?,
@@ -911,13 +928,6 @@ impl Switch {
     /// Returns the [`PeerId`] of the [`raddr`](Multiaddr).
     pub async fn peer_id_of(&self, raddr: &Multiaddr) -> Result<Option<PeerId>> {
         Ok(self.immutable.peer_book.peer_id_of(raddr).await?)
-    }
-
-    /// Returns the public key of this switch.
-    ///
-    /// This returned value is provided by [`KeyStore`] service.
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
     }
 
     /// Get associated keystore instance.

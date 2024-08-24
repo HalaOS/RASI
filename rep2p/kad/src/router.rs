@@ -452,6 +452,7 @@ impl<'a> RoutingAlogrithm for FindNode<'a> {
 mod tests {
     use std::{str::FromStr, sync::Once};
 
+    use identity::Keypair;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
     use rep2p::Switch;
     use rep2p_quic::QuicTransport;
@@ -526,16 +527,23 @@ mod tests {
     async fn put_value() {
         let switch = init().await;
 
-        let raddr: Multiaddr = "/ip4/0.0.0.0/tcp/4001".parse().unwrap();
-
         let (stream, _) = switch
-            .open(raddr, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+            .open(
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
+            )
             .await
             .unwrap();
 
-        stream
-            .kad_put_value("/key/hello", "world", 1024 * 1024)
-            .await
-            .unwrap();
+        let keypair = Keypair::generate_ed25519();
+
+        let id = PeerId::from_public_key(&keypair.public());
+        let value = keypair.public().encode_protobuf();
+
+        let mut key = "/pk/".as_bytes().to_vec();
+
+        key.append(&mut id.to_bytes());
+
+        stream.kad_put_value(key, value, 1024 * 1024).await.unwrap();
     }
 }

@@ -40,6 +40,9 @@ pub enum Error {
 
     #[error("Protocol timeout.")]
     Timeout,
+
+    #[error("{0}")]
+    Other(String),
 }
 
 /// The result type for this module.

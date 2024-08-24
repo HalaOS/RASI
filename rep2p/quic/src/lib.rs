@@ -87,7 +87,7 @@ async fn create_quic_config(host_key: &KeyStore, timeout: Duration) -> io::Resul
 
     config.set_application_protos(&[b"libp2p"]).unwrap();
 
-    config.enable_early_data();
+    // config.enable_early_data();
 
     config.set_disable_active_migration(false);
 
