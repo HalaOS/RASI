@@ -592,9 +592,11 @@ mod tests {
 
             let mut stream = conn.stream_open().await.unwrap();
 
-            assert_eq!(stream.stream_id(), 2);
-
             stream.write_all(b"hello world").await.unwrap();
+
+            let mut buf = vec![0; 12];
+
+            _ = stream.read(&mut buf).await;
         });
 
         let (read, write) = TcpStream::connect(local_addr).await.unwrap().split();

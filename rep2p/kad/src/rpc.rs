@@ -19,6 +19,14 @@ pub struct GetProviders {
     pub provider_peers: Vec<PeerInfo>,
 }
 
+/// Returns by [`kad_get_value`](KadRpc::kad_get_value)
+pub struct GetValue {
+    /// Closer peers to the provider key.
+    pub closer_peers: Vec<PeerInfo>,
+    /// Record value.
+    pub value: Option<Vec<u8>>,
+}
+
 /// An extension to add kad rpc functions to [`AsyncWrite`] + [`AsyncRead`]
 pub trait KadRpc: AsyncWrite + AsyncRead + Unpin {
     /// Send a kad request and wait for response.
@@ -154,6 +162,39 @@ pub trait KadRpc: AsyncWrite + AsyncRead + Unpin {
             }
 
             Ok(())
+        }
+    }
+
+    /// Send a kad `Get_VALUE` request and wait for response.
+    fn kad_get_value<K>(self, key: K, max_recv_len: usize) -> impl Future<Output = Result<GetValue>>
+    where
+        Self: Sized,
+        K: AsRef<[u8]>,
+    {
+        let mut message = rpc::Message::new();
+
+        message.type_ = rpc::message::MessageType::GET_VALUE.into();
+        message.key = key.as_ref().to_vec();
+
+        async move {
+            let resp = self.kad_rpc_call(&message, max_recv_len).await?;
+
+            let closer_peers = resp
+                .closerPeers
+                .into_iter()
+                .map(|peer| peer.try_into())
+                .collect::<Result<Vec<PeerInfo>>>()?;
+
+            let value = if let Some(record) = resp.record.into_option() {
+                Some(record.value)
+            } else {
+                None
+            };
+
+            Ok(GetValue {
+                closer_peers,
+                value,
+            })
         }
     }
 

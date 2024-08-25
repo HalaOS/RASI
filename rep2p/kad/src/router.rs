@@ -458,7 +458,7 @@ mod tests {
     use rep2p_quic::QuicTransport;
     use rep2p_tcp::TcpTransport;
 
-    use crate::rpc::GetProviders;
+    use crate::rpc::{GetProviders, GetValue};
 
     use super::*;
 
@@ -531,7 +531,7 @@ mod tests {
 
         let (stream, _) = switch
             .open(
-                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                 "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
             .await
@@ -546,7 +546,25 @@ mod tests {
 
         key.append(&mut id.to_bytes());
 
-        stream.kad_put_value(key, value, 1024 * 1024).await.unwrap();
+        stream
+            .kad_put_value(&key, &value, 1024 * 1024)
+            .await
+            .unwrap();
+
+        let (stream, _) = switch
+            .open(
+                 "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
+            )
+            .await
+            .unwrap();
+
+        let GetValue {
+            closer_peers: _,
+            value: get_value,
+        } = stream.kad_get_value(key, 1024 * 1024).await.unwrap();
+
+        assert_eq!(get_value, Some(value));
     }
 
     #[futures_test::test]
