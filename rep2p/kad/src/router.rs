@@ -531,7 +531,7 @@ mod tests {
 
         let (stream, _) = switch
             .open(
-                 "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
             .await
@@ -553,7 +553,7 @@ mod tests {
 
         let (stream, _) = switch
             .open(
-                 "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
             .await
@@ -573,7 +573,7 @@ mod tests {
 
         let (stream, _) = switch
             .open(
-                "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
             .await
@@ -594,20 +594,20 @@ mod tests {
 
         let (stream, _) = switch
             .open(
-                "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
             .await
             .unwrap();
 
         let GetProviders {
-            closer_peers,
+            closer_peers: _,
             provider_peers,
         } = stream
             .kad_get_providers(id.to_bytes(), 1024 * 1024)
             .await
             .unwrap();
 
-        log::trace!("{:?},{:?}", provider_peers, closer_peers);
+        assert_eq!(provider_peers, vec![peer_info]);
     }
 }

@@ -34,6 +34,12 @@ pub struct PeerInfo {
     pub conn_type: ConnectionType,
 }
 
+impl PartialEq for PeerInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id) && self.addrs.eq(&other.addrs)
+    }
+}
+
 impl Default for PeerInfo {
     fn default() -> Self {
         Self {
