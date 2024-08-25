@@ -373,8 +373,7 @@ impl Router {
 
         let find_node = FindNode {
             target: peer_id,
-            switch: &self.switch,
-            ops: &self.ops,
+            router: self,
         };
 
         Recursively::new(
@@ -394,8 +393,7 @@ impl Router {
 /// FIND_NODE algorithm implementation.
 pub struct FindNode<'a> {
     target: &'a PeerId,
-    switch: &'a Switch,
-    ops: &'a RouterOptions,
+    router: &'a Router,
 }
 
 impl<'a> RoutingAlogrithm for FindNode<'a> {
@@ -404,10 +402,11 @@ impl<'a> RoutingAlogrithm for FindNode<'a> {
         peer_id: &PeerId,
     ) -> impl Future<Output = std::io::Result<Routing>> + Send + 'static {
         let peer_id = peer_id.clone();
-        let switch = self.switch.clone();
+        let switch = self.router.switch.clone();
         let target = self.target.clone();
-        let max_packet_size = self.ops.max_packet_size;
-        let timeout = self.ops.rpc_timeout;
+        let max_packet_size = self.router.ops.max_packet_size;
+        let timeout = self.router.ops.rpc_timeout;
+        // let kbucket = self.router.kbucket.clone();
 
         async move {
             if peer_id == target {
