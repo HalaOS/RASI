@@ -11,10 +11,17 @@ use crate::{
     proto::{self, rpc},
 };
 
-#[allow(unused)]
+/// Returns by [`kad_get_providers`](KadRpc::kad_get_providers)
+pub struct GetProviders {
+    /// Closer peers to the provider key.
+    pub closer_peers: Vec<PeerInfo>,
+    /// [`PeerInfo`]s of provider.
+    pub provider_peers: Vec<PeerInfo>,
+}
+
 /// An extension to add kad rpc functions to [`AsyncWrite`] + [`AsyncRead`]
-pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
-    /// Invoke a libp2p kad rpc call.
+pub trait KadRpc: AsyncWrite + AsyncRead + Unpin {
+    /// Send a kad request and wait for response.
     fn kad_rpc_call(
         mut self,
         message: &rpc::Message,
@@ -33,7 +40,11 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
 
             self.write_all(buf.as_slice()).await?;
 
+            log::trace!("KAD_RPC_CALL, tx length={}", buf.len());
+
             let body_len = unsigned_varint::aio::read_usize(&mut self).await?;
+
+            log::trace!("KAD_RPC_CALL, rx length={}", body_len);
 
             if body_len > max_recv_len {
                 return Err(Error::ResponeLength(max_recv_len));
@@ -49,9 +60,30 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
         }
     }
 
-    /// invoke find_node call.
+    /// Send a kad message.
+    fn kad_rpc_send(mut self, message: &rpc::Message) -> impl Future<Output = Result<()>>
+    where
+        Self: Sized,
+    {
+        async move {
+            let buf = message.write_to_bytes()?;
+
+            let mut payload_len = unsigned_varint::encode::usize_buffer();
+
+            self.write_all(unsigned_varint::encode::usize(buf.len(), &mut payload_len))
+                .await?;
+
+            self.write_all(buf.as_slice()).await?;
+
+            log::trace!("KAD_RPC_SEND, tx length={}", buf.len());
+
+            Ok(())
+        }
+    }
+
+    /// Send a kad `FIND_NODE` request and wait for response.
     fn kad_find_node<K>(
-        mut self,
+        self,
         key: K,
         max_recv_len: usize,
     ) -> impl Future<Output = Result<Vec<PeerInfo>>>
@@ -87,8 +119,9 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
         }
     }
 
+    /// Send a kad `PUT_VALUE` request and wait for response.
     fn kad_put_value<K, V>(
-        mut self,
+        self,
         key: K,
         value: V,
         max_recv_len: usize,
@@ -123,6 +156,62 @@ pub(crate) trait KadRpc: AsyncWrite + AsyncRead + Unpin {
             Ok(())
         }
     }
+
+    /// Send a kad `ADD_PROVIDER` message.
+    fn kad_add_provider<K>(self, key: K, peer_info: &PeerInfo) -> impl Future<Output = Result<()>>
+    where
+        Self: Sized,
+        K: AsRef<[u8]>,
+    {
+        let mut message = rpc::Message::new();
+
+        message.type_ = rpc::message::MessageType::ADD_PROVIDER.into();
+        message.key = key.as_ref().to_vec();
+        message.providerPeers = vec![peer_info.into()];
+
+        async move {
+            self.kad_rpc_send(&message).await?;
+
+            Ok(())
+        }
+    }
+
+    /// Send a kad `GEt_PROVIDERS` request and wait for response.
+    fn kad_get_providers<K>(
+        self,
+        key: K,
+        max_recv_len: usize,
+    ) -> impl Future<Output = Result<GetProviders>>
+    where
+        Self: Sized,
+        K: AsRef<[u8]>,
+    {
+        let mut message = rpc::Message::new();
+
+        message.type_ = rpc::message::MessageType::GET_PROVIDERS.into();
+        message.key = key.as_ref().to_vec();
+
+        async move {
+            let resp = self.kad_rpc_call(&message, max_recv_len).await?;
+
+            let closer_peers = resp
+                .closerPeers
+                .into_iter()
+                .map(|peer| peer.try_into())
+                .collect::<Result<Vec<PeerInfo>>>()?;
+
+            let provider_peers = resp
+                .providerPeers
+                .into_iter()
+                .map(|peer| peer.try_into())
+                .collect::<Result<Vec<PeerInfo>>>()?;
+
+            Ok(GetProviders {
+                provider_peers,
+                closer_peers,
+            })
+        }
+    }
 }
 
 impl<T> KadRpc for T where T: AsyncWrite + AsyncRead + Unpin {}
@@ -146,5 +235,35 @@ impl From<rep2p::book::ConnectionType> for proto::rpc::message::ConnectionType {
             rep2p::book::ConnectionType::CanConnect => Self::CAN_CONNECT,
             rep2p::book::ConnectionType::CannotConnect => Self::CANNOT_CONNECT,
         }
+    }
+}
+
+impl From<PeerInfo> for proto::rpc::message::Peer {
+    fn from(value: PeerInfo) -> Self {
+        Self::from(&value)
+    }
+}
+impl From<&PeerInfo> for proto::rpc::message::Peer {
+    fn from(value: &PeerInfo) -> Self {
+        Self {
+            id: value.id.to_bytes(),
+            addrs: value.addrs.iter().map(|addr| addr.to_vec()).collect(),
+            ..Default::default()
+        }
+    }
+}
+
+impl TryFrom<proto::rpc::message::Peer> for PeerInfo {
+    type Error = Error;
+    fn try_from(value: proto::rpc::message::Peer) -> Result<Self> {
+        Ok(Self {
+            id: PeerId::from_bytes(&value.id)?,
+            addrs: value
+                .addrs
+                .into_iter()
+                .map(|addr| Multiaddr::try_from(addr).map_err(|err| err.into()))
+                .collect::<Result<Vec<Multiaddr>>>()?,
+            ..Default::default()
+        })
     }
 }

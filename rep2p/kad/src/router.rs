@@ -458,6 +458,8 @@ mod tests {
     use rep2p_quic::QuicTransport;
     use rep2p_tcp::TcpTransport;
 
+    use crate::rpc::GetProviders;
+
     use super::*;
 
     async fn init() -> Switch {
@@ -545,5 +547,49 @@ mod tests {
         key.append(&mut id.to_bytes());
 
         stream.kad_put_value(key, value, 1024 * 1024).await.unwrap();
+    }
+
+    #[futures_test::test]
+    async fn add_provider() {
+        let switch = init().await;
+
+        let (stream, _) = switch
+            .open(
+                "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
+            )
+            .await
+            .unwrap();
+
+        let id = PeerId::random();
+
+        let peer_info = PeerInfo {
+            id: switch.local_id().clone(),
+            addrs: vec!["/ip4/89.58.16.110/udp/37530/quic-v1".parse().unwrap()],
+            ..Default::default()
+        };
+
+        stream
+            .kad_add_provider(id.to_bytes(), &peer_info)
+            .await
+            .unwrap();
+
+        let (stream, _) = switch
+            .open(
+                "/ip4/127.0.0.1/udp/4001/quic-v1/p2p/12D3KooWLjoYKVxbGGwLwaD4WHWM9YiDpruCYAoFBywJu3CJppyB",
+                [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
+            )
+            .await
+            .unwrap();
+
+        let GetProviders {
+            closer_peers,
+            provider_peers,
+        } = stream
+            .kad_get_providers(id.to_bytes(), 1024 * 1024)
+            .await
+            .unwrap();
+
+        log::trace!("{:?},{:?}", provider_peers, closer_peers);
     }
 }

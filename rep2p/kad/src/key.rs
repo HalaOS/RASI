@@ -37,21 +37,13 @@ impl From<Vec<u8>> for Key {
 
 impl From<&[u8]> for Key {
     fn from(value: &[u8]) -> Self {
-        let buf = if value.len() <= 32 {
-            let mut buf = [0; 32];
+        use sha2::Digest;
 
-            buf[(32 - value.len())..].copy_from_slice(value);
+        let mut hasher = sha2::Sha256::new();
 
-            buf
-        } else {
-            use sha2::Digest;
+        hasher.update(value);
 
-            let mut hasher = sha2::Sha256::new();
-
-            hasher.update(value);
-
-            hasher.finalize().into()
-        };
+        let buf: [u8; 32] = hasher.finalize().into();
 
         Self::from(buf)
     }
@@ -64,15 +56,7 @@ impl From<identity::PeerId> for Key {
 }
 impl From<&identity::PeerId> for Key {
     fn from(value: &identity::PeerId) -> Self {
-        use sha2::Digest;
-
-        let mut hasher = sha2::Sha256::new();
-
-        hasher.update(value.to_bytes());
-
-        let buf: [u8; 32] = hasher.finalize().into();
-
-        Self::from(buf)
+        Self::from(value.to_bytes())
     }
 }
 
