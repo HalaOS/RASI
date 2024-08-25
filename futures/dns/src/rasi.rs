@@ -10,13 +10,11 @@ use crate::{
 impl DnsLookup {
     /// Create a DNS lookup over udp socket.
     pub async fn with_udp_server(nameserver: SocketAddr) -> Result<Self> {
-        let socket = UdpSocket::bind(
-            [
-                "0.0.0.0:0".parse::<SocketAddr>()?,
-                // "[::]:0".parse::<SocketAddr>()?,
-            ]
-            .as_slice(),
-        )
+        let socket = UdpSocket::bind(if nameserver.is_ipv4() {
+            "0.0.0.0:0".parse::<SocketAddr>()?
+        } else {
+            "[::]:0".parse::<SocketAddr>()?
+        })
         .await?;
 
         let this = Self::default();
@@ -78,7 +76,7 @@ impl DnsLookup {
         loop {
             let (read_size, from) = match socket
                 .recv_from(&mut buf)
-                .timeout(Duration::from_secs(1))
+                .timeout(Duration::from_millis(200))
                 .await
             {
                 Some(Ok(r)) => r,
@@ -142,7 +140,7 @@ mod tests {
             lookup.to_inner()
         };
 
-        sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(1)).await;
 
         assert_eq!(innner.0.send_closed.load(Ordering::Relaxed), true);
         assert_eq!(innner.0.recv_closed.load(Ordering::Relaxed), true);

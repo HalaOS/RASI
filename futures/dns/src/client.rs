@@ -36,6 +36,10 @@ pub(crate) struct RawDnsLookup {
     waiters: KeyWaitMap<LookupEvent, LookupEventArg>,
 }
 
+/// A DNS client type without [`Drop`] support.
+/// you should manually call the [`close`](DnsLookupWithoutDrop::close) function to cleanup resources.
+///
+/// Usually this type is used by background io tasks, the end-users should use [`DnsLookup`] instead.
 #[derive(Default, Clone)]
 pub struct DnsLookupWithoutDrop(pub(crate) Arc<RawDnsLookup>);
 
@@ -44,6 +48,7 @@ impl DnsLookupWithoutDrop {
     pub fn is_closed(&self) -> bool {
         self.0.is_closed.load(Ordering::SeqCst)
     }
+
     /// Writes a single DNS packet to be sent to the server.
     pub async fn send(&self) -> Result<Vec<u8>> {
         loop {
