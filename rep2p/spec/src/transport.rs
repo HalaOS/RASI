@@ -68,7 +68,7 @@ async fn stream_ping_pong(cx: &dyn TransportSpecContext) -> Result<()> {
 
     for raddr in peer_addrs {
         for _ in 0..100 {
-            let (mut stream, _) = client.open(&raddr, TRANSPORT_SPEC_PROTOS).await?;
+            let (mut stream, _) = client.connect(&raddr, TRANSPORT_SPEC_PROTOS).await?;
 
             stream.write_all(b"hello libp2p").await.unwrap();
 
@@ -128,7 +128,7 @@ async fn serve_mux(cx: &dyn TransportSpecContext) -> Result<()> {
 
     for raddr in peer_addrs {
         for _ in 0..200 {
-            let (mut stream, _) = client.open(&raddr, TRANSPORT_SPEC_PROTOS).await?;
+            let (mut stream, _) = client.connect(&raddr, TRANSPORT_SPEC_PROTOS).await?;
 
             stream.write_all(b"hello libp2p").await.unwrap();
 

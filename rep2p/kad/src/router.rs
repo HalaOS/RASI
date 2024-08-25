@@ -415,7 +415,7 @@ impl<'a> RoutingAlogrithm for FindNode<'a> {
             }
 
             let (stream, _) = switch
-                .open(peer_id, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
+                .connect(peer_id, [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD])
                 .timeout(timeout)
                 .await
                 .ok_or(Error::Timeout)??;
@@ -530,7 +530,7 @@ mod tests {
         let switch = init().await;
 
         let (stream, _) = switch
-            .open(
+            .connect(
                  "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
@@ -552,7 +552,7 @@ mod tests {
             .unwrap();
 
         let (stream, _) = switch
-            .open(
+            .connect(
                  "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
@@ -572,7 +572,7 @@ mod tests {
         let switch = init().await;
 
         let (stream, _) = switch
-            .open(
+            .connect(
                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
@@ -593,7 +593,7 @@ mod tests {
             .unwrap();
 
         let (stream, _) = switch
-            .open(
+            .connect(
                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )

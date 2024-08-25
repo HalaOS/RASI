@@ -731,27 +731,6 @@ impl Switch {
         Ok(())
     }
 
-    /// Connect to peer with provided [`raddr`](Multiaddr).
-    ///
-    /// This function first query the route table to get the peer id,
-    /// if exists then check for a local connection cache.
-    ///
-    async fn transport_connect_to(&self, raddr: &Multiaddr) -> Result<Connection> {
-        log::trace!("{}, try establish transport connection", raddr);
-
-        if let Some(peer_id) = self.peer_id_of(raddr).await? {
-            log::trace!(
-                "{}, found peer_id in local book, peer_id={}",
-                raddr,
-                peer_id
-            );
-
-            return self.transport_connect(&peer_id).await;
-        }
-
-        self.transport_connect_to_prv(raddr).await
-    }
-
     async fn transport_connect_to_prv(&self, raddr: &Multiaddr) -> Result<Connection> {
         let transport = self
             .immutable
@@ -837,8 +816,29 @@ impl Switch {
         }
     }
 
+    /// Connect to peer with provided [`raddr`](Multiaddr).
+    ///
+    /// This function first query the route table to get the peer id,
+    /// if exists then check for a local connection cache.
+    ///
+    pub async fn transport_connect_to(&self, raddr: &Multiaddr) -> Result<Connection> {
+        log::trace!("{}, try establish transport connection", raddr);
+
+        if let Some(peer_id) = self.peer_id_of(raddr).await? {
+            log::trace!(
+                "{}, found peer_id in local book, peer_id={}",
+                raddr,
+                peer_id
+            );
+
+            return self.transport_connect(&peer_id).await;
+        }
+
+        self.transport_connect_to_prv(raddr).await
+    }
+
     /// Open a new stream with specified `protos` connected to remote peer.
-    pub async fn open<'a, C, E, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
+    pub async fn connect<'a, C, E, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
     where
         C: TryInto<ConnectTo<'a>, Error = E>,
         I: IntoIterator,
