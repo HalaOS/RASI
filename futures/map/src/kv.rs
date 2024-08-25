@@ -26,6 +26,18 @@ pub struct KeyWaitMap<K, V> {
     inner: Mutex<RawMap<K, V>>,
 }
 
+
+impl<K, V> Default for KeyWaitMap<K, V> {
+    fn default() -> Self {
+        KeyWaitMap {
+            inner: Mutex::new(RawMap {
+                kv: HashMap::new(),
+                wakers: HashMap::new(),
+            }),
+        }
+    }
+}
+
 impl<K, V> KeyWaitMap<K, V>
 where
     K: Eq + Hash + Unpin,

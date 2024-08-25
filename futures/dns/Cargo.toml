@@ -1,0 +1,25 @@
+[package]
+description = "A futures-based dns client implementation"
+documentation = "https://docs.rs/futures-dns"
+edition.workspace = true
+license = "MIT"
+name = "futures-dns"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+dns-protocol = { workspace = true }
+futures = { workspace = true }
+futures-map = { workspace = true }
+log = { workspace = true }
+rasi = { workspace = true, optional = true }
+
+[dev-dependencies]
+futures-test = { workspace = true }
+rasi = { workspace = true, features = ["task-futures"] }
+rasi-mio = { workspace = true }
+pretty_env_logger = { workspace = true }
+
+[features]
+rasi = ["dep:rasi"]
