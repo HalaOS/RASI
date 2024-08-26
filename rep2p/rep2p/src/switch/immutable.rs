@@ -1,26 +1,41 @@
+use std::{sync::Arc, time::Duration};
+
+use futures::lock::Mutex;
+use futures_map::KeyWaitMap;
+use multiaddr::Multiaddr;
+
+use crate::{
+    book::{syscall::DriverPeerBook, MemoryPeerBook, PeerBook},
+    keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
+    transport::{syscall::DriverTransport, Transport},
+    Result,
+};
+
+use super::{mutable::MutableSwitch, InnerSwitch, Switch};
+
 /// immutable context data for one switch.
-struct ImmutableSwitch {
+pub(super) struct ImmutableSwitch {
     /// The maximun size of active connections pool size.
-    max_conn_pool_size: usize,
+    pub(super) max_conn_pool_size: usize,
     /// The maximun length of inbound streams queue.
-    max_inbound_length: usize,
+    pub(super) max_inbound_length: usize,
     /// The value of rpc timeout.
-    timeout: Duration,
+    pub(super) timeout: Duration,
     /// This is a free-form string, identitying the implementation of the peer. The usual format is agent-name/version,
     /// where agent-name is the name of the program or library and version is its semantic version.
-    agent_version: String,
+    pub(super) agent_version: String,
     /// The max length of identity packet.
-    max_identity_packet_size: usize,
+    pub(super) max_identity_packet_size: usize,
     /// A list of transport that this switch registered.
-    transports: Vec<Transport>,
+    pub(super) transports: Vec<Transport>,
     /// Keystore registered to this switch.
-    keystore: KeyStore,
+    pub(super) keystore: KeyStore,
     /// Peer book for this switch.
-    peer_book: PeerBook,
+    pub(super) peer_book: PeerBook,
 }
 
 impl ImmutableSwitch {
-    fn new(agent_version: String) -> Self {
+    pub(super) fn new(agent_version: String) -> Self {
         Self {
             max_conn_pool_size: 20,
             max_inbound_length: 200,
@@ -33,7 +48,7 @@ impl ImmutableSwitch {
         }
     }
 
-    fn get_transport_by_address(&self, laddr: &Multiaddr) -> Option<&Transport> {
+    pub(super) fn get_transport_by_address(&self, laddr: &Multiaddr) -> Option<&Transport> {
         self.transports
             .iter()
             .find(|transport| transport.multiaddr_hit(laddr))
@@ -42,7 +57,7 @@ impl ImmutableSwitch {
 
 /// A builder to create the `Switch` instance.
 pub struct SwitchBuilder {
-    ops: Result<ImmutableSwitch>,
+    pub(super) ops: Result<ImmutableSwitch>,
 }
 
 impl SwitchBuilder {
