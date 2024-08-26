@@ -11,24 +11,31 @@ use super::{
 #[derive(Default)]
 pub(super) struct MutableSwitch {
     pub(super) conn_pool: ConnPool,
-    pub(super) incoming_streams: HashMap<ListenerId, VecDeque<(ProtocolStream, String)>>,
-    pub(super) laddrs: Vec<Multiaddr>,
-    pub(super) protos: HashMap<String, ListenerId>,
+    incoming_streams: HashMap<ListenerId, VecDeque<(ProtocolStream, String)>>,
+    laddrs: Vec<Multiaddr>,
+    protos: HashMap<String, ListenerId>,
 }
 
 impl MutableSwitch {
     pub(super) fn new(max_pool_size: usize) -> Self {
         Self {
-            conn_pool: ConnPool {
-                max_pool_size,
-                ..Default::default()
-            },
+            conn_pool: ConnPool::new(max_pool_size),
             ..Default::default()
         }
     }
 
+    /// Register transport bind addresses.
+    pub(super) fn transport_bind_to(&mut self, addr: Multiaddr) {
+        self.laddrs.push(addr)
+    }
+
+    /// Returns the local bound addrs.
+    pub(super) fn local_addrs(&self) -> Vec<Multiaddr> {
+        self.laddrs.clone()
+    }
+
     /// Create a new server-side socket that accept inbound protocol stream.
-    pub(super) fn new_listener<I>(&mut self, protos: I) -> Result<ListenerId>
+    pub(super) fn new_protocol_listener<I>(&mut self, protos: I) -> Result<ListenerId>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -54,7 +61,7 @@ impl MutableSwitch {
     }
 
     /// Close the listener by id, and remove queued inbound stream.
-    pub(super) fn close_listener(&mut self, id: &ListenerId) {
+    pub(super) fn close_protocol_listener(&mut self, id: &ListenerId) {
         let keys = self
             .protos
             .iter()

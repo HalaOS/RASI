@@ -28,7 +28,7 @@ pub mod syscall {
         async fn bind(&self, laddr: &Multiaddr, switch: Switch) -> Result<Listener>;
 
         /// Connect to peer with remote peer [`raddr`](Multiaddr).
-        async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection>;
+        async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<TransportConnection>;
 
         /// Check if this transport support the protocol stack represented by the `addr`.
         fn multiaddr_hit(&self, addr: &Multiaddr) -> bool;
@@ -38,7 +38,7 @@ pub mod syscall {
     #[async_trait]
     pub trait DriverListener: Sync + Sync {
         /// Accept next incoming connection between local and peer.
-        async fn accept(&mut self) -> Result<Connection>;
+        async fn accept(&mut self) -> Result<TransportConnection>;
 
         /// Returns the local address that this listener is bound to.
         fn local_addr(&self) -> Result<Multiaddr>;
@@ -71,7 +71,7 @@ pub mod syscall {
         fn is_closed(&self) -> bool;
 
         /// Creates a new independently owned handle to the underlying socket.
-        fn clone(&self) -> Connection;
+        fn clone(&self) -> TransportConnection;
 
         /// Returns the count of active stream.
         fn actives(&self) -> usize;
@@ -121,7 +121,7 @@ driver_wrapper!(
 );
 
 impl Listener {
-    pub fn into_incoming(self) -> impl futures::Stream<Item = Result<Connection>> + Unpin {
+    pub fn into_incoming(self) -> impl futures::Stream<Item = Result<TransportConnection>> + Unpin {
         Box::pin(unfold(self, |mut listener| async move {
             let res = listener.accept().await;
             Some((res, listener))
@@ -131,10 +131,10 @@ impl Listener {
 
 driver_wrapper!(
     ["A type wrapper of [`DriverConnection`](syscall::DriverConnection)"]
-    Connection[syscall::DriverConnection]
+    TransportConnection[syscall::DriverConnection]
 );
 
-impl Connection {
+impl TransportConnection {
     /// A wrapper of driver's [`close`](syscall::DriverConnection::close) function.
     ///
     /// This function first removes self from [`Switch`] before calling the driver `close` function.
@@ -143,7 +143,7 @@ impl Connection {
         _ = self.as_driver().close().await;
     }
 
-    pub fn clone(&self) -> Connection {
+    pub fn clone(&self) -> TransportConnection {
         self.0.clone()
     }
 }

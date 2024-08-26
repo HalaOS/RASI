@@ -28,7 +28,7 @@ use rep2p::{
     multiaddr::{Multiaddr, Protocol, ToSockAddr},
     transport::{
         syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport},
-        Connection, Listener, ProtocolStream,
+        Listener, ProtocolStream, TransportConnection,
     },
     Switch,
 };
@@ -118,7 +118,7 @@ impl DriverTransport for QuicTransport {
     }
 
     /// Connect to peer with remote peer [`raddr`](Multiaddr).
-    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection> {
+    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<TransportConnection> {
         let mut quic_config = create_quic_config(switch.keystore(), self.0).await?;
 
         let raddr = raddr.to_sockaddr()?;
@@ -176,7 +176,7 @@ impl QuicP2pListener {
 #[async_trait]
 impl DriverListener for QuicP2pListener {
     /// Accept next incoming connection between local and peer.
-    async fn accept(&mut self) -> Result<Connection> {
+    async fn accept(&mut self) -> Result<TransportConnection> {
         let conn = self.listener.accept().await?;
 
         let cert = conn.peer_cert().await.ok_or(io::Error::new(
@@ -299,7 +299,7 @@ impl DriverConnection for QuicP2pConn {
     }
 
     /// Creates a new independently owned handle to the underlying socket.
-    fn clone(&self) -> Connection {
+    fn clone(&self) -> TransportConnection {
         Clone::clone(self).into()
     }
 
@@ -413,11 +413,8 @@ mod tests {
         async fn create_switch(&self) -> Result<Switch> {
             let switch = Switch::new("test")
                 .transport(QuicTransport::default())
+                .transport_bind(["/ip4/127.0.0.1/udp/0/quic-v1"])
                 .create()
-                .await?;
-
-            switch
-                .transport_bind(&"/ip4/127.0.0.1/udp/0/quic-v1".parse()?)
                 .await?;
 
             Ok(switch)

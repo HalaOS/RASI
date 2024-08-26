@@ -8,7 +8,7 @@ use crate::{
     book::{syscall::DriverPeerBook, MemoryPeerBook, PeerBook},
     keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
     transport::{syscall::DriverTransport, Transport},
-    Result,
+    Error, Result,
 };
 
 use super::{mutable::MutableSwitch, InnerSwitch, Switch};
@@ -17,8 +17,6 @@ use super::{mutable::MutableSwitch, InnerSwitch, Switch};
 pub(super) struct ImmutableSwitch {
     /// The maximun size of active connections pool size.
     pub(super) max_conn_pool_size: usize,
-    /// The maximun length of inbound streams queue.
-    pub(super) max_inbound_length: usize,
     /// The value of rpc timeout.
     pub(super) timeout: Duration,
     /// This is a free-form string, identitying the implementation of the peer. The usual format is agent-name/version,
@@ -38,7 +36,6 @@ impl ImmutableSwitch {
     pub(super) fn new(agent_version: String) -> Self {
         Self {
             max_conn_pool_size: 20,
-            max_inbound_length: 200,
             agent_version,
             timeout: Duration::from_secs(10),
             max_identity_packet_size: 4096,
@@ -55,36 +52,41 @@ impl ImmutableSwitch {
     }
 }
 
+struct SwitchBuilderInner {
+    laddrs: Vec<Multiaddr>,
+    immutable: ImmutableSwitch,
+}
+
 /// A builder to create the `Switch` instance.
 pub struct SwitchBuilder {
-    pub(super) ops: Result<ImmutableSwitch>,
+    ops: Result<SwitchBuilderInner>,
 }
 
 impl SwitchBuilder {
+    pub(super) fn new(agent_version: String) -> Self {
+        Self {
+            ops: Ok(SwitchBuilderInner {
+                laddrs: Default::default(),
+                immutable: ImmutableSwitch::new(agent_version),
+            }),
+        }
+    }
     /// Set the `max_conn_pool_size`, the default value is `20`
     pub fn max_conn_pool_size(self, value: usize) -> Self {
         self.and_then(|mut cfg| {
-            cfg.max_conn_pool_size = value;
+            cfg.immutable.max_conn_pool_size = value;
 
             Ok(cfg)
         })
     }
 
-    /// Set the `max_inbound_length`, the default value is `200`
-    pub fn max_inbound_length(self, value: usize) -> Self {
-        self.and_then(|mut cfg| {
-            cfg.max_inbound_length = value;
-
-            Ok(cfg)
-        })
-    }
     /// Replace default [`MemoryKeyStore`].
     pub fn keystore<K>(self, value: K) -> Self
     where
         K: DriverKeyStore + 'static,
     {
         self.and_then(|mut cfg| {
-            cfg.keystore = value.into();
+            cfg.immutable.keystore = value.into();
 
             Ok(cfg)
         })
@@ -96,7 +98,7 @@ impl SwitchBuilder {
         R: DriverPeerBook + 'static,
     {
         self.and_then(|mut cfg| {
-            cfg.peer_book = value.into();
+            cfg.immutable.peer_book = value.into();
 
             Ok(cfg)
         })
@@ -105,7 +107,7 @@ impl SwitchBuilder {
     /// Set the protocol timeout, the default value is `10s`
     pub fn timeout(self, duration: Duration) -> Self {
         self.and_then(|mut cfg| {
-            cfg.timeout = duration;
+            cfg.immutable.timeout = duration;
 
             Ok(cfg)
         })
@@ -114,7 +116,7 @@ impl SwitchBuilder {
     /// Set the receive max buffer length of identity protocol.
     pub fn max_identity_packet_size(self, value: usize) -> Self {
         self.and_then(|mut cfg| {
-            cfg.max_identity_packet_size = value;
+            cfg.immutable.max_identity_packet_size = value;
 
             Ok(cfg)
         })
@@ -126,7 +128,23 @@ impl SwitchBuilder {
         T: DriverTransport + 'static,
     {
         self.and_then(|mut cfg| {
-            cfg.transports.push(value.into());
+            cfg.immutable.transports.push(value.into());
+
+            Ok(cfg)
+        })
+    }
+
+    pub fn transport_bind<I, E>(self, laddrs: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: TryInto<Multiaddr, Error = E>,
+        Error: From<E>,
+    {
+        self.and_then(|mut cfg| {
+            cfg.laddrs = laddrs
+                .into_iter()
+                .map(|item| item.try_into().map_err(|err| err.into()))
+                .collect::<Result<Vec<Multiaddr>>>()?;
 
             Ok(cfg)
         })
@@ -136,14 +154,14 @@ impl SwitchBuilder {
     pub async fn create(self) -> Result<Switch> {
         let ops = self.ops?;
 
-        let public_key = ops.keystore.public_key().await?;
+        let public_key = ops.immutable.keystore.public_key().await?;
 
         let switch = Switch {
             inner: Arc::new(InnerSwitch {
                 local_peer_id: public_key.to_peer_id(),
                 public_key,
-                mutable: Mutex::new(MutableSwitch::new(ops.max_conn_pool_size)),
-                immutable: ops,
+                mutable: Mutex::new(MutableSwitch::new(ops.immutable.max_conn_pool_size)),
+                immutable: ops.immutable,
                 event_map: KeyWaitMap::new(),
             }),
         };
@@ -153,7 +171,7 @@ impl SwitchBuilder {
 
     fn and_then<F>(self, func: F) -> Self
     where
-        F: FnOnce(ImmutableSwitch) -> Result<ImmutableSwitch>,
+        F: FnOnce(SwitchBuilderInner) -> Result<SwitchBuilderInner>,
     {
         SwitchBuilder {
             ops: self.ops.and_then(func),

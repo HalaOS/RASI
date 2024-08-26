@@ -3,7 +3,7 @@ use std::io::Result;
 use async_trait::async_trait;
 use rep2p::multiaddr::Multiaddr;
 use rep2p::transport::syscall::DriverTransport;
-use rep2p::transport::{Connection, Listener};
+use rep2p::transport::{TransportConnection, Listener};
 use rep2p::Switch;
 
 /// The `dnsaddr` transport implementation.
@@ -18,7 +18,7 @@ impl DriverTransport for DnsAddr {
     }
 
     /// Connect to peer with remote peer [`raddr`](Multiaddr).
-    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection> {
+    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<TransportConnection> {
         todo!()
     }
 

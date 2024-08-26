@@ -15,7 +15,7 @@ impl Drop for ProtocolListener {
         let switch = self.switch.clone();
         let id = self.id;
         spawn_ok(async move {
-            switch.mutable.lock().await.close_listener(&id);
+            switch.mutable.lock().await.close_protocol_listener(&id);
         })
     }
 }

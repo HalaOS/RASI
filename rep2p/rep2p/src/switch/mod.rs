@@ -23,7 +23,7 @@ use crate::{
     book::{ConnectionType, PeerInfo},
     keystore::KeyStore,
     proto::identity::Identity,
-    transport::{Connection, Listener, ProtocolStream},
+    transport::{Listener, ProtocolStream, TransportConnection},
     Error, Result,
 };
 
@@ -31,6 +31,22 @@ mod immutable;
 mod listener;
 mod mutable;
 mod pool;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct ListenerId(usize);
+
+impl ListenerId {
+    fn next() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+        ListenerId(NEXT.fetch_add(1, Ordering::SeqCst))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+enum SwitchEvent {
+    Accept(ListenerId),
+}
 
 /// protocol name of libp2p identity
 pub const PROTOCOL_IPFS_ID: &str = "/ipfs/id/1.0.0";
@@ -83,22 +99,6 @@ impl TryFrom<&str> for ConnectTo<'static> {
 
         return Ok(Self::Multiaddr(value.parse::<Multiaddr>()?));
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct ListenerId(usize);
-
-impl ListenerId {
-    fn next() -> Self {
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-
-        ListenerId(NEXT.fetch_add(1, Ordering::SeqCst))
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-enum SwitchEvent {
-    Accept(ListenerId),
 }
 
 #[doc(hidden)]
@@ -160,7 +160,7 @@ impl Switch {
         todo!()
     }
 
-    async fn setup_conn(&self, conn: &mut Connection) -> Result<()> {
+    async fn setup_conn(&self, conn: &mut TransportConnection) -> Result<()> {
         let this = self.clone();
 
         let mut this_conn = conn.clone();
@@ -189,7 +189,7 @@ impl Switch {
         Ok(())
     }
 
-    async fn incoming_stream_loop(&self, conn: &mut Connection) -> Result<()> {
+    async fn incoming_stream_loop(&self, conn: &mut TransportConnection) -> Result<()> {
         loop {
             let stream = conn.accept().await?;
 
@@ -240,15 +240,6 @@ impl Switch {
             PROTOCOL_IPFS_PING => self.ping_echo(stream).await?,
             _ => {
                 let mut mutable = self.mutable.lock().await;
-
-                if mutable.incoming_streams.len() > self.immutable.max_inbound_length {
-                    log::warn!(
-                        "The maximun incoming queue size is reached({})",
-                        self.immutable.max_inbound_length
-                    );
-
-                    return Ok(());
-                }
 
                 if let Some(id) = mutable.insert_inbound_stream(stream, protoco_id) {
                     self.event_map.insert(SwitchEvent::Accept(id), ());
@@ -346,7 +337,7 @@ impl Switch {
     }
 
     /// Start a "/ipfs/id/1.0.0" handshake.
-    async fn identity_request(&self, conn: &mut Connection) -> Result<()> {
+    async fn identity_request(&self, conn: &mut TransportConnection) -> Result<()> {
         let mut stream = conn.connect().await?;
 
         let conn_peer_id = conn.public_key().to_peer_id();
@@ -391,7 +382,7 @@ impl Switch {
         Ok(())
     }
 
-    async fn transport_connect_to_prv(&self, raddr: &Multiaddr) -> Result<Connection> {
+    async fn transport_connect_prv(&self, raddr: &Multiaddr) -> Result<TransportConnection> {
         let transport = self
             .immutable
             .get_transport_by_address(raddr)
@@ -417,7 +408,7 @@ impl Switch {
     ///
     /// This function will first check for a local connection cache,
     /// and if there is one, it will directly return the cached connection
-    async fn transport_connect(&self, id: &PeerId) -> Result<Connection> {
+    async fn transport_connect_to(&self, id: &PeerId) -> Result<TransportConnection> {
         log::trace!("{}, connect", id);
 
         if let Some(conns) = self.mutable.lock().await.conn_pool.get(id) {
@@ -440,7 +431,7 @@ impl Switch {
         for raddr in peer_info.addrs {
             log::trace!("{}, connect to {}", id, raddr);
 
-            match self.transport_connect_to_prv(&raddr).await {
+            match self.transport_connect_prv(&raddr).await {
                 Ok(conn) => {
                     log::trace!("{}, connect to {}, established", id, raddr);
                     return Ok(conn);
@@ -460,7 +451,7 @@ impl Switch {
         Err(last_error.unwrap_or(Error::ConnectPeer(id.to_owned())))
     }
 
-    pub(crate) async fn remove_conn(&self, conn: &Connection) {
+    pub(crate) async fn remove_conn(&self, conn: &TransportConnection) {
         _ = self.mutable.lock().await.conn_pool.remove(conn);
     }
 }
@@ -471,9 +462,7 @@ impl Switch {
     where
         A: AsRef<str>,
     {
-        SwitchBuilder {
-            ops: Ok(ImmutableSwitch::new(agent_version.as_ref().to_owned())),
-        }
+        SwitchBuilder::new(agent_version.as_ref().to_owned())
     }
 
     /// Connect to peer with provided [`raddr`](Multiaddr).
@@ -481,7 +470,7 @@ impl Switch {
     /// This function first query the route table to get the peer id,
     /// if exists then check for a local connection cache.
     ///
-    pub async fn transport_connect_to(&self, raddr: &Multiaddr) -> Result<Connection> {
+    pub async fn transport_connect(&self, raddr: &Multiaddr) -> Result<TransportConnection> {
         log::trace!("{}, try establish transport connection", raddr);
 
         if let Some(peer_id) = self.peer_id_of(raddr).await? {
@@ -491,10 +480,10 @@ impl Switch {
                 peer_id
             );
 
-            return self.transport_connect(&peer_id).await;
+            return self.transport_connect_to(&peer_id).await;
         }
 
-        self.transport_connect_to_prv(raddr).await
+        self.transport_connect_prv(raddr).await
     }
 
     /// Create a new transport layer socket that accepts peer's inbound connections.
@@ -508,7 +497,7 @@ impl Switch {
 
         let laddr = listener.local_addr()?;
 
-        self.mutable.lock().await.laddrs.push(laddr.clone());
+        self.mutable.lock().await.transport_bind_to(laddr.clone());
 
         let this = self.clone();
 
@@ -529,7 +518,7 @@ impl Switch {
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        let id = self.mutable.lock().await.new_listener(protos)?;
+        let id = self.mutable.lock().await.new_protocol_listener(protos)?;
 
         Ok(ProtocolListener {
             id,
@@ -553,10 +542,10 @@ impl Switch {
             .try_into()
             .map_err(|err| Error::Other(format!("{:?}", err)))?
         {
-            ConnectTo::PeerIdRef(peer_id) => self.transport_connect(peer_id).await?,
-            ConnectTo::MultiaddrRef(raddr) => self.transport_connect_to(raddr).await?,
-            ConnectTo::PeerId(peer_id) => self.transport_connect(&peer_id).await?,
-            ConnectTo::Multiaddr(raddr) => self.transport_connect_to(&raddr).await?,
+            ConnectTo::PeerIdRef(peer_id) => self.transport_connect_to(peer_id).await?,
+            ConnectTo::MultiaddrRef(raddr) => self.transport_connect(raddr).await?,
+            ConnectTo::PeerId(peer_id) => self.transport_connect_to(&peer_id).await?,
+            ConnectTo::Multiaddr(raddr) => self.transport_connect(&raddr).await?,
         };
 
         log::trace!("open stream, conn_id={}", conn.id());
@@ -624,6 +613,6 @@ impl Switch {
 
     /// Returns the addresses list of this switch is bound to.
     pub async fn local_addrs(&self) -> Vec<Multiaddr> {
-        self.mutable.lock().await.laddrs.clone()
+        self.mutable.lock().await.local_addrs()
     }
 }

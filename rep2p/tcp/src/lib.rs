@@ -18,7 +18,7 @@ use rasi::net::{TcpListener, TcpStream};
 use rep2p::identity::PublicKey;
 use rep2p::multiaddr::{Multiaddr, Protocol, ToSockAddr};
 use rep2p::transport::syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport};
-use rep2p::transport::{Connection, Listener, ProtocolStream};
+use rep2p::transport::{Listener, ProtocolStream, TransportConnection};
 use rep2p::Switch;
 use uuid::Uuid;
 
@@ -78,7 +78,7 @@ impl DriverTransport for TcpTransport {
     }
 
     /// Connect to peer with remote peer [`raddr`](Multiaddr).
-    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<Connection> {
+    async fn connect(&self, raddr: &Multiaddr, switch: Switch) -> Result<TransportConnection> {
         let (cert, pk) = rep2p_x509::generate(switch.keystore()).await?;
 
         let cert = X509::from_der(&cert)?;
@@ -178,7 +178,7 @@ impl P2pTcpListener {
 #[async_trait]
 impl DriverListener for P2pTcpListener {
     /// Accept next incoming connection between local and peer.
-    async fn accept(&mut self) -> Result<Connection> {
+    async fn accept(&mut self) -> Result<TransportConnection> {
         let (mut stream, raddr) = self.listener.accept().await?;
 
         let (_, _) = listener_select_proto(&mut stream, ["/tls/1.0.0"]).await?;
@@ -312,7 +312,7 @@ impl DriverConnection for P2pTcpConn {
     }
 
     /// Creates a new independently owned handle to the underlying socket.
-    fn clone(&self) -> Connection {
+    fn clone(&self) -> TransportConnection {
         Clone::clone(self).into()
     }
 
@@ -424,10 +424,10 @@ mod tests {
     #[async_trait]
     impl TransportSpecContext for TcpMock {
         async fn create_switch(&self) -> Result<Switch> {
-            let switch = Switch::new("test").transport(TcpTransport).create().await?;
-
-            switch
-                .transport_bind(&"/ip4/127.0.0.1/tcp/0".parse()?)
+            let switch = Switch::new("test")
+                .transport(TcpTransport)
+                .transport_bind(["/ip4/127.0.0.1/tcp/0"])
+                .create()
                 .await?;
 
             Ok(switch)

@@ -300,7 +300,9 @@ impl RouterOptions {
         let mut peer_addrs = HashMap::<PeerId, Vec<Multiaddr>>::new();
 
         for raddr in seeds.into_iter() {
-            let raddr = raddr.try_into().unwrap();
+            let raddr = raddr
+                .try_into()
+                .map_err(|err| Error::Other(format!("{:?}", err)))?;
 
             match raddr
                 .clone()

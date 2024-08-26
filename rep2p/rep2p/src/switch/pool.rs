@@ -2,19 +2,25 @@ use std::collections::HashMap;
 
 use identity::PeerId;
 
-use crate::{multiaddr::ToSockAddr, transport::Connection};
+use crate::{multiaddr::ToSockAddr, transport::TransportConnection};
 
 /// An in-memory connection pool.
 #[derive(Default)]
 pub(super) struct ConnPool {
-    pub(super) max_pool_size: usize,
+    max_pool_size: usize,
     /// mapping id => connection.
-    pub(super) conns: HashMap<String, Connection>,
+    conns: HashMap<String, TransportConnection>,
     /// mapping peer_id to conn id.
-    pub(super) peers: HashMap<PeerId, Vec<String>>,
+    peers: HashMap<PeerId, Vec<String>>,
 }
 
 impl ConnPool {
+    pub(super) fn new(max_pool_size: usize) -> Self {
+        Self {
+            max_pool_size,
+            ..Default::default()
+        }
+    }
     pub(super) fn conn_pool_gc(&mut self) {
         log::trace!("conn_pool_gc, size={}", self.conns.len());
 
@@ -42,7 +48,7 @@ impl ConnPool {
     }
 
     /// Put a new connecton instance into the pool, and update indexers.
-    pub(super) fn put(&mut self, conn: Connection) {
+    pub(super) fn put(&mut self, conn: TransportConnection) {
         self.conn_pool_gc();
 
         let peer_id = conn.public_key().to_peer_id();
@@ -80,7 +86,7 @@ impl ConnPool {
         }
     }
 
-    pub(super) fn get(&self, peer_id: &PeerId) -> Option<Vec<Connection>> {
+    pub(super) fn get(&self, peer_id: &PeerId) -> Option<Vec<TransportConnection>> {
         if let Some(conn_ids) = self.peers.get(&peer_id) {
             Some(
                 conn_ids
@@ -93,7 +99,7 @@ impl ConnPool {
         }
     }
 
-    pub(super) fn remove(&mut self, conn: &Connection) {
+    pub(super) fn remove(&mut self, conn: &TransportConnection) {
         let peer_id = conn.public_key().to_peer_id();
 
         let raddr = conn
