@@ -1,5 +1,5 @@
 [package]
-description = "libp2p framework rewritten from the ground up in rust"
+description = "libp2p protocol stack  rewritten from the ground up in rust"
 documentation = "https://docs.rs/xstack"
 edition.workspace = true
 license = "MIT"

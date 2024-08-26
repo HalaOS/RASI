@@ -47,3 +47,12 @@ pub enum Error {
 
 /// Result type returns by APIs in this crate.
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for std::io::Error {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::IoError(error) => error,
+            _ => std::io::Error::new(std::io::ErrorKind::Other, value),
+        }
+    }
+}

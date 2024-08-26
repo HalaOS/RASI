@@ -177,7 +177,7 @@ mod tests {
         let inner = {
             let lookup = DnsLookup::over_udp().await.unwrap();
 
-            let group = lookup.lookup_ip("docs.rs").await.unwrap();
+            let group = lookup.lookup_ip("am6.bootstrap.libp2p.io").await.unwrap();
 
             log::trace!("{:?}", group);
 
@@ -197,7 +197,7 @@ mod tests {
             let lookup = DnsLookup::over_udp().await.unwrap();
 
             let group = lookup
-                .lookup_txt("_dnsaddr.bootstrap.libp2p.io")
+                .lookup_txt("_dnsaddr.am6.bootstrap.libp2p.io")
                 .await
                 .unwrap();
 

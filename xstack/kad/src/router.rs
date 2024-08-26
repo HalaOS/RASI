@@ -459,6 +459,7 @@ mod tests {
     use identity::Keypair;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
     use xstack::{global_switch, transport::ProtocolStream, Switch};
+    use xstack_dnsaddr::DnsAddr;
     use xstack_quic::QuicTransport;
     use xstack_tcp::TcpTransport;
 
@@ -473,7 +474,7 @@ mod tests {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
-            // _ = pretty_env_logger::try_init_timed();
+            _ = pretty_env_logger::try_init_timed();
 
             register_mio_network();
             register_mio_timer();
@@ -481,6 +482,7 @@ mod tests {
             Switch::new("kad-test")
                 .transport(QuicTransport::default())
                 .transport(TcpTransport)
+                .transport(DnsAddr::new().await.unwrap())
                 .create()
                 .await
                 .unwrap()
@@ -499,8 +501,7 @@ mod tests {
         let kad = Router::new()
             .with_seeds(
                 global_switch().clone(),[
-                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-                "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+                "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"
             ])
             .await
             .unwrap();
@@ -519,8 +520,7 @@ mod tests {
         let kad = Router::new()
             .with_seeds(
                 global_switch().clone(),[
-                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-                "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+               "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN"
             ])
             .await
             .unwrap();

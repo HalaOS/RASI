@@ -29,6 +29,7 @@ rasi-mio = { workspace = true }
 pretty_env_logger = { workspace = true }
 xstack-tcp = { workspace = true }
 xstack-quic = { workspace = true }
+xstack-dnsaddr = { workspace = true }
 xstack = { workspace = true, features = ["global_register"] }
 
 [build-dependencies]
