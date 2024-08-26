@@ -2,7 +2,7 @@
 //! providing a concise, consistent interface to standard Ethereum node
 //! functionality.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     eip::eip2718::TypedTransactionRequest,
@@ -26,14 +26,15 @@ fn map_error<E: Debug>(error: E) -> Error {
 /// The JSON-RPC API is a popular method for interacting with Ethereum and is
 /// available in all major Ethereum node implementations (e.g. Geth and Parity)
 /// as well as many third-party web services (e.g. INFURA)
+#[derive(Clone)]
 pub struct JsonRpcProvider(
     /// jsonrpc2.0 client for this provider.
-    JsonRpcClient,
+    Arc<JsonRpcClient>,
 );
 
 impl From<JsonRpcClient> for JsonRpcProvider {
     fn from(value: JsonRpcClient) -> Self {
-        Self(value)
+        Self(Arc::new(value))
     }
 }
 
@@ -493,7 +494,7 @@ mod tests {
             pretty_env_logger::init();
         });
 
-        static CLIENT: OnceLock<JsonRpcClient> = OnceLock::new();
+        static CLIENT: OnceLock<JsonRpcProvider> = OnceLock::new();
 
         CLIENT
             .get_or_init(|| {
@@ -502,9 +503,9 @@ mod tests {
                     // .set_use_server_name_indication(false)
                     .create()
                     .unwrap()
+                    .into()
             })
             .clone()
-            .into()
     }
 
     #[futures_test::test]

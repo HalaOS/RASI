@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     io,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -67,7 +67,6 @@ type InnerResponse = Response<String, serde_json::Value, serde_json::Value>;
 
 #[derive(Default)]
 struct RawJsonRpcClient {
-    is_closed: bool,
     max_send_queue_size: usize,
     send_queue: VecDeque<(usize, Vec<u8>)>,
     received_resps: HashMap<usize, InnerResponse>,
@@ -103,38 +102,36 @@ enum JsonRpcClientEvent {
     Response(usize),
 }
 
-/// Jsonrpc v2.0 client state machine.
+struct RawJsonRpcClientState {
+    is_closed: AtomicBool,
+    next_id: AtomicUsize,
+    raw: Mutex<RawJsonRpcClient>,
+    wait_map: KeyWaitMap<JsonRpcClientEvent, ()>,
+}
+
+/// The jsonrpc client without [`Drop`] support.
 #[derive(Clone)]
-pub struct JsonRpcClient {
-    next_id: Arc<AtomicUsize>,
-    raw: Arc<Mutex<RawJsonRpcClient>>,
-    wait_map: Arc<KeyWaitMap<JsonRpcClientEvent, ()>>,
-}
+pub struct JsonRpcClientState(Arc<RawJsonRpcClientState>);
 
-impl Default for JsonRpcClient {
-    fn default() -> Self {
-        Self::new(128)
-    }
-}
-
-impl JsonRpcClient {
+impl JsonRpcClientState {
     /// Create a new `JsonRpcClient` with provided send cache channel length.
     pub fn new(max_send_queue_size: usize) -> Self {
-        Self {
+        Self(Arc::new(RawJsonRpcClientState {
+            is_closed: Default::default(),
             next_id: Default::default(),
-            raw: Arc::new(Mutex::new(RawJsonRpcClient::new(max_send_queue_size))),
-            wait_map: Arc::new(KeyWaitMap::new()),
-        }
+            raw: Mutex::new(RawJsonRpcClient::new(max_send_queue_size)),
+            wait_map: KeyWaitMap::new(),
+        }))
     }
 
     /// Invoke a jsonrpc v2.0 call and waiting for response.
-    pub async fn call<M, P, R>(&mut self, method: M, params: P) -> std::io::Result<R>
+    pub async fn call<M, P, R>(&self, method: M, params: P) -> std::io::Result<R>
     where
         M: AsRef<str>,
         P: serde::Serialize,
         for<'a> R: serde::Deserialize<'a>,
     {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = self.0.next_id.fetch_add(1, Ordering::Relaxed);
 
         let request = Request {
             id: Some(id),
@@ -148,27 +145,38 @@ impl JsonRpcClient {
         let mut send_data = Some((id, packet));
 
         while let Some((id, data)) = send_data {
-            let mut raw = self.raw.lock().await;
+            if self.is_closed() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "JsonRpcClient is closed",
+                ));
+            }
 
-            Self::verify_client_status(&raw)?;
+            let mut raw = self.0.raw.lock().await;
 
             send_data = raw.cache_send(id, data);
 
             if send_data.is_some() {
-                self.wait_map.wait(&JsonRpcClientEvent::Send, raw).await;
+                self.0.wait_map.wait(&JsonRpcClientEvent::Send, raw).await;
             } else {
-                self.wait_map.insert(JsonRpcClientEvent::Forward, ());
+                self.0.wait_map.insert(JsonRpcClientEvent::Forward, ());
             }
         }
 
         if let Some(_) = self
+            .0
             .wait_map
             .wait(&JsonRpcClientEvent::Response(id), ())
             .await
         {
-            let mut raw = self.raw.lock().await;
+            if self.is_closed() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "JsonRpcClient is closed",
+                ));
+            }
 
-            Self::verify_client_status(&raw)?;
+            let mut raw = self.0.raw.lock().await;
 
             let resp = raw
                 .received_resps
@@ -185,48 +193,98 @@ impl JsonRpcClient {
         }
     }
 
-    fn verify_client_status(raw: &RawJsonRpcClient) -> std::io::Result<()> {
-        if raw.is_closed {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "jsonrpc client is already closed",
-            ));
-        }
-
-        Ok(())
-    }
-
     /// Writes a single jsonrpc packet to be sent to the peer.
     pub async fn send(&self) -> std::io::Result<(usize, Vec<u8>)> {
         loop {
-            let mut raw = self.raw.lock().await;
+            let mut raw = self.0.raw.lock().await;
 
-            Self::verify_client_status(&raw)?;
+            if self.is_closed() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "JsonRpcClient is closed",
+                ));
+            }
 
             if let Some(packet) = raw.send_one() {
                 return Ok(packet);
             }
 
-            self.wait_map.insert(JsonRpcClientEvent::Send, ());
+            self.0.wait_map.insert(JsonRpcClientEvent::Send, ());
 
-            self.wait_map.wait(&JsonRpcClientEvent::Forward, raw).await;
+            self.0
+                .wait_map
+                .wait(&JsonRpcClientEvent::Forward, raw)
+                .await;
         }
     }
 
     /// Processes jsonrpc packet received from the peer.
     pub async fn recv<V: AsRef<[u8]>>(&self, packet: V) -> std::io::Result<()> {
+        if self.is_closed() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "JsonRpcClient is closed",
+            ));
+        }
+
         let resp: Response<String, serde_json::Value, serde_json::Value> =
             serde_json::from_slice(packet.as_ref())?;
 
-        let mut raw = self.raw.lock().await;
+        let mut raw = self.0.raw.lock().await;
 
         let id = resp.id;
 
         raw.received_resps.insert(resp.id, resp);
 
-        self.wait_map.insert(JsonRpcClientEvent::Response(id), ());
+        self.0.wait_map.insert(JsonRpcClientEvent::Response(id), ());
 
         Ok(())
+    }
+
+    /// Close the jsonrpc client.
+    pub fn close(&self) {
+        self.0.is_closed.store(true, Ordering::SeqCst);
+    }
+
+    /// Returns true if this client is already closed.
+    pub fn is_closed(&self) -> bool {
+        self.0.is_closed.load(Ordering::SeqCst)
+    }
+}
+
+/// Jsonrpc v2.0 client state machine.
+pub struct JsonRpcClient(JsonRpcClientState);
+
+impl Drop for JsonRpcClient {
+    fn drop(&mut self) {
+        self.0.close();
+    }
+}
+
+impl Default for JsonRpcClient {
+    fn default() -> Self {
+        Self::new(128)
+    }
+}
+
+impl JsonRpcClient {
+    /// Create a new `JsonRpcClient` with provided send cache channel length.
+    pub fn new(max_send_queue_size: usize) -> Self {
+        Self(JsonRpcClientState::new(max_send_queue_size))
+    }
+    /// Invoke a jsonrpc v2.0 call and waiting for response.
+    pub async fn call<M, P, R>(&self, method: M, params: P) -> std::io::Result<R>
+    where
+        M: AsRef<str>,
+        P: serde::Serialize,
+        for<'a> R: serde::Deserialize<'a>,
+    {
+        self.0.call(method, params).await
+    }
+
+    /// Get the inner [`JsonRpcClientState`] instance.
+    pub fn to_state(&self) -> JsonRpcClientState {
+        self.0.clone()
     }
 }
 
@@ -243,10 +301,23 @@ mod tests {
     use super::*;
 
     #[futures_test::test]
+    async fn test_client_drop() {
+        let client = JsonRpcClient::default();
+
+        let state = client.to_state();
+
+        drop(client);
+
+        assert!(state.is_closed());
+    }
+
+    #[futures_test::test]
     async fn test_empty_return() {
         let client = JsonRpcClient::default();
 
-        let mut call_client = client.clone();
+        let client = client.to_state();
+
+        let call_client = client.clone();
 
         let mut call = Box::pin(call_client.call("echo", ("hello", 1)));
 
@@ -274,7 +345,7 @@ mod tests {
 
         assert!(matches!(poll_result, Poll::Ready(Ok(()))));
 
-        let mut call_client = client.clone();
+        let call_client = client.clone();
 
         let mut call = Box::pin(call_client.call("echo", ("hello", 1)));
 
@@ -296,7 +367,7 @@ mod tests {
 
         assert!(matches!(poll_result, Poll::Ready(Ok(1))));
 
-        let mut call_client = client.clone();
+        let call_client = client.clone();
 
         let mut call = Box::pin(call_client.call("echo", ("hello", 1)));
 

@@ -1,6 +1,6 @@
 use std::sync::{Once, OnceLock};
 
-use futures_jsonrpcv2::{client::JsonRpcClient, rasi::http::HttpJsonRpcClient};
+use futures_jsonrpcv2::rasi::http::HttpJsonRpcClient;
 use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
 use reweb3::{clients::JsonRpcProvider, hardhat_artifact, prelude::Address};
 
@@ -15,7 +15,7 @@ fn init() -> JsonRpcProvider {
         register_mio_timer();
     });
 
-    static CLIENT: OnceLock<JsonRpcClient> = OnceLock::new();
+    static CLIENT: OnceLock<JsonRpcProvider> = OnceLock::new();
 
     CLIENT
         .get_or_init(|| {
@@ -23,9 +23,9 @@ fn init() -> JsonRpcProvider {
                 .set_use_server_name_indication(false)
                 .create()
                 .unwrap()
+                .into()
         })
         .clone()
-        .into()
 }
 
 #[futures_test::test]

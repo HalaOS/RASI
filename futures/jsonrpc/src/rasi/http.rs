@@ -12,7 +12,10 @@ use futures_http::{
 use rasi::{task::spawn_ok, timer::TimeoutExt};
 use serde_json::json;
 
-use crate::{client::JsonRpcClient, Error, ErrorCode};
+use crate::{
+    client::{JsonRpcClient, JsonRpcClientState},
+    Error, ErrorCode,
+};
 
 /// A builder to create a http jsonrpc client.
 pub struct HttpJsonRpcClient {
@@ -98,7 +101,7 @@ impl HttpJsonRpcClient {
     pub fn create(self) -> io::Result<JsonRpcClient> {
         let client = JsonRpcClient::new(self.send_cached_len);
 
-        let background = client.clone();
+        let background = client.to_state();
 
         spawn_ok(async move {
             if let Err(err) = self.run_loop(background).await {
@@ -111,7 +114,7 @@ impl HttpJsonRpcClient {
         Ok(client)
     }
 
-    async fn run_loop(self, background: JsonRpcClient) -> std::io::Result<()> {
+    async fn run_loop(self, background: JsonRpcClientState) -> std::io::Result<()> {
         let request = self
             .builder
             .body(())
@@ -170,7 +173,7 @@ impl HttpJsonRpcClient {
         }
     }
 
-    async fn handle_recv<P: AsRef<[u8]>>(client: &JsonRpcClient, packet: P) {
+    async fn handle_recv<P: AsRef<[u8]>>(client: &JsonRpcClientState, packet: P) {
         log::trace!("recv jsonrpc: {}", from_utf8(packet.as_ref()).unwrap());
 
         if let Err(err) = client.recv(packet).await {
