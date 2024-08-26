@@ -82,7 +82,8 @@ async fn test_echo() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
+            let mut incoming = conn.into_incoming();
+            while let Some(mut stream) = incoming.try_next().await.unwrap() {
                 loop {
                     let mut buf = vec![0; 100];
 
@@ -130,7 +131,9 @@ async fn test_echo_per_stream() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
+            let mut incoming = conn.into_incoming();
+
+            while let Some(mut stream) = incoming.try_next().await.unwrap() {
                 spawn_ok(async move {
                     loop {
                         let mut buf = vec![0; 100];
@@ -167,7 +170,6 @@ async fn test_echo_per_stream() {
 #[futures_test::test]
 async fn test_connect_server_close() {
     init();
-    // pretty_env_logger::init();
 
     let laddrs = ["127.0.0.1:0".parse().unwrap()].repeat(10);
 
@@ -179,7 +181,8 @@ async fn test_connect_server_close() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
+            let mut incoming = conn.into_incoming();
+            while let Some(mut stream) = incoming.try_next().await.unwrap() {
                 let mut buf = vec![0; 100];
                 _ = stream.read(&mut buf).await.unwrap();
 
@@ -199,7 +202,10 @@ async fn test_connect_server_close() {
 
         let mut buf = vec![0; 100];
 
-        assert_eq!(stream.read(&mut buf).await.unwrap(), 0);
+        stream
+            .read(&mut buf)
+            .await
+            .expect_err("Server close the connection");
     }
 }
 
@@ -219,17 +225,22 @@ async fn test_connect_client_close() {
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
             spawn_ok(async move {
-                while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
+                let mut incoming = conn.into_incoming();
+
+                while let Some(mut stream) = incoming.try_next().await.unwrap() {
                     spawn_ok(async move {
                         loop {
                             let mut buf = vec![0; 100];
                             let read_size = stream.read(&mut buf).await.unwrap();
 
-                            if read_size == 0 {
-                                break;
-                            }
-
                             stream.write_all(&buf[..read_size]).await.unwrap();
+
+                            stream
+                                .read(&mut buf)
+                                .await
+                                .expect_err("Client close the connection");
+
+                            break;
                         }
                     });
                 }
@@ -269,7 +280,9 @@ async fn test_stream_server_close() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(mut stream) = conn.incoming().try_next().await.unwrap() {
+            let mut incoming = conn.into_incoming();
+
+            while let Some(mut stream) = incoming.try_next().await.unwrap() {
                 let mut buf = vec![0; 100];
                 let read_size = stream.read(&mut buf).await.unwrap();
 
@@ -310,7 +323,8 @@ async fn test_stream_server_close_with_fin() {
 
     spawn_ok(async move {
         while let Some(conn) = listener.incoming().try_next().await.unwrap() {
-            while let Some(stream) = conn.incoming().try_next().await.unwrap() {
+            let mut incoming = conn.into_incoming();
+            while let Some(stream) = incoming.try_next().await.unwrap() {
                 log::trace!("server accept stream, id={}", stream.id());
 
                 loop {

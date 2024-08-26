@@ -19,7 +19,7 @@ dns-parser = { workspace = true }
 resolv-conf = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, optional = true }
+ipconfig = { workspace = true, optional = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }
@@ -29,4 +29,4 @@ pretty_env_logger = { workspace = true }
 
 [features]
 rasi = ["dep:rasi"]
-sysconf = ["resolv-conf", "windows-sys"]
+sysconf = ["resolv-conf", "ipconfig"]

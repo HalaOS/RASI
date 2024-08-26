@@ -208,7 +208,7 @@ impl DriverListener for QuicP2pListener {
 struct QuicP2pConn {
     laddr: Multiaddr,
     raddr: Multiaddr,
-    conn: QuicConn,
+    conn: Arc<QuicConn>,
     public_key: PublicKey,
     is_closed: Arc<AtomicBool>,
     id: String,
@@ -229,7 +229,7 @@ impl QuicP2pConn {
             id: format!("quic({:?})", conn.scid()),
             laddr: m_laddr,
             raddr: m_raddr,
-            conn,
+            conn: Arc::new(conn),
             public_key,
             is_closed: Default::default(),
             counter: Default::default(),
@@ -286,7 +286,7 @@ impl DriverConnection for QuicP2pConn {
     }
 
     async fn close(&mut self) -> io::Result<()> {
-        self.conn.close().await?;
+        self.conn.close()?;
 
         self.is_closed.store(true, Ordering::Relaxed);
 

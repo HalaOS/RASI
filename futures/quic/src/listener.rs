@@ -11,12 +11,12 @@ use quiche::{Config, ConnectionId, RecvInfo, SendInfo};
 use ring::{hmac::Key, rand::SystemRandom};
 
 use crate::errors::map_quic_error;
-use crate::QuicConn;
+use crate::{QuicConn, QuicConnState};
 
 enum QuicListenerHandshake {
     Connection {
         #[allow(unused)]
-        conn: QuicConn,
+        conn: QuicConnState,
         is_established: bool,
         /// the number of bytes processed from the input buffer
         read_size: usize,
@@ -36,9 +36,9 @@ pub struct QuicListenerState {
     /// The seed for generating source id
     seed_key: Key,
     /// A quic connection pool that is in the handshake phase
-    handshaking_pool: HashMap<ConnectionId<'static>, QuicConn>,
+    handshaking_pool: HashMap<ConnectionId<'static>, QuicConnState>,
     /// A quic connection pool that is already connected
-    established_conns: HashMap<ConnectionId<'static>, QuicConn>,
+    established_conns: HashMap<ConnectionId<'static>, QuicConnState>,
     /// When first see a inbound quic connection, push it into this queue.
     incoming_conns: VecDeque<QuicConn>,
 }
@@ -63,7 +63,7 @@ impl QuicListenerState {
     /// Get connection by id.
     ///
     /// If found, returns tuple (QuicConnState, is_established).
-    fn get_conn<'a>(&self, id: &ConnectionId<'a>) -> Option<(QuicConn, bool)> {
+    fn get_conn<'a>(&self, id: &ConnectionId<'a>) -> Option<(QuicConnState, bool)> {
         if let Some(conn) = self.handshaking_pool.get(id) {
             return Some((conn.clone(), false));
         }
@@ -81,7 +81,7 @@ impl QuicListenerState {
         let id = id.clone().into_owned();
         if let Some(conn) = self.handshaking_pool.remove(&id) {
             self.established_conns.insert(id, conn.clone());
-            self.incoming_conns.push_back(conn);
+            self.incoming_conns.push_back(conn.into());
         }
     }
 
@@ -163,11 +163,11 @@ impl QuicListenerState {
 
         log::trace!("Create new incoming conn, scid={:?}, dcid={:?}", scid, dcid);
 
-        let conn = QuicConn::new(quiche_conn, 1, None);
+        let conn = QuicConnState::new(quiche_conn, 1, None);
 
         if is_established {
             self.established_conns.insert(scid, conn.clone());
-            self.incoming_conns.push_back(conn.clone());
+            self.incoming_conns.push_back(conn.clone().into());
         } else {
             self.handshaking_pool.insert(scid, conn.clone());
         }
@@ -286,7 +286,7 @@ pub struct QuicListener {
     laddrs: Arc<Vec<SocketAddr>>,
     state: Arc<Mutex<QuicListenerState>>,
     event_map: Arc<KeyWaitMap<QuicListenerAccept, ()>>,
-    send_map: FuturesWaitMap<QuicConn, Result<(Vec<u8>, SendInfo)>>,
+    send_map: FuturesWaitMap<QuicConnState, Result<(Vec<u8>, SendInfo)>>,
 }
 
 impl QuicListener {

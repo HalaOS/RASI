@@ -29,8 +29,6 @@ enum LookupEventArg {
 
 #[derive(Default)]
 pub(crate) struct RawDnsLookup {
-    pub(crate) send_closed: AtomicBool,
-    pub(crate) recv_closed: AtomicBool,
     is_closed: AtomicBool,
     idgen: AtomicU16,
     sending: Mutex<VecDeque<Vec<u8>>>,
@@ -96,24 +94,6 @@ impl DnsLookupState {
     /// Close this client
     pub fn close(&self) {
         self.0.is_closed.store(true, Ordering::SeqCst);
-
-        self.0
-            .waiters
-            .insert(LookupEvent::Send, LookupEventArg::Send);
-    }
-
-    pub(crate) fn close_send(&self) {
-        self.close();
-        self.0.send_closed.store(true, Ordering::SeqCst);
-
-        self.0
-            .waiters
-            .insert(LookupEvent::Send, LookupEventArg::Send);
-    }
-
-    pub(crate) fn close_recv(&self) {
-        self.close();
-        self.0.recv_closed.store(true, Ordering::SeqCst);
 
         self.0
             .waiters

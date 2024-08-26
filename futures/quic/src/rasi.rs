@@ -18,7 +18,7 @@ use rasi::{
 use futures::StreamExt;
 use ring::rand::{SecureRandom, SystemRandom};
 
-use crate::{errors::map_quic_error, QuicConn, QuicListener};
+use crate::{errors::map_quic_error, QuicConn, QuicConnState, QuicListener};
 
 const MAX_MTU_SIZE: usize = 1600;
 
@@ -307,7 +307,7 @@ pub trait QuicConnect {
             let conn = quiche::connect(server_name, &scid, laddr, raddr, config)
                 .map_err(map_quic_error)?;
 
-            let conn = QuicConn::new(conn, 0, None);
+            let conn = QuicConnState::new(conn, 0, None);
 
             let mut buf = vec![0; MAX_MTU_SIZE];
 
@@ -350,22 +350,22 @@ pub trait QuicConnect {
 
             spawn_ok(client_recv_loop(udp_socket, conn.clone()));
 
-            Ok(conn)
+            Ok(conn.into())
         }
     }
 }
 
 impl QuicConnect for QuicConn {}
 
-async fn client_send_loop(udp_socket: UdpSocket, conn: QuicConn) {
+async fn client_send_loop(udp_socket: UdpSocket, conn: QuicConnState) {
     if let Err(err) = client_send_loop_priv(udp_socket, &conn).await {
         log::error!(target: "QuicConn","stop recv loop by error: {}",err);
     }
 
-    _ = conn.close().await;
+    _ = conn.close();
 }
 
-async fn client_send_loop_priv(udp_socket: UdpSocket, conn: &QuicConn) -> Result<()> {
+async fn client_send_loop_priv(udp_socket: UdpSocket, conn: &QuicConnState) -> Result<()> {
     let mut buf = vec![0; MAX_MTU_SIZE];
     loop {
         let (send_size, send_info) = conn.send(&mut buf).await?;
@@ -380,15 +380,15 @@ async fn client_send_loop_priv(udp_socket: UdpSocket, conn: &QuicConn) -> Result
         udp_socket.send_to(&buf[..send_size], send_info.to).await?;
     }
 }
-async fn client_recv_loop(udp_socket: UdpSocket, conn: QuicConn) {
+async fn client_recv_loop(udp_socket: UdpSocket, conn: QuicConnState) {
     if let Err(err) = client_recv_loop_prev(udp_socket, &conn).await {
         log::error!(target: "QuicConn","stop recv loop by error: {}",err);
     }
 
-    _ = conn.close().await;
+    _ = conn.close();
 }
 
-async fn client_recv_loop_prev(udp_socket: UdpSocket, conn: &QuicConn) -> Result<()> {
+async fn client_recv_loop_prev(udp_socket: UdpSocket, conn: &QuicConnState) -> Result<()> {
     let laddr = udp_socket.local_addr()?;
     let mut buf = vec![0; MAX_MTU_SIZE];
     loop {

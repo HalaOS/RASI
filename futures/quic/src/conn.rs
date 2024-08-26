@@ -6,7 +6,7 @@ use std::{
     net::SocketAddr,
     ops::Deref,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     task::Poll,
@@ -36,7 +36,7 @@ enum QuicConnStateEvent {
     OutboundStream(ConnectionId<'static>),
 }
 
-struct QuicConnState {
+struct QuicRawConnState {
     /// Quiche connection statement.
     conn: quiche::Connection,
     /// Next stream outbound id.
@@ -54,7 +54,7 @@ struct QuicConnState {
     latest_send_ack_eliciting_at: Instant,
 }
 
-impl Debug for QuicConnState {
+impl Debug for QuicRawConnState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -66,13 +66,13 @@ impl Debug for QuicConnState {
     }
 }
 
-impl QuicConnState {
+impl QuicRawConnState {
     fn new(
         conn: quiche::Connection,
         init_stream_outbound_id: u64,
         ack_eliciting_interval: Option<Duration>,
     ) -> Self {
-        QuicConnState {
+        QuicRawConnState {
             conn,
             next_outbound_stream_id: init_stream_outbound_id,
             inbound_stream_ids: Default::default(),
@@ -117,36 +117,37 @@ impl QuicStreamDropTable {
 
 /// A Quic connection between a local and a remote socket.
 #[derive(Clone)]
-pub struct QuicConn {
+pub struct QuicConnState {
     max_send_udp_payload_size: usize,
     pub(crate) id: ConnectionId<'static>,
-    state: Arc<Mutex<QuicConnState>>,
+    is_closed: Arc<AtomicBool>,
+    state: Arc<Mutex<QuicRawConnState>>,
     event_map: Arc<KeyWaitMap<QuicConnStateEvent, ()>>,
     stream_drop_table: Arc<QuicStreamDropTable>,
 }
 
-impl Debug for QuicConn {
+impl Debug for QuicConnState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "quic conn, id={:?}", self.id)
     }
 }
 
-impl Hash for QuicConn {
+impl Hash for QuicConnState {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state)
     }
 }
 
-impl PartialEq for QuicConn {
+impl PartialEq for QuicConnState {
     fn eq(&self, other: &Self) -> bool {
         self.id.eq(&other.id)
     }
 }
 
-impl Eq for QuicConn {}
+impl Eq for QuicConnState {}
 
-impl QuicConn {
-    async fn after_recv(&self, state: &mut QuicConnState) {
+impl QuicConnState {
+    async fn after_recv(&self, state: &mut QuicRawConnState) {
         // reset the `send_ack_eliciting_instant`
         state.latest_send_ack_eliciting_at = Instant::now();
 
@@ -166,7 +167,7 @@ impl QuicConn {
         self.handle_stream_drop(state).await;
     }
     /// inner call this method after success send one packet.
-    async fn after_send(&self, state: &mut QuicConnState) {
+    async fn after_send(&self, state: &mut QuicRawConnState) {
         let mut raised_events = vec![];
 
         self.collect_stream_events(state, &mut raised_events);
@@ -176,7 +177,7 @@ impl QuicConn {
         self.handle_stream_drop(state).await;
     }
 
-    async fn send_ack_eliciting(&self, state: &mut QuicConnState) -> Result<bool> {
+    async fn send_ack_eliciting(&self, state: &mut QuicRawConnState) -> Result<bool> {
         if let Some(ack_eliciting_interval) = state.ack_eliciting_interval {
             if state.latest_send_ack_eliciting_at.elapsed() >= ack_eliciting_interval {
                 state.conn.send_ack_eliciting().map_err(map_quic_error)?;
@@ -196,7 +197,7 @@ impl QuicConn {
             .insert(QuicConnStateEvent::Send(self.id.clone()), ());
     }
 
-    async fn handle_stream_drop(&self, state: &mut QuicConnState) -> bool {
+    async fn handle_stream_drop(&self, state: &mut QuicRawConnState) -> bool {
         if let Some(drain) = self.stream_drop_table.drain() {
             let drop_streams = drain.len();
             for stream_id in drain {
@@ -231,20 +232,9 @@ impl QuicConn {
         return false;
     }
 
-    fn check_conn_status(&self, state: &mut QuicConnState) -> Result<()> {
-        if state.conn.is_closed() || state.conn.is_draining() {
-            Err(Error::new(
-                ErrorKind::BrokenPipe,
-                "Underly quiche connection is closed.",
-            ))
-        } else {
-            Ok(())
-        }
-    }
-
     fn collect_stream_events(
         &self,
-        state: &mut QuicConnState,
+        state: &mut QuicRawConnState,
         raised_events: &mut Vec<(QuicConnStateEvent, ())>,
     ) {
         for stream_id in state.conn.readable() {
@@ -280,7 +270,7 @@ impl QuicConn {
         }
     }
 
-    fn peer_streams_left_bidi_priv(&self, state: &QuicConnState) -> u64 {
+    fn peer_streams_left_bidi_priv(&self, state: &QuicRawConnState) -> u64 {
         let peer_streams_left_bidi = state.conn.peer_streams_left_bidi();
         let outgoing_cached = state.outbound_stream_ids.len() as u64;
         let initial_max_streams_bidi = state
@@ -319,7 +309,7 @@ impl QuicConn {
     }
 }
 
-impl QuicConn {
+impl QuicConnState {
     /// Create a new `QuicConn` instance.
     pub fn new(
         inner: quiche::Connection,
@@ -327,9 +317,10 @@ impl QuicConn {
         ack_eliciting_interval: Option<Duration>,
     ) -> Self {
         Self {
+            is_closed: Default::default(),
             max_send_udp_payload_size: inner.max_send_udp_payload_size(),
             id: inner.source_id().into_owned(),
-            state: Arc::new(Mutex::new(QuicConnState::new(
+            state: Arc::new(Mutex::new(QuicRawConnState::new(
                 inner,
                 init_stream_outbound_id,
                 ack_eliciting_interval,
@@ -363,6 +354,12 @@ impl QuicConn {
         loop {
             let mut state = self.state.lock().await;
 
+            if self.is_closed.load(Ordering::SeqCst) {
+                if !state.conn.is_closed() {
+                    _ = state.conn.close(false, 0, b"");
+                }
+            }
+
             // generate timeout packet.
             if on_timout {
                 log::trace!("{:?}, send data, timeout", *state);
@@ -384,7 +381,7 @@ impl QuicConn {
                     return Ok((send_size, send_info));
                 }
                 Err(quiche::Error::Done) => {
-                    if state.conn.is_draining() {
+                    if state.conn.is_closed() {
                         self.event_map.cancel_all();
                         return Err(Error::new(
                             ErrorKind::BrokenPipe,
@@ -476,9 +473,14 @@ impl QuicConn {
     /// Accept a new inbound stream.
     pub async fn accept(&self) -> Result<QuicStream> {
         loop {
-            let mut state = self.state.lock().await;
+            if self.is_closed.load(Ordering::SeqCst) {
+                return Err(Error::new(
+                    ErrorKind::BrokenPipe,
+                    "Underly quiche connection is closed.",
+                ));
+            }
 
-            self.check_conn_status(&mut state)?;
+            let mut state = self.state.lock().await;
 
             self.handle_stream_drop(&mut state).await;
 
@@ -494,18 +496,6 @@ impl QuicConn {
 
             log::trace!("accept new incoming stream -- wakeup");
         }
-    }
-
-    /// Returns a stream of incoming connections.
-    ///
-    /// Iterating over this stream is equivalent to calling accept in a loop.
-    /// The stream of connections is infinite, i.e awaiting the next connection
-    /// will never result in None.
-    pub fn incoming(&self) -> impl Stream<Item = Result<QuicStream>> + Unpin {
-        Box::pin(futures::stream::unfold(self.clone(), |conn| async move {
-            let res = conn.accept().await;
-            Some((res, conn))
-        }))
     }
 
     /// Open a new outbound stream over this connection.
@@ -562,17 +552,6 @@ impl QuicConn {
         state.conn.paths_iter(laddr).next()
     }
 
-    /// Close this connection.
-    pub async fn close(&self) -> Result<()> {
-        let mut state = self.state.lock().await;
-
-        state.conn.close(false, 1, b"").map_err(map_quic_error)?;
-
-        self.event_map.cancel_all();
-
-        Ok(())
-    }
-
     pub async fn path(&self) -> Option<(SocketAddr, SocketAddr)> {
         let state = self.state.lock().await;
 
@@ -589,11 +568,59 @@ impl QuicConn {
     pub fn scid(&self) -> &ConnectionId<'_> {
         &self.id
     }
+
+    /// Close this connection.
+    pub fn close(&self) -> Result<()> {
+        self.is_closed.store(true, Ordering::SeqCst);
+
+        self.event_map
+            .insert(QuicConnStateEvent::Send(self.id.clone()), ());
+        self.event_map
+            .insert(QuicConnStateEvent::StreamAccept(self.id.clone()), ());
+
+        Ok(())
+    }
+}
+
+/// The quic connection instance type with auto [`Drop`] support.
+pub struct QuicConn(QuicConnState);
+
+impl Drop for QuicConn {
+    fn drop(&mut self) {
+        _ = self.0.close();
+    }
+}
+
+impl From<QuicConnState> for QuicConn {
+    fn from(value: QuicConnState) -> Self {
+        Self(value)
+    }
+}
+
+impl Deref for QuicConn {
+    type Target = QuicConnState;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl QuicConn {
+    /// Returns a stream of incoming connections.
+    ///
+    /// Iterating over this stream is equivalent to calling accept in a loop.
+    /// The stream of connections is infinite, i.e awaiting the next connection
+    /// will never result in None.
+    pub fn into_incoming(self) -> impl Stream<Item = Result<QuicStream>> + Unpin {
+        Box::pin(futures::stream::unfold(self, |conn| async move {
+            let res = conn.accept().await;
+            Some((res, conn))
+        }))
+    }
 }
 
 struct RawQuicStream {
     stream_id: u64,
-    conn: QuicConn,
+    conn: QuicConnState,
 }
 
 impl Drop for RawQuicStream {
@@ -717,6 +744,7 @@ impl RawQuicStream {
                     }
                 }
                 Err(err) => {
+                    log::trace!("{:?}, recv with error, {}", *state, err);
                     return Err(map_quic_error(err));
                 }
             }
@@ -765,7 +793,7 @@ impl Clone for QuicStream {
 }
 
 impl QuicStream {
-    fn new(stream_id: u64, conn: QuicConn) -> Self {
+    fn new(stream_id: u64, conn: QuicConnState) -> Self {
         Self {
             state: Arc::new(RawQuicStream { stream_id, conn }),
             poll: None,

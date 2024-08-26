@@ -84,6 +84,7 @@ libc = "^0.2"
 bs58 = "0.5.1"
 resolv-conf = "^0.7"
 dns-parser = "^0.8"
+ipconfig = "0.3.2"
 # rasi
 rasi = { path = "crates/rasi", version = "^0.2" }
 rasi-spec = { path = "crates/spec", version = "^0.2" }

@@ -62,7 +62,7 @@ impl DnsLookup {
                 log::trace!("DnsLookup, stop send loop.",);
             }
 
-            lookup_cloned.close_send();
+            lookup_cloned.close();
         });
 
         spawn_ok(async move {
@@ -72,7 +72,7 @@ impl DnsLookup {
                 log::trace!("DnsLookup, stop recv loop.",);
             }
 
-            lookup.close_recv();
+            lookup.close();
         });
 
         Ok(this)
@@ -131,10 +131,7 @@ impl DnsLookup {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{atomic::Ordering, Once},
-        time::Duration,
-    };
+    use std::{sync::Once, time::Duration};
 
     use rasi::timer::sleep;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
@@ -156,27 +153,22 @@ mod tests {
     async fn test_udp_lookup() {
         init();
 
-        let innner = {
+        {
             let lookup = DnsLookup::over_udp().await.unwrap();
 
             let group = lookup.lookup_ip("docs.rs").await.unwrap();
 
             log::trace!("{:?}", group);
-
-            lookup.to_inner()
         };
 
         sleep(Duration::from_secs(1)).await;
-
-        assert_eq!(innner.0.send_closed.load(Ordering::Relaxed), true);
-        assert_eq!(innner.0.recv_closed.load(Ordering::Relaxed), true);
     }
 
     #[futures_test::test]
     async fn test_udp_lookup_txt() {
         init();
 
-        let innner = {
+        {
             let lookup = DnsLookup::over_udp().await.unwrap();
 
             let group = lookup
@@ -185,13 +177,8 @@ mod tests {
                 .unwrap();
 
             log::trace!("{:?}", group);
-
-            lookup.to_inner()
         };
 
         sleep(Duration::from_secs(1)).await;
-
-        assert_eq!(innner.0.send_closed.load(Ordering::Relaxed), true);
-        assert_eq!(innner.0.recv_closed.load(Ordering::Relaxed), true);
     }
 }
