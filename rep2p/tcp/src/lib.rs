@@ -1,7 +1,7 @@
 use std::io::{self, Result};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
@@ -215,8 +215,7 @@ struct P2pTcpConn {
     public_key: PublicKey,
     laddr: Multiaddr,
     raddr: Multiaddr,
-    conn: YamuxConn,
-    is_closed: Arc<AtomicBool>,
+    conn: Arc<YamuxConn>,
     id: String,
     counter: Arc<AtomicUsize>,
 }
@@ -246,9 +245,8 @@ impl P2pTcpConn {
         Ok(Self {
             laddr: m_laddr,
             raddr: m_raddr,
-            conn,
+            conn: Arc::new(conn),
             public_key,
-            is_closed: Default::default(),
             id: Uuid::new_v4().to_string(),
             counter: Default::default(),
         })
@@ -303,16 +301,14 @@ impl DriverConnection for P2pTcpConn {
     }
 
     async fn close(&mut self) -> io::Result<()> {
-        self.conn.close(Reason::Normal).await?;
-
-        self.is_closed.store(true, Ordering::Relaxed);
+        self.conn.close(Reason::Normal)?;
 
         Ok(())
     }
 
     /// Returns true if this connection is closed or is closing.
     fn is_closed(&self) -> bool {
-        self.is_closed.load(Ordering::Relaxed)
+        self.conn.is_closed()
     }
 
     /// Creates a new independently owned handle to the underlying socket.
