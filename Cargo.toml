@@ -6,7 +6,7 @@ members = [
     "crates/sqlite3",
     "futures/*",
     "reweb3/*",
-    "rep2p/*",
+    "xstack/*",
 ]
 resolver = "2"
 
@@ -100,12 +100,12 @@ reweb3-num = { path = "reweb3/num", version = "^0.2" }
 reweb3-macros = { path = "reweb3/macros", version = "^0.2" }
 ethbind = { path = "reweb3/bind", version = "^0.2" }
 ringbuf-rs = { path = "crates/ringbuf", version = "^0.2" }
-rep2p = { path = "rep2p/rep2p", version = "^0.2" }
-rep2p-x509 = { path = "rep2p/x509", version = "^0.2" }
-rep2p-spec = { path = "rep2p/spec", version = "^0.2" }
-rep2p-tcp = { path = "rep2p/tcp", version = "^0.2" }
-rep2p-quic = { path = "rep2p/quic", version = "^0.2" }
-rep2p-kad = { path = "rep2p/kad", version = "^0.2" }
+xstack = { path = "xstack/xstack", version = "^0.2" }
+xstack-x509 = { path = "xstack/x509", version = "^0.2" }
+xstack-spec = { path = "xstack/spec", version = "^0.2" }
+xstack-tcp = { path = "xstack/tcp", version = "^0.2" }
+xstack-quic = { path = "xstack/quic", version = "^0.2" }
+xstack-kad = { path = "xstack/kad", version = "^0.2" }
 #libp2p
 multiaddr = "^0.18"
 identity = { version = "^0.2", package = "libp2p-identity" }
