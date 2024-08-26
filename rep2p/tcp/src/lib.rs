@@ -18,7 +18,7 @@ use rasi::net::{TcpListener, TcpStream};
 use rep2p::identity::PublicKey;
 use rep2p::multiaddr::{Multiaddr, Protocol, ToSockAddr};
 use rep2p::transport::syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport};
-use rep2p::transport::{Connection, Listener, Stream};
+use rep2p::transport::{Connection, Listener, ProtocolStream};
 use rep2p::Switch;
 use uuid::Uuid;
 
@@ -274,7 +274,7 @@ impl DriverConnection for P2pTcpConn {
     /// Accept newly incoming stream for reading/writing.
     ///
     /// If the connection is dropping or has been dropped, this function will returns `None`.
-    async fn accept(&mut self) -> io::Result<Stream> {
+    async fn accept(&mut self) -> io::Result<ProtocolStream> {
         let stream = self.conn.stream_accept().await?;
 
         Ok(P2pTcpStream::new(
@@ -287,7 +287,7 @@ impl DriverConnection for P2pTcpConn {
         .into())
     }
 
-    async fn connect(&mut self) -> Result<Stream> {
+    async fn connect(&mut self) -> Result<ProtocolStream> {
         let stream = self.conn.stream_open().await?;
 
         Ok(P2pTcpStream::new(
@@ -414,7 +414,7 @@ impl DriverStream for P2pTcpStream {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use rep2p::{Result, Switch, SwitchBuilder};
+    use rep2p::{Result, Switch};
     use rep2p_spec::transport::{transport_specs, TransportSpecContext};
 
     use super::*;
@@ -423,10 +423,14 @@ mod tests {
 
     #[async_trait]
     impl TransportSpecContext for TcpMock {
-        async fn create_switch(&self) -> Result<SwitchBuilder> {
-            Ok(Switch::new("test")
-                .bind("/ip4/127.0.0.1/tcp/0".parse()?)
-                .transport(TcpTransport))
+        async fn create_switch(&self) -> Result<Switch> {
+            let switch = Switch::new("test").transport(TcpTransport).create().await?;
+
+            switch
+                .transport_bind(&"/ip4/127.0.0.1/tcp/0".parse()?)
+                .await?;
+
+            Ok(switch)
         }
     }
 

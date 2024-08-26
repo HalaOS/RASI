@@ -59,10 +59,10 @@ pub mod syscall {
         fn peer_addr(&self) -> &Multiaddr;
 
         /// Accept a new incoming stream with protocol selection.
-        async fn accept(&mut self) -> Result<super::Stream>;
+        async fn accept(&mut self) -> Result<super::ProtocolStream>;
 
         /// Create a new outbound stream with protocol selection
-        async fn connect(&mut self) -> Result<super::Stream>;
+        async fn connect(&mut self) -> Result<super::ProtocolStream>;
 
         /// Close the unerlying socket.
         async fn close(&mut self) -> Result<()>;
@@ -150,10 +150,10 @@ impl Connection {
 
 driver_wrapper!(
     ["A type wrapper of [`DriverStream`](syscall::DriverStream)"]
-    Stream[syscall::DriverStream]
+    ProtocolStream[syscall::DriverStream]
 );
 
-impl AsyncWrite for Stream {
+impl AsyncWrite for ProtocolStream {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -177,7 +177,7 @@ impl AsyncWrite for Stream {
     }
 }
 
-impl AsyncRead for Stream {
+impl AsyncRead for ProtocolStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,

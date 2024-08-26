@@ -43,6 +43,12 @@ pub enum Error {
 
     #[error("{0}")]
     Other(String),
+
+    #[error("Can't bind listener on '{0}'")]
+    BindError(String),
+
+    #[error("Protocol listener is not exist or is closed, '{0}'")]
+    ProtocolListener(usize),
 }
 
 /// The result type for this module.

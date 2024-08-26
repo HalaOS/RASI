@@ -2,7 +2,10 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
     ops::Deref,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -20,7 +23,7 @@ use crate::{
     keystore::{syscall::DriverKeyStore, KeyStore, MemoryKeyStore},
     multiaddr::ToSockAddr,
     proto::identity::Identity,
-    transport::{syscall::DriverTransport, Connection, Listener, Stream, Transport},
+    transport::{syscall::DriverTransport, Connection, Listener, ProtocolStream, Transport},
     Error, Result,
 };
 
@@ -39,12 +42,8 @@ struct ImmutableSwitch {
     max_conn_pool_size: usize,
     /// The maximun length of inbound streams queue.
     max_inbound_length: usize,
-    /// addresses that this switch is bound to.
-    laddrs: Vec<Multiaddr>,
     /// The value of rpc timeout.
     timeout: Duration,
-    /// A list of protocols that the switch accepts.
-    protos: Vec<String>,
     /// This is a free-form string, identitying the implementation of the peer. The usual format is agent-name/version,
     /// where agent-name is the name of the program or library and version is its semantic version.
     agent_version: String,
@@ -65,15 +64,10 @@ impl ImmutableSwitch {
             max_inbound_length: 200,
             agent_version,
             timeout: Duration::from_secs(10),
-            protos: [PROTOCOL_IPFS_ID, PROTOCOL_IPFS_PUSH_ID, PROTOCOL_IPFS_PING]
-                .into_iter()
-                .map(|v| v.to_owned())
-                .collect(),
             max_identity_packet_size: 4096,
             transports: vec![],
             keystore: MemoryKeyStore::random().into(),
             peer_book: MemoryPeerBook::default().into(),
-            laddrs: vec![],
         }
     }
 
@@ -205,33 +199,6 @@ impl SwitchBuilder {
         })
     }
 
-    /// Add a new listener which is bound to `laddr`.
-    pub fn bind(self, laddr: Multiaddr) -> Self {
-        self.and_then(|mut cfg| {
-            cfg.laddrs.push(laddr);
-
-            Ok(cfg)
-        })
-    }
-
-    /// Set the protocol list of this switch accepts.
-    pub fn protos<I>(self, value: I) -> Self
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-    {
-        self.and_then(|mut cfg| {
-            let mut protos = value
-                .into_iter()
-                .map(|item| item.as_ref().to_owned())
-                .collect::<Vec<_>>();
-
-            cfg.protos.append(&mut protos);
-
-            Ok(cfg)
-        })
-    }
-
     /// Consume the builder and create a new `Switch` instance.
     pub async fn create(self) -> Result<Switch> {
         let ops = self.ops?;
@@ -247,10 +214,6 @@ impl SwitchBuilder {
                 event_map: KeyWaitMap::new(),
             }),
         };
-
-        for laddr in switch.immutable.laddrs.iter() {
-            switch.listen(&laddr).await?;
-        }
 
         Ok(switch)
     }
@@ -386,11 +349,67 @@ impl ConnPool {
     }
 }
 
+/// A server-side socket that accept new inbound [`ProtocolStream`]
+pub struct ProtocolListener {
+    id: ListenerId,
+    switch: Switch,
+}
+
+impl Drop for ProtocolListener {
+    fn drop(&mut self) {
+        let switch = self.switch.clone();
+        let id = self.id;
+        spawn_ok(async move {
+            switch.mutable.lock().await.close_listener(&id);
+        })
+    }
+}
+
+impl ProtocolListener {
+    /// Accept a new inbound [`ProtocolStream`].
+    ///
+    /// On success, returns the negotiated protocol id with the stream.
+    pub async fn accept(&self) -> Result<(ProtocolStream, String)> {
+        loop {
+            if let Some(incoming) = self.switch.mutable.lock().await.incoming_next(&self.id)? {
+                return Ok(incoming);
+            }
+
+            _ = self
+                .switch
+                .event_map
+                .wait(&SwitchEvent::Accept(self.id), ());
+        }
+    }
+
+    /// Conver the switch into a [`Stream`](futures::Stream) object.
+    pub fn into_incoming(
+        self,
+    ) -> impl futures::Stream<Item = Result<(ProtocolStream, String)>> + Unpin {
+        Box::pin(futures::stream::unfold(self, |listener| async move {
+            let res = listener.accept().await;
+            Some((res, listener))
+        }))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct ListenerId(usize);
+
+impl ListenerId {
+    fn next() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+        ListenerId(NEXT.fetch_add(1, Ordering::SeqCst))
+    }
+}
+
 #[derive(Default)]
 struct MutableSwitch {
     conn_pool: ConnPool,
-    incoming_streams: VecDeque<(Stream, String)>,
+    incoming_streams: HashMap<ListenerId, VecDeque<(ProtocolStream, String)>>,
     laddrs: Vec<Multiaddr>,
+    protos: HashMap<String, ListenerId>,
 }
 
 impl MutableSwitch {
@@ -403,11 +422,102 @@ impl MutableSwitch {
             ..Default::default()
         }
     }
+
+    /// Create a new server-side socket that accept inbound protocol stream.
+    fn new_listener<I>(&mut self, protos: I) -> Result<ListenerId>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        let id = ListenerId::next();
+
+        for proto in protos.into_iter() {
+            if self.protos.contains_key(proto.as_ref()) {
+                return Err(Error::BindError(proto.as_ref().to_owned()));
+            }
+
+            self.protos.insert(proto.as_ref().to_owned(), id);
+        }
+
+        assert!(
+            self.incoming_streams
+                .insert(id, VecDeque::default())
+                .is_none(),
+            "The `ListenerId` cannot be duplicated."
+        );
+
+        Ok(id)
+    }
+
+    /// Close the listener by id, and remove queued inbound stream.
+    fn close_listener(&mut self, id: &ListenerId) {
+        let keys = self
+            .protos
+            .iter()
+            .filter_map(|(proto, value)| {
+                if *value == *id {
+                    Some(proto.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for key in keys {
+            self.protos.remove(&key);
+        }
+
+        self.incoming_streams.remove(id);
+    }
+
+    /// Pop one inbound stream from one listener's incoming queue.
+    fn incoming_next(&mut self, id: &ListenerId) -> Result<Option<(ProtocolStream, String)>> {
+        Ok(self
+            .incoming_streams
+            .get_mut(id)
+            .ok_or(Error::ProtocolListener(id.0))?
+            .pop_front())
+    }
+
+    /// Insert a new inbound stream.
+    ///
+    /// the protocol listener does not exist or has been closed, it is simply dropped.
+    fn insert_inbound_stream(
+        &mut self,
+        stream: ProtocolStream,
+        proto: String,
+    ) -> Option<ListenerId> {
+        if let Some(id) = self.protos.get(&proto) {
+            self.incoming_streams
+                .get_mut(id)
+                .expect("Atomic cleanup listener resources guarantee")
+                .push_back((stream, proto));
+
+            Some(*id)
+        } else {
+            log::warn!("Protocol listener is not exists, {}", proto);
+            None
+        }
+    }
+
+    fn protos(&self) -> Vec<String> {
+        let mut protos = vec![
+            PROTOCOL_IPFS_ID.to_owned(),
+            PROTOCOL_IPFS_PING.to_owned(),
+            PROTOCOL_IPFS_PUSH_ID.to_owned(),
+        ];
+
+        for key in self.protos.keys() {
+            protos.push(key.to_owned());
+        }
+
+        protos
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 enum SwitchEvent {
-    Accept,
+    Accept(ListenerId),
 }
 
 #[doc(hidden)]
@@ -510,10 +620,12 @@ impl Switch {
         }
     }
 
-    async fn handle_incoming_stream(&self, mut stream: Stream) -> Result<()> {
+    async fn handle_incoming_stream(&self, mut stream: ProtocolStream) -> Result<()> {
         log::info!(target:"switch","accept new stream, peer={}, local={}, id={}",stream.peer_addr(),stream.local_addr(),stream.id());
 
-        let (protoco_id, _) = listener_select_proto(&mut stream, &self.immutable.protos)
+        let protos = self.mutable.lock().await.protos();
+
+        let (protoco_id, _) = listener_select_proto(&mut stream, &protos)
             .timeout(self.immutable.timeout)
             .await
             .ok_or(Error::Timeout)??;
@@ -538,7 +650,7 @@ impl Switch {
         Ok(())
     }
 
-    async fn dispatch_stream(&self, protoco_id: String, stream: Stream) -> Result<()> {
+    async fn dispatch_stream(&self, protoco_id: String, stream: ProtocolStream) -> Result<()> {
         let conn_peer_id = stream.public_key().to_peer_id();
 
         match protoco_id.as_str() {
@@ -557,11 +669,9 @@ impl Switch {
                     return Ok(());
                 }
 
-                mutable.incoming_streams.push_back((stream, protoco_id));
-
-                drop(mutable);
-
-                self.event_map.insert(SwitchEvent::Accept, ());
+                if let Some(id) = mutable.insert_inbound_stream(stream, protoco_id) {
+                    self.event_map.insert(SwitchEvent::Accept(id), ());
+                }
             }
         }
 
@@ -569,7 +679,7 @@ impl Switch {
     }
 
     /// Handle `/ipfs/ping/1.0.0` request.
-    async fn ping_echo(&self, mut stream: Stream) -> Result<()> {
+    async fn ping_echo(&self, mut stream: ProtocolStream) -> Result<()> {
         loop {
             log::trace!("recv /ipfs/ping/1.0.0");
 
@@ -597,7 +707,7 @@ impl Switch {
         }
     }
 
-    async fn identity_push(&self, conn_peer_id: &PeerId, mut stream: Stream) -> Result<()> {
+    async fn identity_push(&self, conn_peer_id: &PeerId, mut stream: ProtocolStream) -> Result<()> {
         let identity = {
             log::trace!("identity_request: read varint length");
 
@@ -649,7 +759,7 @@ impl Switch {
             conn_type: ConnectionType::Connected,
         };
 
-        self.update_peer_info(peer_info).await?;
+        self.add_peer(peer_info).await?;
 
         Ok(())
     }
@@ -665,7 +775,7 @@ impl Switch {
         self.identity_push(&conn_peer_id, stream).await
     }
 
-    async fn identity_response(&self, mut stream: Stream) -> Result<()> {
+    async fn identity_response(&self, mut stream: ProtocolStream) -> Result<()> {
         log::trace!("handle identity request");
 
         let peer_addr = stream.peer_addr();
@@ -685,14 +795,9 @@ impl Switch {
             .map(|addr| addr.to_vec())
             .collect::<Vec<_>>();
 
-        identity.protocols = self.immutable.protos.clone();
+        identity.protocols = self.mutable.lock().await.protos();
 
         let buf = identity.write_to_bytes()?;
-
-        log::trace!(
-            "handle identity request, protos={:?}",
-            self.immutable.protos
-        );
 
         let mut payload_len = unsigned_varint::encode::usize_buffer();
 
@@ -701,32 +806,6 @@ impl Switch {
             .await?;
 
         stream.write_all(&buf).await?;
-
-        Ok(())
-    }
-
-    /// Create a new transport listener with provided `laddr`.
-    async fn listen(&self, laddr: &Multiaddr) -> Result<()> {
-        let transport = self
-            .immutable
-            .get_transport_by_address(laddr)
-            .ok_or(Error::UnspportMultiAddr(laddr.to_owned()))?;
-
-        let listener = transport.bind(laddr, self.clone()).await?;
-
-        let laddr = listener.local_addr()?;
-
-        self.mutable.lock().await.laddrs.push(laddr.clone());
-
-        let this = self.clone();
-
-        spawn_ok(async move {
-            if let Err(err) = this.handle_incoming(listener).await {
-                log::error!(target:"switch" ,"listener({}) stop, err={}",laddr, err);
-            } else {
-                log::info!(target:"switch" ,"listener({}) stop",laddr);
-            }
-        });
 
         Ok(())
     }
@@ -837,8 +916,52 @@ impl Switch {
         self.transport_connect_to_prv(raddr).await
     }
 
+    /// Create a new transport layer socket that accepts peer's inbound connections.
+    pub async fn transport_bind(&self, laddr: &Multiaddr) -> Result<()> {
+        let transport = self
+            .immutable
+            .get_transport_by_address(laddr)
+            .ok_or(Error::UnspportMultiAddr(laddr.to_owned()))?;
+
+        let listener = transport.bind(laddr, self.clone()).await?;
+
+        let laddr = listener.local_addr()?;
+
+        self.mutable.lock().await.laddrs.push(laddr.clone());
+
+        let this = self.clone();
+
+        spawn_ok(async move {
+            if let Err(err) = this.handle_incoming(listener).await {
+                log::error!(target:"switch" ,"listener({}) stop, err={}",laddr, err);
+            } else {
+                log::info!(target:"switch" ,"listener({}) stop",laddr);
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Create a protocol layer server-side socket, that accept inbound [`ProtocolStream`].
+    pub async fn bind<I>(&self, protos: I) -> Result<ProtocolListener>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        let id = self.mutable.lock().await.new_listener(protos)?;
+
+        Ok(ProtocolListener {
+            id,
+            switch: self.clone(),
+        })
+    }
+
     /// Open a new stream with specified `protos` connected to remote peer.
-    pub async fn connect<'a, C, E, I>(&self, target: C, protos: I) -> Result<(Stream, String)>
+    pub async fn connect<'a, C, E, I>(
+        &self,
+        target: C,
+        protos: I,
+    ) -> Result<(ProtocolStream, String)>
     where
         C: TryInto<ConnectTo<'a>, Error = E>,
         I: IntoIterator,
@@ -867,44 +990,17 @@ impl Switch {
 
         Ok((stream, protocol_id.as_ref().to_owned()))
     }
-
-    /// Accept a new incoming stream.
-    ///
-    ///
-    /// # Take over the handle of incoming stream
-    ///
-    /// If this instance belongs to [`ServeMux`](crate::serve::ServeMux),
-    /// this function or [`into_incoming`](Self::into_incoming) should not be called.
-    pub async fn accept(&self) -> Result<(Stream, String)> {
-        loop {
-            let mut mutable = self.mutable.lock().await;
-
-            if let Some(r) = mutable.incoming_streams.pop_front() {
-                return Ok(r);
-            }
-
-            self.event_map.wait(&SwitchEvent::Accept, mutable).await;
-        }
-    }
-
-    /// Conver the switch into a [`Stream`](futures::Stream) object.
-    pub fn into_incoming(self) -> impl futures::Stream<Item = Result<(Stream, String)>> + Unpin {
-        Box::pin(futures::stream::unfold(self, |listener| async move {
-            let res = listener.accept().await;
-            Some((res, listener))
-        }))
-    }
-
-    /// Update the [`PeerBook`] of this switch.
-    pub async fn update_peer_info(&self, peer_info: PeerInfo) -> Result<Option<PeerInfo>> {
-        Ok(self.immutable.peer_book.put(peer_info).await?)
-    }
 }
 
 impl Switch {
     /// Remove [`PeerInfo`] from the [`PeerBook`] of this switch.
-    pub async fn remove_peer_info(&self, peer_id: &PeerId) -> Result<Option<PeerInfo>> {
+    pub async fn remove_peer(&self, peer_id: &PeerId) -> Result<Option<PeerInfo>> {
         Ok(self.immutable.peer_book.remove(peer_id).await?)
+    }
+
+    /// Update the [`PeerBook`] of this switch.
+    pub async fn add_peer(&self, peer_info: PeerInfo) -> Result<Option<PeerInfo>> {
+        Ok(self.immutable.peer_book.put(peer_info).await?)
     }
 
     /// Update the connection type of the [`peer_id`](PeerId) in the [`PeerBook`] of this switch.

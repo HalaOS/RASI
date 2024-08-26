@@ -28,7 +28,7 @@ use rep2p::{
     multiaddr::{Multiaddr, Protocol, ToSockAddr},
     transport::{
         syscall::{DriverConnection, DriverListener, DriverStream, DriverTransport},
-        Connection, Listener, Stream,
+        Connection, Listener, ProtocolStream,
     },
     Switch,
 };
@@ -259,7 +259,7 @@ impl DriverConnection for QuicP2pConn {
     /// Accept newly incoming stream for reading/writing.
     ///
     /// If the connection is dropping or has been dropped, this function will returns `None`.
-    async fn accept(&mut self) -> io::Result<Stream> {
+    async fn accept(&mut self) -> io::Result<ProtocolStream> {
         let stream = self.conn.accept().await?;
 
         Ok(QuicP2pStream::new(
@@ -272,7 +272,7 @@ impl DriverConnection for QuicP2pConn {
         .into())
     }
 
-    async fn connect(&mut self) -> Result<Stream> {
+    async fn connect(&mut self) -> Result<ProtocolStream> {
         let stream = self.conn.open(true).await?;
 
         Ok(QuicP2pStream::new(
@@ -401,7 +401,7 @@ impl DriverStream for QuicP2pStream {
 mod tests {
 
     use async_trait::async_trait;
-    use rep2p::{Result, Switch, SwitchBuilder};
+    use rep2p::{Result, Switch};
     use rep2p_spec::transport::{transport_specs, TransportSpecContext};
 
     use super::*;
@@ -410,10 +410,17 @@ mod tests {
 
     #[async_trait]
     impl TransportSpecContext for QuicMock {
-        async fn create_switch(&self) -> Result<SwitchBuilder> {
-            Ok(Switch::new("test")
-                .bind("/ip4/127.0.0.1/udp/0/quic-v1".parse()?)
-                .transport(QuicTransport::default()))
+        async fn create_switch(&self) -> Result<Switch> {
+            let switch = Switch::new("test")
+                .transport(QuicTransport::default())
+                .create()
+                .await?;
+
+            switch
+                .transport_bind(&"/ip4/127.0.0.1/udp/0/quic-v1".parse()?)
+                .await?;
+
+            Ok(switch)
         }
     }
 
