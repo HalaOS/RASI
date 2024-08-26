@@ -9,11 +9,11 @@ version.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
-dns-protocol = { workspace = true }
 futures = { workspace = true }
 futures-map = { workspace = true }
 log = { workspace = true }
 rasi = { workspace = true, optional = true }
+dns-parser = { workspace = true }
 
 [dev-dependencies]
 futures-test = { workspace = true }

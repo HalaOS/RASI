@@ -3,13 +3,14 @@
 use std::{
     collections::VecDeque,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    str::from_utf8,
     sync::{
         atomic::{AtomicBool, AtomicU16, Ordering},
         Arc,
     },
 };
 
-use dns_protocol::{Flags, Message, Question, ResourceRecord};
+use dns_parser::{Builder, Packet, QueryClass, QueryType, ResponseCode};
 use futures::lock::Mutex;
 use futures_map::KeyWaitMap;
 
@@ -41,9 +42,9 @@ pub(crate) struct RawDnsLookup {
 ///
 /// Usually this type is used by background io tasks, the end-users should use [`DnsLookup`] instead.
 #[derive(Default, Clone)]
-pub struct DnsLookupWithoutDrop(pub(crate) Arc<RawDnsLookup>);
+pub struct DnsLookupState(pub(crate) Arc<RawDnsLookup>);
 
-impl DnsLookupWithoutDrop {
+impl DnsLookupState {
     /// Returns true if this client is closed.
     pub fn is_closed(&self) -> bool {
         self.0.is_closed.load(Ordering::SeqCst)
@@ -122,7 +123,7 @@ impl DnsLookupWithoutDrop {
 
 /// A asynchronous DNs client.
 #[derive(Default)]
-pub struct DnsLookup(DnsLookupWithoutDrop);
+pub struct DnsLookup(DnsLookupState);
 
 impl Drop for DnsLookup {
     fn drop(&mut self) {
@@ -131,8 +132,57 @@ impl Drop for DnsLookup {
 }
 
 impl DnsLookup {
+    fn parse_ip_addrs<'a>(message: &Packet<'a>) -> Result<Vec<IpAddr>> {
+        let mut group = vec![];
+
+        for answer in &message.answers {
+            // Determine the IP address.
+            match answer.data {
+                dns_parser::RData::A(a) => {
+                    let ipaddr: IpAddr = a.0.into();
+                    log::trace!("{} has addr {}", answer.name, ipaddr);
+                    group.push(ipaddr);
+                }
+                dns_parser::RData::AAAA(aaaa) => {
+                    let ipaddr: IpAddr = aaaa.0.into();
+                    log::trace!("{} has addr {}", answer.name, ipaddr);
+                    group.push(ipaddr);
+                }
+
+                _ => {}
+            }
+        }
+
+        Ok(group)
+    }
+
+    fn parse_txt<'a, 'b>(message: &Packet<'a>) -> Result<Vec<String>> {
+        let mut group = vec![];
+
+        for answer in &message.answers {
+            // Determine the IP address.
+            match answer.data {
+                dns_parser::RData::TXT(ref txt) => {
+                    let txt = txt
+                        .iter()
+                        .map(|x| from_utf8(x).unwrap())
+                        .collect::<Vec<_>>()
+                        .concat();
+                    log::trace!("{} has txt {}", answer.name, txt);
+                    group.push(txt);
+                }
+
+                _ => {}
+            }
+        }
+
+        Ok(group)
+    }
+}
+
+impl DnsLookup {
     /// Get the innner [`DnsLookupWithoutDrop`] instance.
-    pub fn to_inner(&self) -> DnsLookupWithoutDrop {
+    pub fn to_inner(&self) -> DnsLookupState {
         self.0.clone()
     }
     /// Lookup ipv6 records.
@@ -167,29 +217,43 @@ impl DnsLookup {
         })
     }
     /// Lookup ipv4/ipv6 records.
-    pub async fn lookup_ip<'a, N>(&self, label: N) -> Result<Vec<IpAddr>>
+    pub async fn lookup_ip<N>(&self, label: N) -> Result<Vec<IpAddr>>
     where
         N: AsRef<str>,
     {
-        let id = self.0 .0.idgen.fetch_add(1, Ordering::Relaxed);
+        self.call_with(
+            label.as_ref(),
+            &[QueryType::A, QueryType::AAAA],
+            Self::parse_ip_addrs,
+        )
+        .await
+    }
 
-        let mut questions = [
-            Question::new(label.as_ref(), dns_protocol::ResourceType::A, 1),
-            Question::new(label.as_ref(), dns_protocol::ResourceType::AAAA, 1),
-        ];
+    /// Lookup txt records.
+    pub async fn lookup_txt<N>(&self, label: N) -> Result<Vec<String>>
+    where
+        N: AsRef<str>,
+    {
+        self.call_with(label.as_ref(), &[QueryType::TXT], Self::parse_txt)
+            .await
+    }
 
-        let message = Message::new(
-            id,
-            Flags::standard_query(),
-            &mut questions,
-            &mut [],
-            &mut [],
-            &mut [],
-        );
+    pub async fn call_with<F, R, E>(&self, qname: &str, qtypes: &[QueryType], resp: F) -> Result<R>
+    where
+        for<'a> F: FnOnce(&Packet<'a>) -> std::result::Result<R, E>,
+        R: 'static,
+        Error: From<E>,
+    {
+        let id = self.0 .0.idgen.fetch_add(1, Ordering::SeqCst);
 
-        let mut buf = vec![0; message.space_needed()];
+        let mut builder = Builder::new_query(id, true);
 
-        message.write(&mut buf)?;
+        for qtype in qtypes {
+            log::trace!("{} add question {:?}", qname, qtype);
+            builder.add_question(qname, false, qtype.clone(), QueryClass::IN);
+        }
+
+        let buf = builder.build().map_err(|_| Error::Truncated)?;
 
         self.0 .0.sending.lock().await.push_back(buf);
 
@@ -201,44 +265,13 @@ impl DnsLookup {
         if let Some(LookupEventArg::Response(buf)) =
             self.0 .0.waiters.wait(&LookupEvent::Response(id), ()).await
         {
-            let mut answers = [ResourceRecord::default(); 16];
-            let mut authority = [ResourceRecord::default(); 16];
-            let mut additional = [ResourceRecord::default(); 16];
+            let message = Packet::parse(buf.as_slice())?;
 
-            let message = Message::read(
-                &buf,
-                &mut questions,
-                &mut answers,
-                &mut authority,
-                &mut additional,
-            )?;
-
-            let mut group = vec![];
-
-            for answer in message.answers() {
-                // Determine the IP address.
-                match answer.data().len() {
-                    4 => {
-                        let mut ip = [0u8; 4];
-                        ip.copy_from_slice(answer.data());
-                        let ip = Ipv4Addr::from(ip);
-                        log::trace!("{} has address {}", answer.name(), ip);
-                        group.push(ip.into());
-                    }
-                    16 => {
-                        let mut ip = [0u8; 16];
-                        ip.copy_from_slice(answer.data());
-                        let ip = IpAddr::from(ip);
-                        log::trace!("{} has address {}", answer.name(), ip);
-                        group.push(ip.into());
-                    }
-                    _ => {
-                        log::trace!("{} has unknown address type", answer.name());
-                    }
-                }
+            if ResponseCode::NoError != message.header.response_code {
+                return Err(Error::ServerError(message.header.response_code));
             }
 
-            Ok(group)
+            Ok(resp(&message)?)
         } else {
             Err(Error::LookupCanceled(id))
         }

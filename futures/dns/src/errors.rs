@@ -1,13 +1,19 @@
+use std::string::FromUtf8Error;
+
+use dns_parser::ResponseCode;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error(transparent)]
-    ProtocolError(#[from] dns_protocol::Error),
-
+    // #[error(transparent)]
+    // ProtocolError(#[from] dns_protocol::Error),
     #[error("DNS lookup canceled, id={0}")]
     LookupCanceled(u16),
 
     #[error("The DNS packet length is too short.")]
     TooShort,
+
+    #[error("The DNS packet is truncated.")]
+    Truncated,
 
     #[error("The DNS lookup client is in an invalid state.")]
     InvalidState,
@@ -17,6 +23,15 @@ pub enum Error {
 
     #[error(transparent)]
     AddrParseError(#[from] std::net::AddrParseError),
+
+    #[error(transparent)]
+    FromUtf8Error(#[from] FromUtf8Error),
+
+    #[error(transparent)]
+    DnsParse(#[from] dns_parser::Error),
+
+    #[error("DNS server report, err={0}")]
+    ServerError(ResponseCode),
 }
 
 /// Result type returns by APIs in this crate.
