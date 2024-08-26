@@ -166,6 +166,10 @@ impl SwitchBuilder {
             }),
         };
 
+        for laddr in ops.laddrs {
+            switch.transport_bind(&laddr).await?;
+        }
+
         Ok(switch)
     }
 

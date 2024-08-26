@@ -520,13 +520,10 @@ impl Switch {
     {
         let id = self.mutable.lock().await.new_protocol_listener(protos)?;
 
-        Ok(ProtocolListener {
-            id,
-            switch: self.clone(),
-        })
+        Ok(ProtocolListener::new(id, self.clone()))
     }
 
-    /// Open a new stream with specified `protos` connected to remote peer.
+    /// Connect to peer and negotiate a protocol. the `protos` is the list of candidate protocols.
     pub async fn connect<'a, C, E, I>(
         &self,
         target: C,
@@ -614,5 +611,14 @@ impl Switch {
     /// Returns the addresses list of this switch is bound to.
     pub async fn local_addrs(&self) -> Vec<Multiaddr> {
         self.mutable.lock().await.local_addrs()
+    }
+
+    /// Register self into global context.
+    #[cfg(feature = "global_register")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "global_register")))]
+    pub fn into_global(self) {
+        use crate::register_switch;
+
+        register_switch(self)
     }
 }

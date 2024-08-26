@@ -451,11 +451,14 @@ impl<'a> RoutingAlogrithm for FindNode<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, sync::Once};
+    use std::{
+        str::FromStr,
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     use identity::Keypair;
     use rasi_mio::{net::register_mio_network, timer::register_mio_timer};
-    use rep2p::Switch;
+    use rep2p::{global_switch, transport::ProtocolStream, Switch};
     use rep2p_quic::QuicTransport;
     use rep2p_tcp::TcpTransport;
 
@@ -463,35 +466,39 @@ mod tests {
 
     use super::*;
 
-    async fn init() -> Switch {
-        static INIT: Once = Once::new();
+    async fn init() {
+        static INIT: AtomicBool = AtomicBool::new(false);
 
-        INIT.call_once(|| {
-            _ = pretty_env_logger::try_init_timed();
+        if INIT
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+        {
+            // _ = pretty_env_logger::try_init_timed();
 
             register_mio_network();
             register_mio_timer();
-        });
 
-        let switch = Switch::new("kad-test")
-            .transport(QuicTransport::default())
-            .transport(TcpTransport)
-            .create()
-            .await
-            .unwrap();
+            Switch::new("kad-test")
+                .transport(QuicTransport::default())
+                .transport(TcpTransport)
+                .create()
+                .await
+                .unwrap()
+                .into_global();
 
-        log::trace!("create switch: {}", switch.local_id());
+            INIT.store(false, Ordering::Release);
+        }
 
-        switch
+        while INIT.load(Ordering::Acquire) {}
     }
 
     #[futures_test::test]
     async fn find_node() {
-        let switch = init().await;
+        init().await;
 
         let kad = Router::new()
             .with_seeds(
-                switch,[
+                global_switch().clone(),[
                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
             ])
@@ -507,11 +514,11 @@ mod tests {
 
     #[futures_test::test]
     async fn find_node_1() {
-        let switch = init().await;
+        init().await;
 
         let kad = Router::new()
             .with_seeds(
-                switch,[
+                global_switch().clone(),[
                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
             ])
@@ -528,10 +535,10 @@ mod tests {
 
     #[futures_test::test]
     async fn put_value() {
-        let switch = init().await;
+        init().await;
 
-        let (stream, _) = switch
-            .connect(
+        let (stream, _) = ProtocolStream::
+            connect(
                  "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
@@ -552,8 +559,8 @@ mod tests {
             .await
             .unwrap();
 
-        let (stream, _) = switch
-            .connect(
+        let (stream, _) =  ProtocolStream::
+            connect(
                  "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
@@ -570,10 +577,9 @@ mod tests {
 
     #[futures_test::test]
     async fn add_provider() {
-        let switch = init().await;
+        init().await;
 
-        let (stream, _) = switch
-            .connect(
+        let (stream, _) =  ProtocolStream::connect(
                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )
@@ -583,7 +589,7 @@ mod tests {
         let id = PeerId::random();
 
         let peer_info = PeerInfo {
-            id: switch.local_id().clone(),
+            id: global_switch().local_id().clone(),
             addrs: vec!["/ip4/89.58.16.110/udp/37530/quic-v1".parse().unwrap()],
             ..Default::default()
         };
@@ -593,8 +599,7 @@ mod tests {
             .await
             .unwrap();
 
-        let (stream, _) = switch
-            .connect(
+        let (stream, _) =  ProtocolStream::connect(
                 "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
                 [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
             )

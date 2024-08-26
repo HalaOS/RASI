@@ -6,8 +6,30 @@ use super::{ListenerId, Switch, SwitchEvent};
 
 /// A server-side socket that accept new inbound [`ProtocolStream`]
 pub struct ProtocolListener {
-    pub(super) id: ListenerId,
-    pub(super) switch: Switch,
+    id: ListenerId,
+    switch: Switch,
+}
+
+impl ProtocolListener {
+    pub(super) fn new(id: ListenerId, switch: Switch) -> Self {
+        Self { id, switch }
+    }
+
+    /// Create a new `ProtocolListener` with `protos`.
+    ///
+    /// This function internally calls [`global_switch`] to get [`Switch`] instance,
+    /// so calling this function before calling [`register_switch`](crate::register_switch) will cause panic.
+    #[cfg(feature = "global_register")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "global_register")))]
+    pub async fn bind<I>(protos: I) -> Result<Self>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        use crate::global_switch;
+
+        global_switch().bind(protos).await
+    }
 }
 
 impl Drop for ProtocolListener {

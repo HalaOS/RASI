@@ -29,6 +29,7 @@ rasi-mio = { workspace = true }
 pretty_env_logger = { workspace = true }
 rep2p-tcp = { workspace = true }
 rep2p-quic = { workspace = true }
+rep2p = { workspace = true, features = ["global_register"] }
 
 [build-dependencies]
 protobuf-codegen = { workspace = true }

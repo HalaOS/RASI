@@ -27,5 +27,5 @@ protobuf-codegen = { workspace = true }
 protoc-bin-vendored = { workspace = true }
 
 [features]
-default = ["pprof"]
-pprof = []
+default = ["global_register"]
+global_register = []
