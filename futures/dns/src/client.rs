@@ -186,47 +186,56 @@ impl DnsLookup {
         self.0.clone()
     }
     /// Lookup ipv6 records.
-    pub async fn lookup_ipv6<'a, N>(&self, label: N) -> Result<Vec<Ipv6Addr>>
+    pub async fn lookup_ipv6<N>(&self, label: N) -> Result<Vec<Ipv6Addr>>
     where
         N: AsRef<str>,
     {
-        self.lookup_ip(label).await.map(|addrs| {
-            addrs
-                .into_iter()
-                .filter_map(|addr| match addr {
-                    IpAddr::V6(addr) => Some(addr),
-                    IpAddr::V4(_) => None,
-                })
-                .collect()
-        })
+        self.call_with(label.as_ref(), &[QueryType::AAAA], Self::parse_ip_addrs)
+            .await
+            .map(|addrs| {
+                addrs
+                    .into_iter()
+                    .filter_map(|addr| match addr {
+                        IpAddr::V6(addr) => Some(addr),
+                        IpAddr::V4(_) => None,
+                    })
+                    .collect()
+            })
     }
 
     /// Lookup ipv4 records.
-    pub async fn lookup_ipv4<'a, N>(&self, label: N) -> Result<Vec<Ipv4Addr>>
+    pub async fn lookup_ipv4<N>(&self, label: N) -> Result<Vec<Ipv4Addr>>
     where
         N: AsRef<str>,
     {
-        self.lookup_ip(label).await.map(|addrs| {
-            addrs
-                .into_iter()
-                .filter_map(|addr| match addr {
-                    IpAddr::V4(addr) => Some(addr),
-                    IpAddr::V6(_) => None,
-                })
-                .collect()
-        })
+        self.call_with(label.as_ref(), &[QueryType::A], Self::parse_ip_addrs)
+            .await
+            .map(|addrs| {
+                addrs
+                    .into_iter()
+                    .filter_map(|addr| match addr {
+                        IpAddr::V4(addr) => Some(addr),
+                        IpAddr::V6(_) => None,
+                    })
+                    .collect()
+            })
     }
     /// Lookup ipv4/ipv6 records.
     pub async fn lookup_ip<N>(&self, label: N) -> Result<Vec<IpAddr>>
     where
         N: AsRef<str>,
     {
-        self.call_with(
-            label.as_ref(),
-            &[QueryType::A, QueryType::AAAA],
-            Self::parse_ip_addrs,
-        )
-        .await
+        let mut addrs_v6 = self
+            .call_with(label.as_ref(), &[QueryType::AAAA], Self::parse_ip_addrs)
+            .await?;
+
+        let mut addrs_v4 = self
+            .call_with(label.as_ref(), &[QueryType::A], Self::parse_ip_addrs)
+            .await?;
+
+        addrs_v6.append(&mut addrs_v4);
+
+        Ok(addrs_v6)
     }
 
     /// Lookup txt records.

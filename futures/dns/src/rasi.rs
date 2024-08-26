@@ -7,7 +7,35 @@ use crate::{
     Result,
 };
 
+#[cfg(all(unix, feature = "sysconf"))]
+mod sys {
+    use std::net::{IpAddr, SocketAddr};
+
+    use crate::{Error, Result};
+
+    /// Get the system-wide DNS name server configuration.
+    pub fn name_server() -> Result<SocketAddr> {
+        let config = std::fs::read("/etc/resolv.conf")?;
+
+        let config = resolv_conf::Config::parse(&config)?;
+
+        for name_server in config.nameservers {
+            let ip_addr: IpAddr = name_server.into();
+
+            return Ok((ip_addr, 53).into());
+        }
+
+        return Err(Error::SysWideNameServer.into());
+    }
+}
+
 impl DnsLookup {
+    /// Create a DNS lookup with sys-wide DNS name server configuration.
+    #[cfg(feature = "sysconf")]
+    pub async fn over_udp() -> Result<Self> {
+        Self::with_udp_server(sys::name_server()?).await
+    }
+
     /// Create a DNS lookup over udp socket.
     pub async fn with_udp_server(nameserver: SocketAddr) -> Result<Self> {
         let socket = UdpSocket::bind(if nameserver.is_ipv4() {
@@ -129,9 +157,7 @@ mod tests {
         init();
 
         let innner = {
-            let lookup = DnsLookup::with_udp_server("8.8.8.8:53".parse().unwrap())
-                .await
-                .unwrap();
+            let lookup = DnsLookup::over_udp().await.unwrap();
 
             let group = lookup.lookup_ip("docs.rs").await.unwrap();
 
@@ -151,9 +177,7 @@ mod tests {
         init();
 
         let innner = {
-            let lookup = DnsLookup::with_udp_server("8.8.8.8:53".parse().unwrap())
-                .await
-                .unwrap();
+            let lookup = DnsLookup::over_udp().await.unwrap();
 
             let group = lookup
                 .lookup_txt("_dnsaddr.bootstrap.libp2p.io")

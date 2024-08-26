@@ -32,6 +32,14 @@ pub enum Error {
 
     #[error("DNS server report, err={0}")]
     ServerError(ResponseCode),
+
+    #[cfg(all(unix, feature = "sysconf"))]
+    #[error(transparent)]
+    ResolvConf(#[from] resolv_conf::ParseError),
+
+    #[cfg(all(unix, feature = "sysconf"))]
+    #[error("Unable load sys-wide nameserver")]
+    SysWideNameServer,
 }
 
 /// Result type returns by APIs in this crate.
