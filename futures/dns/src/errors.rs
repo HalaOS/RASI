@@ -37,9 +37,12 @@ pub enum Error {
     #[error(transparent)]
     ResolvConf(#[from] resolv_conf::ParseError),
 
-    #[cfg(all(unix, feature = "sysconf"))]
     #[error("Unable load sys-wide nameserver")]
     SysWideNameServer,
+
+    #[cfg(all(windows, feature = "sysconf"))]
+    #[error(transparent)]
+    IpConfigError(#[from] ipconfig::error::Error),
 }
 
 /// Result type returns by APIs in this crate.

@@ -29,6 +29,24 @@ mod sys {
     }
 }
 
+#[cfg(all(windows, feature = "sysconf"))]
+mod sys {
+    use std::net::SocketAddr;
+
+    use crate::{Error, Result};
+
+    /// Get the system-wide DNS name server configuration.
+    pub fn name_server() -> Result<SocketAddr> {
+        for adapter in ipconfig::get_adapters()? {
+            for ip_addr in adapter.dns_servers() {
+                return Ok((ip_addr.clone(), 53).into());
+            }
+        }
+
+        return Err(Error::SysWideNameServer.into());
+    }
+}
+
 impl DnsLookup {
     /// Create a DNS lookup with sys-wide DNS name server configuration.
     #[cfg(feature = "sysconf")]

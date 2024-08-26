@@ -162,10 +162,7 @@ impl rasi::fs::syscall::Driver for MioFileSystemDriver {
         &self,
         addr: &std::ffi::OsStr,
     ) -> std::io::Result<rasi::fs::windows::NamedPipeStream> {
-        use std::{
-            os::windows::io::FromRawHandle,
-            ptr::{null, null_mut},
-        };
+        use std::{os::windows::io::FromRawHandle, ptr::null};
 
         use mio::{Interest, Token};
         use windows_sys::Win32::{
