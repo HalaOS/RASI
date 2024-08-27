@@ -4,7 +4,7 @@ documentation = "https://docs.rs/ringbuf-rs"
 edition.workspace = true
 license = "MIT"
 name = "ringbuf-rs"
-repository.workspace = true
+repository = "https://github.com/HalaOS/RASI.git"
 version.workspace = true
 readme = "README.md"
 

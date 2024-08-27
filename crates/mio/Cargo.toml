@@ -4,7 +4,7 @@ documentation = "https://docs.rs/rasi-mio"
 edition.workspace = true
 license = "MIT"
 name = "rasi-mio"
-repository.workspace = true
+repository = "https://github.com/HalaOS/RASI.git"
 version.workspace = true
 
 [dependencies]

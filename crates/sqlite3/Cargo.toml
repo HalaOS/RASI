@@ -4,7 +4,7 @@ documentation = "https://docs.rs/rasi-sqlite3"
 edition.workspace = true
 license = "MIT"
 name = "rasi-sqlite3"
-repository.workspace = true
+repository = "https://github.com/HalaOS/RASI.git"
 version.workspace = true
 readme = "README.md"
 

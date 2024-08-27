@@ -1,8 +1,0 @@
-[package]
-description = "A futures-based websocket implementation"
-documentation = "https://docs.rs/futures-websocket"
-edition.workspace = true
-license = "MIT"
-name = "futures-websocket"
-repository.workspace = true
-version.workspace = true
