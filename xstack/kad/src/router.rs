@@ -599,12 +599,12 @@ mod tests {
             .await
             .unwrap();
 
-        let (stream, _) =  ProtocolStream::connect(
-                "/ip4/104.131.131.82/udp/4001/quic-v1/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-                [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
-            )
-            .await
-            .unwrap();
+        let (stream, _) = ProtocolStream::connect(
+            "QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+            [PROTOCOL_IPFS_KAD, PROTOCOL_IPFS_LAN_KAD],
+        )
+        .await
+        .unwrap();
 
         let GetProviders {
             closer_peers: _,

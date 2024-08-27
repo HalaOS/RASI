@@ -28,7 +28,16 @@ impl ProtocolListener {
     {
         use crate::global_switch;
 
-        global_switch().bind(protos).await
+        Self::bind_with(global_switch(), protos).await
+    }
+
+    /// Create a new `ProtocolListener` on provides `switch`.
+    pub async fn bind_with<I>(switch: &Switch, protos: I) -> Result<Self>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        switch.bind(protos).await
     }
 }
 

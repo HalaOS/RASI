@@ -157,7 +157,6 @@ driver_wrapper!(
 #[cfg_attr(docsrs, doc(cfg(feature = "global_register")))]
 impl ProtocolStream {
     /// Connect to peer and negotiate a protocol. the `protos` is the list of candidate protocols.
-
     pub async fn connect<'a, C, E, I>(
         target: C,
         protos: I,
@@ -168,7 +167,24 @@ impl ProtocolStream {
         I::Item: AsRef<str>,
         E: std::fmt::Debug,
     {
-        crate::global::global_switch().connect(target, protos).await
+        Self::connect_with(crate::global_switch(), target, protos).await
+    }
+}
+
+impl ProtocolStream {
+    /// Connect to peer and negotiate a protocol. the `protos` is the list of candidate protocols.
+    pub async fn connect_with<'a, C, E, I>(
+        switch: &Switch,
+        target: C,
+        protos: I,
+    ) -> crate::Result<(ProtocolStream, String)>
+    where
+        C: TryInto<crate::switch::ConnectTo<'a>, Error = E>,
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+        E: std::fmt::Debug,
+    {
+        switch.connect(target, protos).await
     }
 }
 
