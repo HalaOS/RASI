@@ -6,6 +6,5 @@ license = "MIT"
 name = "ringbuf-rs"
 repository = "https://github.com/HalaOS/RASI.git"
 version.workspace = true
-readme = "README.md"
 
 [dependencies]
