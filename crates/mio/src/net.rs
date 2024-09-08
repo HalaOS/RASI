@@ -1,6 +1,8 @@
 use std::{
-    io::{ErrorKind, Read, Write},
+    io::{Error, ErrorKind, Read, Write},
+    net::Shutdown,
     ops::Deref,
+    sync::RwLock,
     task::Poll,
 };
 
@@ -165,23 +167,26 @@ impl rasi::net::syscall::DriverTcpStream for MioTcpStream {
     }
 }
 
-type MioUdpSocket = MioSocket<mio::net::UdpSocket>;
+struct MioUdpSocket {
+    mio_socket: MioSocket<mio::net::UdpSocket>,
+    shutdown: RwLock<(bool, bool)>,
+}
 
 impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
     fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
-        self.socket.local_addr()
+        self.mio_socket.socket.local_addr()
     }
 
     fn peer_addr(&self) -> std::io::Result<std::net::SocketAddr> {
-        self.socket.peer_addr()
+        self.mio_socket.socket.peer_addr()
     }
 
     fn ttl(&self) -> std::io::Result<u32> {
-        self.socket.ttl()
+        self.mio_socket.socket.ttl()
     }
 
     fn set_ttl(&self, ttl: u32) -> std::io::Result<()> {
-        self.socket.set_ttl(ttl)
+        self.mio_socket.socket.set_ttl(ttl)
     }
 
     fn join_multicast_v4(
@@ -189,7 +194,9 @@ impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
         multiaddr: &std::net::Ipv4Addr,
         interface: &std::net::Ipv4Addr,
     ) -> std::io::Result<()> {
-        self.socket.join_multicast_v4(multiaddr, interface)
+        self.mio_socket
+            .socket
+            .join_multicast_v4(multiaddr, interface)
     }
 
     fn join_multicast_v6(
@@ -197,7 +204,9 @@ impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
         multiaddr: &std::net::Ipv6Addr,
         interface: u32,
     ) -> std::io::Result<()> {
-        self.socket.join_multicast_v6(multiaddr, interface)
+        self.mio_socket
+            .socket
+            .join_multicast_v6(multiaddr, interface)
     }
 
     fn leave_multicast_v4(
@@ -205,7 +214,9 @@ impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
         multiaddr: &std::net::Ipv4Addr,
         interface: &std::net::Ipv4Addr,
     ) -> std::io::Result<()> {
-        self.socket.leave_multicast_v4(multiaddr, interface)
+        self.mio_socket
+            .socket
+            .leave_multicast_v4(multiaddr, interface)
     }
 
     fn leave_multicast_v6(
@@ -213,15 +224,17 @@ impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
         multiaddr: &std::net::Ipv6Addr,
         interface: u32,
     ) -> std::io::Result<()> {
-        self.socket.leave_multicast_v6(multiaddr, interface)
+        self.mio_socket
+            .socket
+            .leave_multicast_v6(multiaddr, interface)
     }
 
     fn set_broadcast(&self, on: bool) -> std::io::Result<()> {
-        self.socket.set_broadcast(on)
+        self.mio_socket.socket.set_broadcast(on)
     }
 
     fn broadcast(&self) -> std::io::Result<bool> {
-        self.socket.broadcast()
+        self.mio_socket.socket.broadcast()
     }
 
     fn poll_recv_from(
@@ -229,9 +242,21 @@ impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
         cx: &mut std::task::Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<(usize, std::net::SocketAddr)>> {
-        would_block(self.token, cx.waker().clone(), Interest::READABLE, || {
-            self.socket.recv_from(buf)
-        })
+        let shutdown = self.shutdown.read().unwrap();
+
+        if shutdown.0 {
+            return Poll::Ready(Err(Error::new(
+                ErrorKind::BrokenPipe,
+                "UdpSocket read shutdown.",
+            )));
+        }
+
+        would_block(
+            self.mio_socket.token,
+            cx.waker().clone(),
+            Interest::READABLE,
+            || self.mio_socket.socket.recv_from(buf),
+        )
     }
 
     fn poll_send_to(
@@ -240,9 +265,52 @@ impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
         buf: &[u8],
         peer: std::net::SocketAddr,
     ) -> Poll<std::io::Result<usize>> {
-        would_block(self.token, cx.waker().clone(), Interest::WRITABLE, || {
-            self.socket.send_to(buf, peer)
-        })
+        let shutdown = self.shutdown.read().unwrap();
+        if shutdown.1 {
+            return Poll::Ready(Err(Error::new(
+                ErrorKind::BrokenPipe,
+                "UdpSocket write shutdown.",
+            )));
+        }
+
+        would_block(
+            self.mio_socket.token,
+            cx.waker().clone(),
+            Interest::WRITABLE,
+            || self.mio_socket.socket.send_to(buf, peer),
+        )
+    }
+
+    /// Shuts down the read, write, or both halves of this connection.
+    ///
+    /// This method will cause all pending and future I/O on the specified portions to return
+    /// immediately with an appropriate value (see the documentation of [`Shutdown`]).
+    ///
+    /// [`Shutdown`]: https://doc.rust-lang.org/std/net/enum.Shutdown.html
+    fn shutdown(&self, how: Shutdown) -> std::io::Result<()> {
+        let mut locker = self.shutdown.write().unwrap();
+
+        match how {
+            Shutdown::Read => {
+                locker.0 = true;
+
+                global_reactor().notify(self.mio_socket.token, Interest::READABLE);
+            }
+            Shutdown::Write => {
+                locker.1 = true;
+                global_reactor().notify(self.mio_socket.token, Interest::WRITABLE);
+            }
+            Shutdown::Both => {
+                locker.0 = true;
+                locker.1 = true;
+                global_reactor().notify(
+                    self.mio_socket.token,
+                    Interest::WRITABLE.add(Interest::READABLE),
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -383,7 +451,11 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
             Interest::READABLE.add(Interest::WRITABLE),
         )?;
 
-        Ok(MioUdpSocket { socket, token }.into())
+        Ok(MioUdpSocket {
+            mio_socket: MioSocket { socket, token },
+            shutdown: RwLock::new((false, false)),
+        }
+        .into())
     }
 
     #[cfg(unix)]

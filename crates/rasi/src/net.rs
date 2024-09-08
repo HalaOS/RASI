@@ -171,6 +171,14 @@ pub mod syscall {
     ///
     /// When this trait object is dropping, the implementition must close the internal tcp socket.
     pub trait DriverUdpSocket: Sync + Send {
+        /// Shuts down the read, write, or both halves of this connection.
+        ///
+        /// This method will cause all pending and future I/O on the specified portions to return
+        /// immediately with an appropriate value (see the documentation of [`Shutdown`]).
+        ///
+        /// [`Shutdown`]: https://doc.rust-lang.org/std/net/enum.Shutdown.html
+        fn shutdown(&self, how: Shutdown) -> Result<()>;
+
         /// Returns the local address that this stream is connected from.
         fn local_addr(&self) -> Result<SocketAddr>;
 
