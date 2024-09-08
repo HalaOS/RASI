@@ -1,3 +1,4 @@
+use futures::poll;
 use rasi::net::syscall::Driver;
 use rasi::net::UdpSocket;
 
@@ -29,6 +30,33 @@ pub async fn test_udp_echo(syscall: &dyn Driver) {
     assert_eq!(raddr, server.local_addr().unwrap());
 }
 
+pub async fn test_udp_shutdown(syscall: &dyn Driver) {
+    let socket = UdpSocket::bind_with("127.0.0.1:0", syscall).await.unwrap();
+
+    let mut buf = vec![0; 1024];
+
+    let mut recv_from = Box::pin(socket.recv_from(&mut buf));
+
+    assert!(poll!(&mut recv_from).is_pending());
+
+    socket.shutdown(std::net::Shutdown::Read).unwrap();
+
+    assert!(poll!(&mut recv_from).is_ready());
+
+    socket
+        .send_to(b"hello", socket.local_addr().unwrap())
+        .await
+        .unwrap();
+
+    socket.shutdown(std::net::Shutdown::Write).unwrap();
+
+    socket
+        .send_to(b"hello", socket.local_addr().unwrap())
+        .await
+        .expect_err("shutdown write");
+}
+
 pub async fn run_udp_spec(syscall: &dyn Driver) {
     async_spec!(test_udp_echo, syscall);
+    async_spec!(test_udp_shutdown, syscall);
 }
