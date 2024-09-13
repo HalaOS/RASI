@@ -90,7 +90,7 @@ pub mod syscall {
         unsafe fn tcp_stream_from_raw_fd(&self, fd: std::os::fd::RawFd) -> Result<TcpStream>;
 
         #[cfg(windows)]
-        fn tcp_stream_from_raw_socket(
+        unsafe fn tcp_stream_from_raw_socket(
             &self,
             socket: std::os::windows::io::RawSocket,
         ) -> Result<TcpStream>;
@@ -357,6 +357,19 @@ impl TcpListener {
     pub unsafe fn from_raw_fd(fd: std::os::fd::RawFd) -> Result<Self> {
         Self::from_raw_fd_with(fd, get_network_driver())
     }
+
+    #[cfg(windows)]
+    pub unsafe fn from_raw_socket_with(
+        fd: std::os::windows::io::RawSocket,
+        driver: &dyn syscall::Driver,
+    ) -> Result<Self> {
+        driver.tcp_listener_from_raw_socket(fd)
+    }
+
+    #[cfg(windows)]
+    pub unsafe fn from_raw_socket(fd: std::os::windows::io::RawSocket) -> Result<Self> {
+        Self::from_raw_socket_with(fd, get_network_driver())
+    }
 }
 
 impl Stream for TcpListener {
@@ -462,6 +475,19 @@ impl TcpStream {
     pub unsafe fn from_raw_fd(fd: std::os::fd::RawFd) -> Result<Self> {
         Self::from_raw_fd_with(fd, get_network_driver())
     }
+
+    #[cfg(windows)]
+    pub unsafe fn from_raw_socket_with(
+        fd: std::os::windows::io::RawSocket,
+        driver: &dyn syscall::Driver,
+    ) -> Result<Self> {
+        driver.tcp_stream_from_raw_socket(fd)
+    }
+
+    #[cfg(windows)]
+    pub unsafe fn from_raw_socket(fd: std::os::windows::io::RawSocket) -> Result<Self> {
+        Self::from_raw_socket_with(fd, get_network_driver())
+    }
 }
 
 impl AsyncRead for TcpStream {
@@ -559,6 +585,19 @@ impl UdpSocket {
     #[cfg(unix)]
     pub unsafe fn from_raw_fd(fd: std::os::fd::RawFd) -> Result<Self> {
         Self::from_raw_fd_with(fd, get_network_driver())
+    }
+
+    #[cfg(windows)]
+    pub unsafe fn from_raw_socket_with(
+        fd: std::os::windows::io::RawSocket,
+        driver: &dyn syscall::Driver,
+    ) -> Result<Self> {
+        driver.udp_from_raw_socket(fd)
+    }
+
+    #[cfg(windows)]
+    pub unsafe fn from_raw_socket(fd: std::os::windows::io::RawSocket) -> Result<Self> {
+        Self::from_raw_socket_with(fd, get_network_driver())
     }
 
     /// Sends data on the socket to the given `target` address.

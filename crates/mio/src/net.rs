@@ -506,6 +506,20 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         self.tcp_listener_from_std_socket(std_socket)
     }
 
+    #[cfg(windows)]
+    unsafe fn tcp_listener_from_raw_socket(
+        &self,
+        socket: std::os::windows::io::RawSocket,
+    ) -> std::io::Result<rasi::net::TcpListener> {
+        use std::os::windows::io::FromRawSocket;
+
+        let std_socket = std::net::TcpListener::from_raw_socket(socket);
+
+        std_socket.set_nonblocking(true)?;
+
+        self.tcp_listener_from_std_socket(std_socket)
+    }
+
     fn tcp_connect(&self, raddr: &std::net::SocketAddr) -> std::io::Result<rasi::net::TcpStream> {
         log::trace!("tcp_connect, raddr={}", raddr);
 
@@ -530,6 +544,20 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         self.tcp_stream_from_std_socket(std_socket)
     }
 
+    #[cfg(windows)]
+    unsafe fn tcp_stream_from_raw_socket(
+        &self,
+        socket: std::os::windows::io::RawSocket,
+    ) -> std::io::Result<rasi::net::TcpStream> {
+        use std::os::windows::io::FromRawSocket;
+
+        let std_socket = std::net::TcpStream::from_raw_socket(socket);
+
+        std_socket.set_nonblocking(true)?;
+
+        self.tcp_stream_from_std_socket(std_socket)
+    }
+
     fn udp_bind(&self, laddrs: &[std::net::SocketAddr]) -> std::io::Result<rasi::net::UdpSocket> {
         let std_socket = std::net::UdpSocket::bind(laddrs)?;
 
@@ -546,6 +574,20 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         use std::os::fd::FromRawFd;
 
         let std_socket = std::net::UdpSocket::from_raw_fd(fd);
+
+        std_socket.set_nonblocking(true)?;
+
+        self.udp_socket_from_std_socket(std_socket)
+    }
+
+    #[cfg(windows)]
+    unsafe fn udp_from_raw_socket(
+        &self,
+        socket: std::os::windows::io::RawSocket,
+    ) -> std::io::Result<rasi::net::UdpSocket> {
+        use std::os::windows::io::FromRawSocket;
+
+        let std_socket = std::net::UdpSocket::from_raw_socket(socket);
 
         std_socket.set_nonblocking(true)?;
 
