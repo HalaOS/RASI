@@ -2,14 +2,12 @@ use std::{
     io::{Error, ErrorKind, Read, Write},
     net::Shutdown,
     ops::Deref,
-    os::fd::FromRawFd,
     sync::RwLock,
     task::Poll,
 };
 
 use mio::{event::Source, Interest, Token};
 use rasi::net::register_network_driver;
-use socket2::{Domain, Protocol, Type};
 
 use crate::{reactor::global_reactor, token::TokenSequence, utils::would_block};
 
@@ -239,6 +237,30 @@ impl rasi::net::syscall::DriverUdpSocket for MioUdpSocket {
         self.mio_socket.socket.broadcast()
     }
 
+    /// Sets the value of the IP_MULTICAST_LOOP option for this socket.
+    ///
+    /// If enabled, multicast packets will be looped back to the local socket. Note that this might not have any effect on IPv6 sockets.
+    fn set_multicast_loop_v4(&self, on: bool) -> std::io::Result<()> {
+        self.mio_socket.socket.set_multicast_loop_v4(on)
+    }
+
+    /// Sets the value of the IPV6_MULTICAST_LOOP option for this socket.
+    ///
+    /// Controls whether this socket sees the multicast packets it sends itself. Note that this might not have any affect on IPv4 sockets.
+    fn set_multicast_loop_v6(&self, on: bool) -> std::io::Result<()> {
+        self.mio_socket.socket.set_multicast_loop_v6(on)
+    }
+
+    /// Gets the value of the IP_MULTICAST_LOOP option for this socket.
+    fn multicast_loop_v4(&self) -> std::io::Result<bool> {
+        self.mio_socket.socket.multicast_loop_v4()
+    }
+
+    /// Gets the value of the IPV6_MULTICAST_LOOP option for this socket.
+    fn multicast_loop_v6(&self) -> std::io::Result<bool> {
+        self.mio_socket.socket.multicast_loop_v6()
+    }
+
     fn poll_recv_from(
         &self,
         cx: &mut std::task::Context<'_>,
@@ -402,16 +424,13 @@ impl rasi::net::syscall::unix::DriverUnixStream for MioUnixStream {
 
 struct MioNetworkDriver;
 
-impl rasi::net::syscall::Driver for MioNetworkDriver {
-    fn tcp_listen(
+impl MioNetworkDriver {
+    fn tcp_listener_from_std_socket(
         &self,
-        laddrs: &[std::net::SocketAddr],
+        std_socket: std::net::TcpListener,
     ) -> std::io::Result<rasi::net::TcpListener> {
-        let std_socket = std::net::TcpListener::bind(laddrs)?;
-
-        std_socket.set_nonblocking(true)?;
-
         let mut socket = mio::net::TcpListener::from_std(std_socket);
+
         let token = Token::next();
 
         global_reactor().register(
@@ -423,10 +442,11 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         Ok(MioTcpListener { token, socket }.into())
     }
 
-    fn tcp_connect(&self, raddr: &std::net::SocketAddr) -> std::io::Result<rasi::net::TcpStream> {
-        log::trace!("tcp_connect, raddr={}", raddr);
-
-        let mut socket = mio::net::TcpStream::connect(raddr.clone())?;
+    fn tcp_stream_from_std_socket(
+        &self,
+        std_socket: std::net::TcpStream,
+    ) -> std::io::Result<rasi::net::TcpStream> {
+        let mut socket = mio::net::TcpStream::from_std(std_socket);
 
         let token = Token::next();
 
@@ -439,59 +459,97 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
         return Ok(MioTcpStream { token, socket }.into());
     }
 
-    fn udp_bind(&self, laddrs: &[std::net::SocketAddr]) -> std::io::Result<rasi::net::UdpSocket> {
-        let mut last_error = None;
-        for laddr in laddrs {
-            match socket2::Socket::new(
-                if laddr.is_ipv4() {
-                    Domain::IPV4
-                } else {
-                    Domain::IPV6
-                },
-                Type::DGRAM,
-                Some(Protocol::UDP),
-            ) {
-                Ok(s) => {
-                    s.set_reuse_address(true)?;
-                    s.bind(&laddr.clone().into())?;
-                    s.set_nonblocking(true)?;
+    fn udp_socket_from_std_socket(
+        &self,
+        std_socket: std::net::UdpSocket,
+    ) -> std::io::Result<rasi::net::UdpSocket> {
+        let mut socket = mio::net::UdpSocket::from_std(std_socket);
+        let token = Token::next();
 
-                    #[cfg(unix)]
-                    let mut socket = {
-                        use std::os::fd::IntoRawFd;
+        global_reactor().register(
+            &mut socket,
+            token,
+            Interest::READABLE.add(Interest::WRITABLE),
+        )?;
 
-                        unsafe { mio::net::UdpSocket::from_raw_fd(s.into_raw_fd()) }
-                    };
-
-                    #[cfg(windows)]
-                    let mut socket = {
-                        use std::os::windows::io::IntoRawSocket;
-
-                        unsafe { mio::net::UdpSocket::from_raw_socket(s.into_raw_socket()) }
-                    };
-
-                    let token = Token::next();
-
-                    global_reactor().register(
-                        &mut socket,
-                        token,
-                        Interest::READABLE.add(Interest::WRITABLE),
-                    )?;
-
-                    return Ok(MioUdpSocket {
-                        mio_socket: MioSocket { socket, token },
-                        shutdown: RwLock::new((false, false)),
-                    }
-                    .into());
-                }
-                Err(err) => {
-                    last_error = Some(err);
-                    continue;
-                }
-            }
+        Ok(MioUdpSocket {
+            mio_socket: MioSocket { socket, token },
+            shutdown: RwLock::new((false, false)),
         }
+        .into())
+    }
+}
 
-        return Err(last_error.unwrap_or(Error::new(ErrorKind::InvalidInput, "Empty laddrs")));
+impl rasi::net::syscall::Driver for MioNetworkDriver {
+    fn tcp_listen(
+        &self,
+        laddrs: &[std::net::SocketAddr],
+    ) -> std::io::Result<rasi::net::TcpListener> {
+        let std_socket = std::net::TcpListener::bind(laddrs)?;
+
+        std_socket.set_nonblocking(true)?;
+
+        self.tcp_listener_from_std_socket(std_socket)
+    }
+
+    #[cfg(unix)]
+    unsafe fn tcp_listener_from_raw_fd(
+        &self,
+        fd: std::os::fd::RawFd,
+    ) -> std::io::Result<rasi::net::TcpListener> {
+        use std::os::fd::FromRawFd;
+
+        let std_socket = std::net::TcpListener::from_raw_fd(fd);
+
+        std_socket.set_nonblocking(true)?;
+
+        self.tcp_listener_from_std_socket(std_socket)
+    }
+
+    fn tcp_connect(&self, raddr: &std::net::SocketAddr) -> std::io::Result<rasi::net::TcpStream> {
+        log::trace!("tcp_connect, raddr={}", raddr);
+
+        let std_socket = std::net::TcpStream::connect(raddr.clone())?;
+
+        std_socket.set_nonblocking(true)?;
+
+        self.tcp_stream_from_std_socket(std_socket)
+    }
+
+    #[cfg(unix)]
+    unsafe fn tcp_stream_from_raw_fd(
+        &self,
+        fd: std::os::fd::RawFd,
+    ) -> std::io::Result<rasi::net::TcpStream> {
+        use std::os::fd::FromRawFd;
+
+        let std_socket = std::net::TcpStream::from_raw_fd(fd);
+
+        std_socket.set_nonblocking(true)?;
+
+        self.tcp_stream_from_std_socket(std_socket)
+    }
+
+    fn udp_bind(&self, laddrs: &[std::net::SocketAddr]) -> std::io::Result<rasi::net::UdpSocket> {
+        let std_socket = std::net::UdpSocket::bind(laddrs)?;
+
+        std_socket.set_nonblocking(true)?;
+
+        self.udp_socket_from_std_socket(std_socket)
+    }
+
+    #[cfg(unix)]
+    unsafe fn udp_from_raw_fd(
+        &self,
+        fd: std::os::fd::RawFd,
+    ) -> std::io::Result<rasi::net::UdpSocket> {
+        use std::os::fd::FromRawFd;
+
+        let std_socket = std::net::UdpSocket::from_raw_fd(fd);
+
+        std_socket.set_nonblocking(true)?;
+
+        self.udp_socket_from_std_socket(std_socket)
     }
 
     #[cfg(unix)]

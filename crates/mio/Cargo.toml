@@ -15,7 +15,6 @@ dashmap = { workspace = true }
 boxcar = { workspace = true }
 mio = { workspace = true }
 libc = { workspace = true }
-socket2 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 workspace = true

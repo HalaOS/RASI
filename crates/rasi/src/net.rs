@@ -69,6 +69,15 @@ pub mod syscall {
         /// Create a new tcp listener socket with provided `laddrs`.
         fn tcp_listen(&self, laddrs: &[SocketAddr]) -> Result<TcpListener>;
 
+        #[cfg(unix)]
+        unsafe fn tcp_listener_from_raw_fd(&self, fd: std::os::fd::RawFd) -> Result<TcpListener>;
+
+        #[cfg(windows)]
+        unsafe fn tcp_listener_from_raw_socket(
+            &self,
+            socket: std::os::windows::io::RawSocket,
+        ) -> Result<TcpListener>;
+
         /// Create a new `TcpStream` and connect to `raddrs`.
         ///  
         /// When this function returns a [`TcpStream`] object the underlying
@@ -77,8 +86,26 @@ pub mod syscall {
         /// connection to be established.
         fn tcp_connect(&self, raddrs: &SocketAddr) -> Result<TcpStream>;
 
+        #[cfg(unix)]
+        unsafe fn tcp_stream_from_raw_fd(&self, fd: std::os::fd::RawFd) -> Result<TcpStream>;
+
+        #[cfg(windows)]
+        fn tcp_stream_from_raw_socket(
+            &self,
+            socket: std::os::windows::io::RawSocket,
+        ) -> Result<TcpStream>;
+
         /// Create new `UdpSocket` which will be bound to the specified `laddrs`
         fn udp_bind(&self, laddrs: &[SocketAddr]) -> Result<UdpSocket>;
+
+        #[cfg(unix)]
+        unsafe fn udp_from_raw_fd(&self, fd: std::os::fd::RawFd) -> Result<UdpSocket>;
+
+        #[cfg(windows)]
+        unsafe fn udp_from_raw_socket(
+            &self,
+            socket: std::os::windows::io::RawSocket,
+        ) -> Result<UdpSocket>;
 
         #[cfg(unix)]
         #[cfg_attr(docsrs, doc(cfg(unix)))]
@@ -225,6 +252,22 @@ pub mod syscall {
         /// [link]: #method.join_multicast_v6
         fn leave_multicast_v6(&self, multiaddr: &Ipv6Addr, interface: u32) -> Result<()>;
 
+        /// Sets the value of the IP_MULTICAST_LOOP option for this socket.
+        ///
+        /// If enabled, multicast packets will be looped back to the local socket. Note that this might not have any effect on IPv6 sockets.
+        fn set_multicast_loop_v4(&self, on: bool) -> Result<()>;
+
+        /// Sets the value of the IPV6_MULTICAST_LOOP option for this socket.
+        ///
+        /// Controls whether this socket sees the multicast packets it sends itself. Note that this might not have any affect on IPv4 sockets.
+        fn set_multicast_loop_v6(&self, on: bool) -> Result<()>;
+
+        /// Gets the value of the IP_MULTICAST_LOOP option for this socket.
+        fn multicast_loop_v4(&self) -> Result<bool>;
+
+        /// Gets the value of the IPV6_MULTICAST_LOOP option for this socket.
+        fn multicast_loop_v6(&self) -> Result<bool>;
+
         /// Sets the value of the SO_BROADCAST option for this socket.
         /// When enabled, this socket is allowed to send packets to a broadcast address.
         fn set_broadcast(&self, on: bool) -> Result<()>;
@@ -300,6 +343,19 @@ impl TcpListener {
     ) -> Result<Self> {
         let laddrs = laddrs.to_socket_addrs()?.collect::<Vec<_>>();
         driver.tcp_listen(&laddrs)
+    }
+
+    #[cfg(unix)]
+    pub unsafe fn from_raw_fd_with(
+        fd: std::os::fd::RawFd,
+        driver: &dyn syscall::Driver,
+    ) -> Result<Self> {
+        driver.tcp_listener_from_raw_fd(fd)
+    }
+
+    #[cfg(unix)]
+    pub unsafe fn from_raw_fd(fd: std::os::fd::RawFd) -> Result<Self> {
+        Self::from_raw_fd_with(fd, get_network_driver())
     }
 }
 
@@ -393,6 +449,19 @@ impl TcpStream {
 
         Err(last_error.unwrap())
     }
+
+    #[cfg(unix)]
+    pub unsafe fn from_raw_fd_with(
+        fd: std::os::fd::RawFd,
+        driver: &dyn syscall::Driver,
+    ) -> Result<Self> {
+        driver.tcp_stream_from_raw_fd(fd)
+    }
+
+    #[cfg(unix)]
+    pub unsafe fn from_raw_fd(fd: std::os::fd::RawFd) -> Result<Self> {
+        Self::from_raw_fd_with(fd, get_network_driver())
+    }
 }
 
 impl AsyncRead for TcpStream {
@@ -477,6 +546,19 @@ impl UdpSocket {
     ) -> Result<Self> {
         let laddrs = laddrs.to_socket_addrs()?.collect::<Vec<_>>();
         driver.udp_bind(&laddrs)
+    }
+
+    #[cfg(unix)]
+    pub unsafe fn from_raw_fd_with(
+        fd: std::os::fd::RawFd,
+        driver: &dyn syscall::Driver,
+    ) -> Result<Self> {
+        driver.udp_from_raw_fd(fd)
+    }
+
+    #[cfg(unix)]
+    pub unsafe fn from_raw_fd(fd: std::os::fd::RawFd) -> Result<Self> {
+        Self::from_raw_fd_with(fd, get_network_driver())
     }
 
     /// Sends data on the socket to the given `target` address.
