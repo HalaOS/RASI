@@ -2,12 +2,14 @@ use std::{
     io::{Error, ErrorKind, Read, Write},
     net::Shutdown,
     ops::Deref,
+    os::fd::FromRawFd,
     sync::RwLock,
     task::Poll,
 };
 
 use mio::{event::Source, Interest, Token};
 use rasi::net::register_network_driver;
+use socket2::{Domain, Protocol, Type};
 
 use crate::{reactor::global_reactor, token::TokenSequence, utils::would_block};
 
@@ -438,24 +440,58 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
     }
 
     fn udp_bind(&self, laddrs: &[std::net::SocketAddr]) -> std::io::Result<rasi::net::UdpSocket> {
-        let std_socket = std::net::UdpSocket::bind(laddrs)?;
+        let mut last_error = None;
+        for laddr in laddrs {
+            match socket2::Socket::new(
+                if laddr.is_ipv4() {
+                    Domain::IPV4
+                } else {
+                    Domain::IPV6
+                },
+                Type::DGRAM,
+                Some(Protocol::UDP),
+            ) {
+                Ok(s) => {
+                    s.set_reuse_address(true)?;
+                    s.bind(&laddr.clone().into())?;
+                    s.set_nonblocking(true)?;
 
-        std_socket.set_nonblocking(true)?;
+                    #[cfg(unix)]
+                    let mut socket = {
+                        use std::os::fd::IntoRawFd;
 
-        let mut socket = mio::net::UdpSocket::from_std(std_socket);
-        let token = Token::next();
+                        unsafe { mio::net::UdpSocket::from_raw_fd(s.into_raw_fd()) }
+                    };
 
-        global_reactor().register(
-            &mut socket,
-            token,
-            Interest::READABLE.add(Interest::WRITABLE),
-        )?;
+                    #[cfg(windows)]
+                    let mut socket = {
+                        use std::os::windows::io::IntoRawSocket;
 
-        Ok(MioUdpSocket {
-            mio_socket: MioSocket { socket, token },
-            shutdown: RwLock::new((false, false)),
+                        unsafe { mio::net::UdpSocket::from_raw_socket(s.into_raw_socket()) }
+                    };
+
+                    let token = Token::next();
+
+                    global_reactor().register(
+                        &mut socket,
+                        token,
+                        Interest::READABLE.add(Interest::WRITABLE),
+                    )?;
+
+                    return Ok(MioUdpSocket {
+                        mio_socket: MioSocket { socket, token },
+                        shutdown: RwLock::new((false, false)),
+                    }
+                    .into());
+                }
+                Err(err) => {
+                    last_error = Some(err);
+                    continue;
+                }
+            }
         }
-        .into())
+
+        return Err(last_error.unwrap_or(Error::new(ErrorKind::InvalidInput, "Empty laddrs")));
     }
 
     #[cfg(unix)]
