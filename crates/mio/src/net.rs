@@ -523,11 +523,17 @@ impl rasi::net::syscall::Driver for MioNetworkDriver {
     fn tcp_connect(&self, raddr: &std::net::SocketAddr) -> std::io::Result<rasi::net::TcpStream> {
         log::trace!("tcp_connect, raddr={}", raddr);
 
-        let std_socket = std::net::TcpStream::connect(raddr.clone())?;
+        let mut socket = mio::net::TcpStream::connect(raddr.clone())?;
 
-        std_socket.set_nonblocking(true)?;
+        let token = Token::next();
 
-        self.tcp_stream_from_std_socket(std_socket)
+        global_reactor().register(
+            &mut socket,
+            token,
+            Interest::READABLE.add(Interest::WRITABLE),
+        )?;
+
+        return Ok(MioTcpStream { token, socket }.into());
     }
 
     #[cfg(unix)]
