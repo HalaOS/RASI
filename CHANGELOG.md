@@ -8,6 +8,10 @@ This project adheres to [Semantic Versioning](https://semver.org).
 Note: In this file, do not use the hard wrap in the middle of a sentence for compatibility with GitHub comment style markdown rendering.
 -->
 
+## [0.2.6] - 2024-09-28
+
+- Fixed tcp nonblocking connect bug.
+
 ## [0.2.5] - 2024-09-28
 
 - Add from_raw_* APIs to network driver.
