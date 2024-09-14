@@ -38,6 +38,7 @@ impl<S: Source> Deref for MioSocket<S> {
 
 impl<S: Source> Drop for MioSocket<S> {
     fn drop(&mut self) {
+        log::trace!("deregister {:?}", self.token);
         if global_reactor().deregister(&mut self.socket).is_err() {}
     }
 }
@@ -146,6 +147,7 @@ impl rasi::net::syscall::DriverTcpStream for MioTcpStream {
             log::trace!("tcp_connect, poll_ready {:?}", self.token);
 
             if let Err(err) = self.deref().take_error() {
+                log::trace!("tcp_connect, poll_ready {:?}, err={}", self.token, err);
                 return Err(err);
             }
 
@@ -157,9 +159,11 @@ impl rasi::net::syscall::DriverTcpStream for MioTcpStream {
                     if err.kind() == ErrorKind::NotConnected
                         || err.raw_os_error() == Some(libc::EINPROGRESS) =>
                 {
+                    log::trace!("tcp_connect, poll_ready {:?}, pending", self.token);
                     return Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, ""));
                 }
                 Err(err) => {
+                    log::trace!("tcp_connect, poll_ready {:?}, err={}", self.token, err);
                     return Err(err);
                 }
             }
